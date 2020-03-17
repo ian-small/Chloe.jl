@@ -1,0 +1,13 @@
+ERROR: LoadError: KeyError: key 'R' not found
+Stacktrace:
+ [1] getindex at ./dict.jl:477 [inlined]
+ [2] #7 at /Users/zhongxiao/project/01_annotation/reference_1106/iansSuffixArrays.jl:61 [inlined]
+ [3] map(::getfield(Main.iansSuffixArrays, Symbol("##7#8")){Dict{Char,Char}}, ::String) at ./strings/basic.jl:572
+ [4] revComp(::String) at /Users/zhongxiao/project/01_annotation/reference_1106/iansSuffixArrays.jl:61
+ [5] top-level scope at /Users/zhongxiao/project/01_annotation/reference_1106/iansSuffixArrays.jl:68
+ [6] include at ./boot.jl:328 [inlined]
+ [7] include_relative(::Module, ::String) at ./loading.jl:1094
+ [8] include(::Module, ::String) at ./Base.jl:31
+ [9] exec_options(::Base.JLOptions) at ./client.jl:295
+ [10] _start() at ./client.jl:464
+in expression starting at /Users/zhongxiao/project/01_annotation/reference_1106/iansSuffixArrays.jl:64
