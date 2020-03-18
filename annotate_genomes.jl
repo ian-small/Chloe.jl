@@ -3,7 +3,7 @@ include("SuffixArrays.jl")
 include("Annotations.jl")
 include("Alignments3.jl")
 
-refsdir = ARGS[1]
+#refsdir = ARGS[1]
 #const refs = Dict("NC_004543"=>"Anthoceros","AP000423"=>"Arabidopsis","MF177093"=>"Azolla","NC_001319"=>"Marchantia","NC_022137"=>"Marsilea","JX512022"=>"Medicago","Z00044"=>"Nicotiana","AP005672"=>"Physcomitrella","KT634228"=>"Picea","FJ755183"=>"Selaginella","NC_002202"=>"Spinacia","NC_001666"=>"Zea")
 #const refs = Dict("AP000423"=>"Arabidopsis","JX512022"=>"Medicago","Z00044"=>"Nicotiana","KT634228"=>"Picea","NC_002202"=>"Spinacia","NC_001666"=>"Zea")
 #const refs = Dict("NC_001666"=>"Zea")
@@ -12,42 +12,55 @@ const refs = Dict("AP000423"=>"Arabidopsis","JX512022"=>"Medicago","Z00044"=>"Ni
     "NC_002202"=>"Spinacia","NC_001666"=>"Zea","NC_005086"=>"Amborella","NC_016986"=>"Ginkgo","NC_021438"=>"Gnetum",
     "NC_030504"=>"Liriodendron","NC_024542"=>"Nymphaea","NC_031333"=>"Oryza","NC_026040"=>"Zamia")
 
-num_refs = length(refs)
-
-refloops = Vector{String}(undef,num_refs*2)
-refSAs = Array{Array{Int32,1}}(undef,num_refs*2)
-refRAs = Array{Array{Int32,1}}(undef,num_refs*2)
-ref_features = Array{FeatureArray,1}(undef,num_refs*2)
-
-files = readdir(refsdir)
-iff_files = files[findall(x->endswith(x,".sff"), files)]
-
-for (i,ref) in enumerate(refs)
-    refgwsas = readGenomeWithSAs(joinpath(refsdir,ref.first*".gwsas"),ref.first)
-    refloops[i*2-1] = refgwsas.sequence * refgwsas.sequence[1:end-1]
-    rev = revComp(refgwsas.sequence)
-    refloops[i*2] = rev * rev[1:end-1]
-    refSAs[i*2-1] = refgwsas.forwardSA
-    refSAs[i*2] = refgwsas.reverseSA
-
-    refRAs[i*2-1] = makeSuffixArrayRanksArray(refgwsas.forwardSA)
-    refRAs[i*2] = makeSuffixArrayRanksArray(refgwsas.reverseSA)
-
-    #feature_file = iff_files[findfirst(x->startswith(x,ref.second),iff_files)]
-    feature_file = iff_files[findfirst(x->startswith(x,ref.second),iff_files)]
-    f_strand_features,r_strand_features = readFeatures(joinpath(refsdir,feature_file))
-    ref_features[i*2-1] = f_strand_features
-    ref_features[i*2] = r_strand_features
+struct Reference
+    refloops:: Vector{String}
+    refSAs ::  Array{Array{Int32,1}}
+    refRAs:: Array{Array{Int32,1}}
+    ref_features ::  Array{FeatureArray,1}
+    feature_templates ::Array{FeatureTemplate}
+    gene_exons:: Dict{String,Int32}
 end
 
-const feature_templates,gene_exons = readTemplates(ARGS[2])
+function readReferences(refsdir::String, templates::String)
 
-for infile in ARGS[3:end]
+    num_refs = length(refs)
 
+    refloops = Vector{String}(undef,num_refs*2)
+    refSAs = Array{Array{Int32,1}}(undef,num_refs*2)
+    refRAs = Array{Array{Int32,1}}(undef,num_refs*2)
+    ref_features = Array{FeatureArray,1}(undef,num_refs*2)
+
+    files = readdir(refsdir)
+    iff_files = files[findall(x->endswith(x,".sff"), files)]
+
+    for (i,ref) in enumerate(refs)
+        refgwsas = readGenomeWithSAs(joinpath(refsdir,ref.first*".gwsas"),ref.first)
+        refloops[i*2-1] = refgwsas.sequence * refgwsas.sequence[1:end-1]
+        rev = revComp(refgwsas.sequence)
+        refloops[i*2] = rev * rev[1:end-1]
+        refSAs[i*2-1] = refgwsas.forwardSA
+        refSAs[i*2] = refgwsas.reverseSA
+
+        refRAs[i*2-1] = makeSuffixArrayRanksArray(refgwsas.forwardSA)
+        refRAs[i*2] = makeSuffixArrayRanksArray(refgwsas.reverseSA)
+
+        #feature_file = iff_files[findfirst(x->startswith(x,ref.second),iff_files)]
+        feature_file = iff_files[findfirst(x->startswith(x,ref.second),iff_files)]
+        f_strand_features,r_strand_features = readFeatures(joinpath(refsdir,feature_file))
+        ref_features[i*2-1] = f_strand_features
+        ref_features[i*2] = r_strand_features
+    end
+    feature_templates,gene_exons = readTemplates(templates)
+    return Reference(refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons)
+end
+
+function annotate_one(fasta::String,reference::Reference)
+
+    num_refs = length(refs)
     t1 = time_ns()
-    target_id,target_seqf = readFasta(infile)
+    target_id,target_seqf = readFasta(fasta)
     target_length = length(target_seqf)
-    println(target_id)
+    # println(target_id)
     target_seqr = revComp(target_seqf)
     targetloopf = target_seqf*target_seqf[1:end-1]
     target_saf = makeSuffixArray(targetloopf,true)
@@ -59,7 +72,7 @@ for infile in ARGS[3:end]
     blocks_aligned_to_targetf = Array{Array{Tuple{Int32, Int32, Int32}}}(undef,num_refs*2)
     blocks_aligned_to_targetr = Array{Array{Tuple{Int32, Int32, Int32}}}(undef,num_refs*2)
     refcount = 0
-    for (refloop,refSA,refRA) in zip(refloops,refSAs,refRAs)
+    for (refloop,refSA,refRA) in zip(reference.refloops,reference.refSAs,reference.refRAs)
         refcount += 1
         f_aligned_blocks,r_aligned_blocks = alignLoops(refloop,refSA,refRA,targetloopf,target_saf,target_raf)
         if refcount % 2 == 1 # aligning + strand to + strand
@@ -85,7 +98,7 @@ for infile in ARGS[3:end]
 
     f_strand_annotations = AnnotationArray(target_id,'+',Array{Annotation,1}(undef,0))
     r_strand_annotations = AnnotationArray(target_id,'-',Array{Annotation,1}(undef,0))
-    for (ref_feature_array,blocksf,blocksr) in zip(ref_features,blocks_aligned_to_targetf,blocks_aligned_to_targetr)
+    for (ref_feature_array,blocksf,blocksr) in zip(reference.ref_features,blocks_aligned_to_targetf,blocks_aligned_to_targetr)
         f_strand_annotations.annotations = cat(f_strand_annotations.annotations,pushFeatures(ref_feature_array, target_id, '+', blocksf).annotations,dims=1)
         r_strand_annotations.annotations = cat(r_strand_annotations.annotations,pushFeatures(ref_feature_array, target_id, '-', blocksr).annotations,dims=1)
     end
@@ -95,8 +108,8 @@ for infile in ARGS[3:end]
     t4 = time_ns()
     #println("pushing annotations: " * string(t4-t3))
 
-    fstrand_feature_stacks, fshadow = stackFeatures(length(target_seqf),f_strand_annotations,feature_templates)
-    rstrand_feature_stacks, rshadow = stackFeatures(length(target_seqr),r_strand_annotations,feature_templates)
+    fstrand_feature_stacks, fshadow = stackFeatures(length(target_seqf),f_strand_annotations,reference.feature_templates)
+    rstrand_feature_stacks, rshadow = stackFeatures(length(target_seqr),r_strand_annotations,reference.feature_templates)
 
     t5 = time_ns()
     #println("stacking features: " * string(t5-t4))
@@ -152,5 +165,45 @@ for infile in ARGS[3:end]
     #println("refining gene models: " * string(t8-t7))
     #println("Overall: " * string(t8-t1))
 
-    writeSFF(target_id*".sff",target_id,target_fstrand_models,target_rstrand_models,gene_exons,fstrand_feature_stacks,rstrand_feature_stacks,targetloopf,targetloopr)
+    writeSFF(target_id*".sff",target_id,target_fstrand_models,target_rstrand_models,reference.gene_exons,fstrand_feature_stacks,rstrand_feature_stacks,targetloopf,targetloopr)
+end
+
+function annotate(refsdir::String, templates::String, fa_files::Array{String,1})
+    # num_refs = length(refs)
+
+    # refloops = Vector{String}(undef,num_refs*2)
+    # refSAs = Array{Array{Int32,1}}(undef,num_refs*2)
+    # refRAs = Array{Array{Int32,1}}(undef,num_refs*2)
+    # ref_features = Array{FeatureArray,1}(undef,num_refs*2)
+
+    # files = readdir(refsdir)
+    # iff_files = files[findall(x->endswith(x,".sff"), files)]
+
+    # for (i,ref) in enumerate(refs)
+    #     refgwsas = readGenomeWithSAs(joinpath(refsdir,ref.first*".gwsas"),ref.first)
+    #     refloops[i*2-1] = refgwsas.sequence * refgwsas.sequence[1:end-1]
+    #     rev = revComp(refgwsas.sequence)
+    #     refloops[i*2] = rev * rev[1:end-1]
+    #     refSAs[i*2-1] = refgwsas.forwardSA
+    #     refSAs[i*2] = refgwsas.reverseSA
+
+    #     refRAs[i*2-1] = makeSuffixArrayRanksArray(refgwsas.forwardSA)
+    #     refRAs[i*2] = makeSuffixArrayRanksArray(refgwsas.reverseSA)
+
+    #     #feature_file = iff_files[findfirst(x->startswith(x,ref.second),iff_files)]
+    #     feature_file = iff_files[findfirst(x->startswith(x,ref.second),iff_files)]
+    #     f_strand_features,r_strand_features = readFeatures(joinpath(refsdir,feature_file))
+    #     ref_features[i*2-1] = f_strand_features
+    #     ref_features[i*2] = r_strand_features
+    # end
+    reference = readReferences(refsdir, templates)
+
+    # feature_templates,gene_exons = readTemplates(templates)
+
+    for infile in fa_files
+
+        annotate_one(infile, reference)
+
+
+    end
 end

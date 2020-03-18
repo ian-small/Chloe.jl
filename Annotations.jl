@@ -16,8 +16,8 @@ struct FeatureArray
     features::Array{Feature,1}
 end
 
-function readFeatures(file)
-    let f_strand_features,r_strand_features
+function readFeatures(file::String)
+    # let f_strand_features,r_strand_features
     open(file) do f
         header = split(readline(f),'\t')
         f_strand_features = FeatureArray(header[1],parse(Int32,header[2]),'+',Array{Feature,1}(undef,0))
@@ -32,9 +32,10 @@ function readFeatures(file)
                 push!(r_strand_features.features,feature)
             end
         end
+        return f_strand_features,r_strand_features
     end
-    return f_strand_features::FeatureArray,r_strand_features::FeatureArray
-    end
+    
+    # end
 end
 
 #part or all of a Feature annotated by alignment
@@ -51,7 +52,7 @@ struct Annotation
 end
 
 #checks all blocks for overlap so could be speeded up by using an interval tree
-function pushFeature(from::String, feature::Feature, blocks)
+function pushFeature(from::String, feature::Feature, blocks)::Array{Annotation,1}
     pushed_features = Array{Annotation,1}(undef,0)
     tags = split(feature.path,'/')
     feature_type = tags[3]
@@ -73,7 +74,7 @@ function pushFeature(from::String, feature::Feature, blocks)
             push!(pushed_features,pushed_feature)
         end
     end
-    return pushed_features::Array{Annotation,1}
+    return pushed_features
 end
 
 struct FeatureTemplate
@@ -85,9 +86,9 @@ end
 
 using StatsBase
 
-function readTemplates(file)
+function readTemplates(file::String)
     templates = FeatureTemplate[]
-    gene_exons = []
+    gene_exons = String[]
     open(file) do f
         header = readline(f)
         while !eof(f)
@@ -646,26 +647,26 @@ function refineGeneModels!(genome_length::Integer,targetloop::String, gene_model
         isempty(model) && continue
         #sort features in model by mid-point to avoid cases where long intron overlaps short exon
         sort!(model,by = f -> f.start+f.length/2)
-        println(model)
+        # println(model)
         last_exon = last(model)
-        println(last_exon)
+        # println(last_exon)
         #if CDS, find phase, stop codon and set feature.length
         if occursin("CDS",last_exon.path)
             translation = translateFeature(targetloop,last_exon)
-            println(translation)
+            # println(translation)
             last_exon.phase = getFeaturePhaseFromAnnotationOffsets(last_exon,annotations)
-            println(last_exon)
+            # println(last_exon)
             if !occursin("rps12A",last_exon.path)
                 setLongestORF!(genome_length,targetloop,last_exon)
             end
-            println(last_exon)
+            # println(last_exon)
             translation = translateFeature(targetloop,last_exon)
-            println(translation)
+            # println(translation)
             last_cds_examined = last_exon
         end
         for i in length(model)-1:-1:1
             feature = model[i]
-            println(feature)
+            # println(feature)
             #check adjacent to last exon, if not...
             gap = model[i+1].start - (feature.start + feature.length)
             if gap ≠ 0 && gap < 100
@@ -675,7 +676,7 @@ function refineGeneModels!(genome_length::Integer,targetloop::String, gene_model
             if gap ≠ 0
                 println("Non-adjacent boundaries for ",feature.path," ",model[i+1].path)
             end
-            println(feature)
+           #  println(feature)
             #if CDS, check phase is compatible
             if occursin("CDS",feature.path)
                 feature.phase = getFeaturePhaseFromAnnotationOffsets(feature,annotations)
@@ -689,15 +690,15 @@ function refineGeneModels!(genome_length::Integer,targetloop::String, gene_model
         #if CDS, find start codon and set feature.start
         first_exon = first(model)
         if occursin("CDS",first_exon.path)
-            println(first_exon)
+            # println(first_exon)
             first_exon.phase = getFeaturePhaseFromAnnotationOffsets(first_exon,annotations)
             if !occursin("rps12B",last_exon.path)
                 first_exon = findStartCodon!(genome_length,targetloop,first_exon)
-                println(first_exon)
+                # println(first_exon)
                 #first_exon = findStartCodon2!(genome_length,targetloop,first_exon)
                 #println(first_exon)
             end
-            println(first_exon)
+            # println(first_exon)
         end
     end
     return gene_models
