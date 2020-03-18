@@ -2,11 +2,17 @@
 
 include("annotate_genomes.jl")
 using ArgParse
-const DEBUG = get(ENV, "DEBUG", "false") == "true"
+using Logging
+
+const levels = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, "warn" => Logging.Warn, 
+"error"=>Logging.Error)
  
 function chloe(;refsdir = "reference_1116", fasta_files = String[], verbose = false,
-    template = "optimised_templates.v2.tsv")
-    annotate(refsdir, template, fasta_files)
+    template = "optimised_templates.v2.tsv", level="warn", output::MayBeString = nothing)
+
+    with_logger(ConsoleLogger(stderr,get(levels, level, Logging.Warn))) do
+        annotate(refsdir, template, fasta_files, output)
+    end
 end
 
 
@@ -21,6 +27,9 @@ args = ArgParseSettings(autofix_names = true)  # turn "-" into "_" for arg names
         required = true
         action = :store_arg
         help = "fasta files to process"
+    "--output", "-o"
+        arg_type = String
+        help = "output filename"
     "--reference", "-r"
         arg_type = String
         default = "reference_1116"
@@ -36,17 +45,19 @@ args = ArgParseSettings(autofix_names = true)  # turn "-" into "_" for arg names
     "--verbose", "-v"
         action = :store_true
         help = "increase verbosity"
-
+        "--level", "-l"
+        arg_type = String
+        default ="warn"
+        help = "log level (warn,debug,info,error)"
 end
 args.epilog = """
     examples:\n
-    \ua0\ua0 # main.jl -t template.tsv -r reference_dir fasta1 fasta2 ...\n
+    \ua0\ua0 # chloe.jl -t template.tsv -r reference_dir fasta1 fasta2 ...\n
     """
 
 function real_main() 
     parsed_args = parse_args(ARGS, args; as_symbols = true)
-    # filter!((k, v)->v ∉ (nothing, false), parsed_args)
-    filter!(kv->kv.second ∉ (nothing, false), parsed_args)
+    # filter!(kv->kv.second ∉ (nothing, false), parsed_args)
     chloe(;parsed_args...)
 end
 
