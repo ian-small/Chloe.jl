@@ -184,47 +184,21 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     else
         fname = "$(target_id).sff"
     end
-    writeSFF(fname, target_id, target_fstrand_models, target_rstrand_models, reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks, targetloopf, targetloopr)
+    writeSFF(fname, target_id, target_fstrand_models, target_rstrand_models,
+        reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks,
+        targetloopf, targetloopr)
     @info "[$(target_id)] Overall: $(ns(time_ns() - t1))"
 
 end
 
 function annotate(refsdir::String, templates::String, fa_files::Array{String,1}, output::MayBeString)
-    # num_refs = length(refs)
 
-    # refloops = Vector{String}(undef,num_refs*2)
-    # refSAs = Array{Array{Int32,1}}(undef,num_refs*2)
-    # refRAs = Array{Array{Int32,1}}(undef,num_refs*2)
-    # ref_features = Array{FeatureArray,1}(undef,num_refs*2)
-
-    # files = readdir(refsdir)
-    # iff_files = files[findall(x->endswith(x,".sff"), files)]
-
-    # for (i,ref) in enumerate(refs)
-    #     refgwsas = readGenomeWithSAs(joinpath(refsdir,ref.first*".gwsas"),ref.first)
-    #     refloops[i*2-1] = refgwsas.sequence * refgwsas.sequence[1:end-1]
-    #     rev = revComp(refgwsas.sequence)
-    #     refloops[i*2] = rev * rev[1:end-1]
-    #     refSAs[i*2-1] = refgwsas.forwardSA
-    #     refSAs[i*2] = refgwsas.reverseSA
-
-    #     refRAs[i*2-1] = makeSuffixArrayRanksArray(refgwsas.forwardSA)
-    #     refRAs[i*2] = makeSuffixArrayRanksArray(refgwsas.reverseSA)
-
-    #     #feature_file = iff_files[findfirst(x->startswith(x,ref.second),iff_files)]
-    #     feature_file = iff_files[findfirst(x->startswith(x,ref.second),iff_files)]
-    #     f_strand_features,r_strand_features = readFeatures(joinpath(refsdir,feature_file))
-    #     ref_features[i*2-1] = f_strand_features
-    #     ref_features[i*2] = r_strand_features
-    # end
     reference = readReferences(refsdir, templates)
 
-    # feature_templates,gene_exons = readTemplates(templates)
-
+ 
     for infile in fa_files
 
         annotate_one(infile, reference, output)
-
 
     end
 end

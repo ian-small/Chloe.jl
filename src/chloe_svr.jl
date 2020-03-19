@@ -1,35 +1,47 @@
 
 
 include("annotate_genomes.jl")
+using JuliaWebAPI
 using ArgParse
 using Logging
 
 const levels = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, "warn" => Logging.Warn, 
 "error"=>Logging.Error)
+
+const ADDRESS = "tcp://127.0.0.1:9999"
+
  
-function chloe(;refsdir = "reference_1116", fasta_files = String[], verbose = false,
-    template = "optimised_templates.v2.tsv", level="warn", output::MayBeString = nothing)
+function chloe_svr(;refsdir = "reference_1116", address=ADDRESS,
+    template = "optimised_templates.v2.tsv", level="warn", async=false)
+
 
     with_logger(ConsoleLogger(stderr,get(levels, level, Logging.Warn))) do
-        annotate(refsdir, template, fasta_files, output)
+        reference = readReferences(refsdir, template)
+        @info "read meta data"
+
+        function chloe(fasta::String, fname::String)
+            annotate_one(fasta, reference, fname)
+            return fname
+        end
+
+        function ping()
+            return "OK"
+        end
+
+        
+        process(
+            JuliaWebAPI.create_responder([
+                (chloe, true),
+                (ping, false)
+
+            ], address, true, "myid"); async=async
+        )
     end
 end
-
-
-# const julia_v07 = VERSION > v"0.7-"
 
 args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
 
 @add_arg_table! args begin
-    "fasta-files"
-        arg_type = String
-        nargs = '+'
-        required = true
-        action = :store_arg
-        help = "fasta files to process"
-    "--output", "-o"
-        arg_type = String
-        help = "output filename (or directory if multiple fasta files)"
     "--reference", "-r"
         arg_type = String
         default = "reference_1116"
@@ -42,23 +54,24 @@ args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_
         metavar = "TSV"
         dest_name = "template"
         help = "template tsv"
-    "--verbose", "-v"
-        action = :store_true
-        help = "increase verbosity"
-        "--level", "-l"
+    "--address", "-a"
         arg_type = String
+        default = ADDRESS
+        help = "ZMQ address to listen on"
+    "--level", "-l"
+        arg_type = String
+        metavar = "LOGLEVEL"
         default ="warn"
         help = "log level (warn,debug,info,error)"
+        "--async"
+        action = :store_true
+        help = "run APIresponder async"
 end
-# args.epilog = """
-#     examples:\n
-#     \ua0\ua0 # chloe.jl -t template.tsv -r reference_dir fasta1 fasta2 ...\n
-#     """
 
 function real_main() 
     parsed_args = parse_args(ARGS, args; as_symbols = true)
     # filter!(kv->kv.second ∉ (nothing, false), parsed_args)
-    chloe(;parsed_args...)
+    chloe_svr(;parsed_args...)
 end
 
 

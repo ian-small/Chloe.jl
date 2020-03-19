@@ -4,7 +4,8 @@ mutable struct Feature
     path::String
     start::Int32
     length::Int32
-    # phase is the number of nucleotides to skip at the start of the sequence to be in the correct reading frame
+    # phase is the number of nucleotides to skip at the start of the sequence 
+    # to be in the correct reading frame
     phase::Int8
 end
 
@@ -44,10 +45,12 @@ struct Annotation
     path::String
     start::Int32
     length::Int32
-    # offsets are the distance from the edge of the annotation to the end of the original feature
+    # offsets are the distance from the edge of the annotation to the end of 
+    # the original feature
     offset5::Int32
     offset3::Int32
-    # phase is the number of nucleotides to skip at the start of the sequence to be in the correct reading frame
+    # phase is the number of nucleotides to skip at the start of the sequence 
+    # to be in the correct reading frame
     phase::Int8
 end
 
@@ -69,7 +72,8 @@ function pushFeature(from::String, feature::Feature, blocks)::Array{Annotation,1
             end
             path_components = split(feature.path, '/')
             annotation_path = join([path_components[1],"?",path_components[3],path_components[4]], "/")
-            pushed_feature = Annotation(from, annotation_path, startA - block[1] + block[2], flength, offset5, feature.length - (startA - feature.start) - flength, phase)
+            pushed_feature = Annotation(from, annotation_path, startA - block[1] + block[2],
+                                        flength, offset5, feature.length - (startA - feature.start) - flength, phase)
             # println(feature," ",block," ",pushed_feature)
             push!(pushed_features, pushed_feature)
         end
@@ -104,7 +108,8 @@ function readTemplates(file::String)
     return sort!(templates, by = x->x.path), countmap(gene_exons)
 end
 
-# entire set of Annotations for one strand of one genome; needs to be mutable because of cat() joining to annotations
+# entire set of Annotations for one strand of one genome; needs to be mutable 
+# because of cat() joining to annotations
 mutable struct AnnotationArray
     genome::String
     strand::Char
@@ -130,11 +135,12 @@ end
 
 function stackFeatures(length::Integer, annotations::AnnotationArray, templates::Array{FeatureTemplate,1})
     stacks = Vector{FeatureStack}(undef, 0)
-    shadowstack = fill(-1, length) # will be negative image of all stacks combined, initialised to small negative number; acts as prior expectation for feature-finding
+    shadowstack = fill(-1, length) # will be negative image of all stacks combined,
+    # initialised to small negative number; acts as prior expectation for feature-finding
     for annotation in annotations.annotations
         template_index = findfirst(x->x.path == annotation.path, templates)
         if template_index == nothing
-            println("Can't find template for " * annotation.path)
+            @warn "Can't find template for $(annotation.path)"
         end
         if isempty(stacks) || (index = findfirst(x->x.path == annotation.path, stacks)) == nothing
             stack = FeatureStack(annotation.path, zeros(Int32, length), templates[template_index])
@@ -154,7 +160,8 @@ mutable struct AnnotatedFeature
     path::String
     start::Int32
     length::Int32
-    # phase is the number of nucleotides to skip at the start of the sequence to be in the correct reading frame
+    # phase is the number of nucleotides to skip at the start of the
+    # sequence to be in the correct reading frame
     phase::Int8
     annotations::Array{Annotation,1}
     stack::Vector{Int32}
@@ -287,7 +294,7 @@ function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Annota
         end
     end
     if length(phases) == 0
-        println("No annotations found for ", feat.path)
+        @warn "No annotations found for  $(feat.path)"
         return 0
     end
     # println(feat.path," ",phases)
@@ -674,14 +681,14 @@ function refineGeneModels!(genome_length::Integer, targetloop::String, gene_mode
                 gap = model[i + 1].start - (feature.start + feature.length)
             end
             if gap ≠ 0
-                println("Non-adjacent boundaries for ", feature.path, " ", model[i + 1].path)
+                @warn "Non-adjacent boundaries for $(feature.path) $(model[i + 1].path)"
             end
             # @debug "feature" feature
             # if CDS, check phase is compatible
             if occursin("CDS", feature.path)
                 feature.phase = getFeaturePhaseFromAnnotationOffsets(feature, annotations)
                 if (@isdefined last_cds_examined) && phaseCounter(feature.phase, feature.length % 3) != last_cds_examined.phase
-                    println("Incompatible phases for ", feature.path, " ", last_cds_examined.path)
+                    @warn "Incompatible phases for $(feature.path) $(last_cds_examined.path)"
                     # refine boundaries (how?)
                 end
                 last_cds_examined = feature
@@ -722,7 +729,8 @@ function getGeneModelByName(gm_name::String, gene_models::Array{Array{Feature,1}
     return nothing
 end
 
-function writeModelToSFF(outfile, model::Array{Feature,1}, model_id, targetloop, gene_exons, maxlengths, feature_stacks, strand)
+function writeModelToSFF(outfile, model::Array{Feature,1}, model_id, targetloop, gene_exons,
+                         maxlengths, feature_stacks, strand)
     gene = split(first(model).path, '/')[1]
     expected_exons = gene_exons[gene]
     exon_count = 0
@@ -776,18 +784,20 @@ function writeModelToSFF(outfile, model::Array{Feature,1}, model_id, targetloop,
         if hasPrematureStop
             write(outfile, "possible pseudogene, premature stop codon ")
         end
-        #= 
-        if #too short compared to template
-            write(outfile,"possible pseudogene, too short ")
-        end
-        if #too short divergent compared to template
-            write(outfile,"possible pseudogene, too divergent ")
-        end =#
+
+        # if #too short compared to template
+        #     write(outfile,"possible pseudogene, too short ")
+        # end
+        # if #too short divergent compared to template
+        #     write(outfile,"possible pseudogene, too divergent ")
+        # end
         write(outfile, "\n")
     end
 end
 
-function writeSFF(outfile::String, id, fstrand_models::Array{Array{Feature,1},1}, rstrand_models::Array{Array{Feature,1},1}, gene_exons, fstrand_feature_stacks, rstrand_feature_stacks, targetloopf, targetloopr)
+function writeSFF(outfile::String, id, fstrand_models::Array{Array{Feature,1},1},
+                  rstrand_models::Array{Array{Feature,1},1}, gene_exons,
+                  fstrand_feature_stacks, rstrand_feature_stacks, targetloopf, targetloopr)
 
     maxlengths = Dict{String,Integer}()
     for (fmodel, rmodel) in zip(fstrand_models, rstrand_models)
