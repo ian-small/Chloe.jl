@@ -15,7 +15,7 @@ function gbff2fasta(infile)
                 metadata = metadata * line[13:end]
                 line = readline(f)
             end
-            println(metadata)
+            @debug metadata
             while !startswith(line, "ORIGIN")
                 line = readline(f)
             end
