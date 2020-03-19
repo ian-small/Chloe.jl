@@ -10,14 +10,24 @@ const levels = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, "warn" => Log
 
 const ADDRESS = "tcp://127.0.0.1:9999"
 
- 
+MayBeString = Union{Nothing,String}
+MayBeIO = Union{Nothing,IOStream}
+
 function chloe_svr(;refsdir = "reference_1116", address=ADDRESS,
-    template = "optimised_templates.v2.tsv", level="warn", async=false)
+    template = "optimised_templates.v2.tsv", level="warn", async=false, logfile::MayBeString=nothing)
+    io::MayBeIO = nothing
 
+    if logfile === nothing
+        logger = ConsoleLogger(stderr,get(levels, level, Logging.Warn))
+    else
+        io = open(logfile::String, "a")
+        logger = SimpleLogger(io, get(levels, level, Logging.Warn))
+    end
 
-    with_logger(ConsoleLogger(stderr,get(levels, level, Logging.Warn))) do
+    with_logger(logger) do
         reference = readReferences(refsdir, template)
         @info "read meta data"
+        @info "using $(Threads.nthreads()) threads"
 
         function chloe(fasta::String, fname::String)
             annotate_one(fasta, reference, fname)
@@ -27,15 +37,19 @@ function chloe_svr(;refsdir = "reference_1116", address=ADDRESS,
         function ping()
             return "OK"
         end
-
-        
+    
         process(
             JuliaWebAPI.create_responder([
-                (chloe, true),
+                (chloe, false),
                 (ping, false)
 
-            ], address, true, "myid"); async=async
+            ], address, true, "chloe"); async=async
         )
+
+        if io !== nothing
+            @info "closing logfile: $(logfile)"
+            close(io::IOStream)
+        end
     end
 end
 
@@ -58,6 +72,10 @@ args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_
         arg_type = String
         default = ADDRESS
         help = "ZMQ address to listen on"
+    "--logfile"
+        arg_type=String
+        metavar="FILE"
+        help="log to file"
     "--level", "-l"
         arg_type = String
         metavar = "LOGLEVEL"
@@ -67,6 +85,9 @@ args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_
         action = :store_true
         help = "run APIresponder async"
 end
+args.epilog = """
+Run Chloe as a background ZMQ service
+"""
 
 function real_main() 
     parsed_args = parse_args(ARGS, args; as_symbols = true)

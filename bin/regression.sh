@@ -1,6 +1,6 @@
 #!/bin/sh
 mkdir testo
-julia src/chloe.jl -o testo testfa/*.fa --level=info
+JULIA_NUM_THREADS=4 julia src/chloe.jl -o testo testfa/*.fa --level=info
 for f in $(ls testo)
 do 
     echo "diffing $f"

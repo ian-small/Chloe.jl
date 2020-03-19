@@ -10,7 +10,7 @@ function chloe_client(;fasta = String[], address = ADDRESS, output::String)
     if res["code"] !== 200
         println("failed")
     else
-        println(".sff file: $(res["data"]["data"])")
+        println(".sff file: $(res["data"])")
     end
 
 end
@@ -36,6 +36,10 @@ args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into 
         help = "ZMQ address to listen on"
 
 end
+
+args.epilog = """
+Annotate a fasta file unsing Chloe server
+"""
 
 function real_main() 
     parsed_args = parse_args(ARGS, args; as_symbols = true)

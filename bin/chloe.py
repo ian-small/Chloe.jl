@@ -55,13 +55,18 @@ def annotate(timeout, address, fasta, output):
     """Annotate a fasta file."""
     socket = setup_zmq(address)
     msg = dict(cmd="chloe", args=[fasta, output])
-    print("sending", msg)
+    #print("sending", msg)
     socket.send_json(msg)
     if timeout is not None:
         poll(socket, timeout)
 
     resp = socket.recv_json()
-    click.secho(f"got {resp}")
+    # click.secho(f"got {resp}")
+    code = resp["code"]
+    click.secho(
+        "OK" if code == 200 else f"No Server at {address}",
+        fg="green" if code == 200 else "red",
+        bold=True)
 
 
 @cli.command()
