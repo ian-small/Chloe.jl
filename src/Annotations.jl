@@ -108,23 +108,24 @@ function readTemplates(file::String)
     return sort!(templates, by = x->x.path), countmap(gene_exons)
 end
 
-# entire set of Annotations for one strand of one genome; needs to be mutable 
-# because of cat() joining to annotations
-mutable struct AnnotationArray
+struct AnnotationArray
     genome::String
     strand::Char
     annotations::Array{Annotation,1}
 end
 
 function pushFeatures(reffeaturearray, target_id, target_strand, aligned_blocks)
-    pushed_features = AnnotationArray(target_id, target_strand, Array{Annotation,1}(undef, 0))
+    # pushed_features = AnnotationArray(target_id, target_strand, Array{Annotation,1}(undef, 0))
+    annotations = Array{Annotation,1}(undef, 0)
     for feature in reffeaturearray.features
         new_features = pushFeature(reffeaturearray.genome, feature, aligned_blocks)
         if !isempty(new_features)
-            pushed_features.annotations = cat(pushed_features.annotations, new_features, dims = 1)
+            # pushed_features.annotations = cat(pushed_features.annotations, new_features, dims = 1)
+            annotations = cat(annotations, new_features, dims = 1)
         end
     end
-    return pushed_features::AnnotationArray
+    # return pushed_features::AnnotationArray
+    return AnnotationArray(target_id, target_strand, annotations)
 end
 
 struct FeatureStack
@@ -156,17 +157,17 @@ function stackFeatures(length::Integer, annotations::AnnotationArray, templates:
     return stacks, shadowstack
 end
 
-mutable struct AnnotatedFeature
-    path::String
-    start::Int32
-    length::Int32
-    # phase is the number of nucleotides to skip at the start of the
-    # sequence to be in the correct reading frame
-    phase::Int8
-    annotations::Array{Annotation,1}
-    stack::Vector{Int32}
-    template::FeatureTemplate
-end
+# mutable struct AnnotatedFeature
+#     path::String
+#     start::Int32
+#     length::Int32
+#     # phase is the number of nucleotides to skip at the start of the
+#     # sequence to be in the correct reading frame
+#     phase::Int8
+#     annotations::Array{Annotation,1}
+#     stack::Vector{Int32}
+#     template::FeatureTemplate
+# end
 
 function expandBoundaryInChunks(feature_stack::FeatureStack, shadowstack, origin, direction, max)
     glen = length(shadowstack)
@@ -467,7 +468,8 @@ function startScore(cds::Feature, codon::SubString)
     end
 end
 
-function findStartCodon2!(genome_length::Integer, genomeloop::String, cds::Feature, predicted_starts, predicted_starts_weights, feature_stack, shadowstack)
+function findStartCodon2!(genome_length::Integer, genomeloop::String, cds::Feature, predicted_starts,
+                          predicted_starts_weights, feature_stack, shadowstack)
     # define range in which to search from upstream stop to end of feat
     start5 = cds.start + cds.phase
     codon = SubString(genomeloop, start5, start5 + 2)
@@ -509,7 +511,7 @@ function findStartCodon2!(genome_length::Integer, genomeloop::String, cds::Featu
         end
     end
 
-    # combine vectors usng parameter weights
+    # combine vectors using parameter weights
     result = codons .* phase .* cumulative_stack_coverage .+ cumulative_shadow_coverage .+ predicted_starts
     # set feat.start to highest scoring position
     maxstartscore, maxstartpos = findmax(result)
@@ -649,7 +651,9 @@ function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, stacks::Array{
     feat2.start = fulcrum + 1
 end
 
-function refineGeneModels!(genome_length::Integer, targetloop::String, gene_models::Array{Array{Feature,1},1}, annotations::AnnotationArray, feature_stacks::Array{FeatureStack})
+function refineGeneModels!(genome_length::Integer, targetloop::String,
+                          gene_models::Array{Array{Feature,1},1}, annotations::AnnotationArray,
+                          feature_stacks::Array{FeatureStack})
     for model in gene_models
         isempty(model) && continue
         # sort features in model by mid-point to avoid cases where long intron overlaps short exon

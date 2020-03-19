@@ -239,11 +239,11 @@ function alignLoops(refloop, refSA, refRA, targetloop, target_SA, target_RA)
     # print("Coverage target to ref: ")
     # println(blockCoverage(tr_aligned_blocks))
 
-    #= 
+
     #combine rt and tr blocks; tr blocks need [1] and [2] to be swapped
-    for tr_block in tr_aligned_blocks
-        push!(rt_aligned_blocks,(tr_block[2],tr_block[1],tr_block[3]))
-    end =#
+    # for tr_block in tr_aligned_blocks
+    #     push!(rt_aligned_blocks,(tr_block[2],tr_block[1],tr_block[3]))
+    # end
     merged_blocks = mergeBlockArrays(rt_aligned_blocks, tr_aligned_blocks)
 
     # print("Merged coverage: ")

@@ -19,9 +19,9 @@ const refs = Dict("AP000423" => "Arabidopsis","JX512022" => "Medicago","Z00044" 
 
 struct Reference
     refloops::Vector{String}
-    refSAs::Array{Array{Int32,1}}
-    refRAs::Array{Array{Int32,1}}
-    ref_features::Array{FeatureArray,1}
+    refSAs::Array{Array{Int32}}
+    refRAs::Array{Array{Int32}}
+    ref_features::Array{FeatureArray}
     feature_templates::Array{FeatureTemplate}
     gene_exons::Dict{String,Int32}
 end
@@ -69,7 +69,9 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     t1 = time_ns()
     target_id, target_seqf = readFasta(fasta)
     target_length = length(target_seqf)
+    
     @info "[$(target_id)] length: $(target_length)"
+    
     target_seqr = revComp(target_seqf)
     targetloopf = target_seqf * target_seqf[1:end - 1]
     target_saf = makeSuffixArray(targetloopf, true)
@@ -81,9 +83,20 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
 
     blocks_aligned_to_targetf = Array{Array{Tuple{Int32,Int32,Int32}}}(undef, num_refs * 2)
     blocks_aligned_to_targetr = Array{Array{Tuple{Int32,Int32,Int32}}}(undef, num_refs * 2)
-    refcount = 0
-    for (refloop, refSA, refRA) in zip(reference.refloops, reference.refSAs, reference.refRAs)
-        refcount += 1
+    # refcount = 0
+    # for (refcount, (refloop, refSA, refRA)) in enumerate(zip(reference.refloops, reference.refSAs, reference.refRAs))
+    #     # refcount += 1
+    #     f_aligned_blocks, r_aligned_blocks = alignLoops(refloop, refSA, refRA, targetloopf, target_saf, target_raf)
+    #     if refcount % 2 == 1 # aligning + strand to + strand
+    #         blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref forward and target forward strands
+    #         blocks_aligned_to_targetr[refcount + 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref reverse and target reverse strands
+    #     else    # aligning - strand to + strand
+    #         blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref reverse and target forward strands
+    #         blocks_aligned_to_targetr[refcount - 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref forward and target reverse strands
+    #     end
+    # end
+    function alignit(refcount)
+        refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
         f_aligned_blocks, r_aligned_blocks = alignLoops(refloop, refSA, refRA, targetloopf, target_saf, target_raf)
         if refcount % 2 == 1 # aligning + strand to + strand
             blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref forward and target forward strands
@@ -91,7 +104,10 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
         else    # aligning - strand to + strand
             blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref reverse and target forward strands
             blocks_aligned_to_targetr[refcount - 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref forward and target reverse strands
-        end
+        end       
+    end
+    Threads.@threads for i in 1:length(reference.refloops) 
+        alignit(i)
     end
 
     t3 = time_ns()
@@ -108,14 +124,25 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     @debug "[$(target_id)] coverages:" coverages
 
 
-    f_strand_annotations = AnnotationArray(target_id, '+', Array{Annotation,1}(undef, 0))
-    r_strand_annotations = AnnotationArray(target_id, '-', Array{Annotation,1}(undef, 0))
+    # f_strand_annotations = AnnotationArray(target_id, '+', Array{Annotation,1}(undef, 0))
+    # r_strand_annotations = AnnotationArray(target_id, '-', Array{Annotation,1}(undef, 0))
+    # for (ref_feature_array, blocksf, blocksr) in zip(reference.ref_features, blocks_aligned_to_targetf, blocks_aligned_to_targetr)
+    #     f_strand_annotations.annotations = cat(f_strand_annotations.annotations, pushFeatures(ref_feature_array, target_id, '+', blocksf).annotations, dims = 1)
+    #     r_strand_annotations.annotations = cat(r_strand_annotations.annotations, pushFeatures(ref_feature_array, target_id, '-', blocksr).annotations, dims = 1)
+    # end
+    # sort!(f_strand_annotations.annotations, by = x->x.path)
+    # sort!(r_strand_annotations.annotations, by = x->x.path)
+
+    f_annotations = Array{Annotation,1}(undef, 0)
+    r_annotations = Array{Annotation,1}(undef, 0)
     for (ref_feature_array, blocksf, blocksr) in zip(reference.ref_features, blocks_aligned_to_targetf, blocks_aligned_to_targetr)
-        f_strand_annotations.annotations = cat(f_strand_annotations.annotations, pushFeatures(ref_feature_array, target_id, '+', blocksf).annotations, dims = 1)
-        r_strand_annotations.annotations = cat(r_strand_annotations.annotations, pushFeatures(ref_feature_array, target_id, '-', blocksr).annotations, dims = 1)
+        f_annotations = cat(f_annotations, pushFeatures(ref_feature_array, target_id, '+', blocksf).annotations, dims = 1)
+        r_annotations = cat(r_annotations, pushFeatures(ref_feature_array, target_id, '-', blocksr).annotations, dims = 1)
     end
-    sort!(f_strand_annotations.annotations, by = x->x.path)
-    sort!(r_strand_annotations.annotations, by = x->x.path)
+    sort!(f_annotations, by = x->x.path)
+    sort!(r_annotations, by = x->x.path)
+    f_strand_annotations = AnnotationArray(target_id, '+', f_annotations)
+    r_strand_annotations = AnnotationArray(target_id, '-', r_annotations)
 
     t4 = time_ns()
     @info "[$(target_id)] pushing annotations: $(ns(t4 - t3))"
