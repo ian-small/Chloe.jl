@@ -67,6 +67,9 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
 
     num_refs = length(refs)
     t1 = time_ns()
+    if !isfile(fasta)
+        error("$(fasta): not a file!")
+    end
     target_id, target_seqf = readFasta(fasta)
     target_length = length(target_seqf)
     

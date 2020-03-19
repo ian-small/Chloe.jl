@@ -34,20 +34,27 @@ end
 
 function readFasta(file)
     id = ""
-    seq = ""
+    seqs = Array{String}(undef, 0)
     open(file) do f
         header = readline(f)
-        id = split(header, " ")[1][2:end]
-        while !eof(f)
-            seq = seq * uppercase(readline(f))
+        if !startswith(header, ">")
+            error("expecting '>' as start of fasta header found: $(header)")
         end
+        id = split(header, " ")[1][2:end]
+        for (idx, line) in enumerate(eachline(f))
+            line = uppercase(strip(line))
+            if match(r"^[ACTGRYNKX]+$", line) === nothing
+                error("expecting nucleotide sequence found[$(file):$(idx)]: $(line)")
+            end
+            push!(seqs, line)
+        end
+        return id, join(seqs, "")
     end
-    return id, seq
 end
-
+const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
+    
 function revComp(dna)
-    comp = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
-    reverse(map(x->get(comp, x, 'N'), dna))
+    reverse(map(x->get(COMP, x, 'N'), dna))
 end
 
 function frameCounter(base::Integer, addition::Integer)
