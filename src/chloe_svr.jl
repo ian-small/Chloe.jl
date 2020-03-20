@@ -4,6 +4,7 @@ include("annotate_genomes.jl")
 using JuliaWebAPI
 using ArgParse
 using Logging
+using LogRoller
 
 const levels = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, "warn" => Logging.Warn, 
 "error"=>Logging.Error)
@@ -11,18 +12,14 @@ const levels = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, "warn" => Log
 const ADDRESS = "tcp://127.0.0.1:9999"
 
 
-MayBeIO = Union{Nothing,IOStream}
-
-
 function chloe_svr(;refsdir = "reference_1116", address=ADDRESS,
     template = "optimised_templates.v2.tsv", level="warn", async=false, logfile::MayBeString=nothing)
-    io::MayBeIO = nothing
+    llevel = get(levels, level, Logging.Warn)
 
     if logfile === nothing
-        logger = ConsoleLogger(stderr,get(levels, level, Logging.Warn))
+        logger = ConsoleLogger(stderr,llevel)
     else
-        io = open(logfile::String, "a")
-        logger = SimpleLogger(io, get(levels, level, Logging.Warn))
+        logger = RollingLogger(logfile::String, 10 * 1000000, 2, llevel);
     end
 
     with_logger(logger) do
@@ -46,11 +43,10 @@ function chloe_svr(;refsdir = "reference_1116", address=ADDRESS,
 
             ], address, true, "chloe"); async=async
         )
-
-        if io !== nothing
-            @info "closing logfile: $(logfile)"
-            close(io::IOStream)
+        if isa(logger, RollingLogger)
+            close(logger::RollingLogger)
         end
+
     end
 end
 
