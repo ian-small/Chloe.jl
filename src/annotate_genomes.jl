@@ -26,6 +26,13 @@ struct Reference
     gene_exons::Dict{String,Int32}
 end
 
+function show_reference(reference::Reference)
+    return """templates=$(length(reference.feature_templates)), 
+        gene_exons=$(length(reference.gene_exons))[$(sum(values(reference.gene_exons)))],
+        ref seq loops=$(length(reference.refloops))[$(sum(map(x->length(x), reference.refloops)))]
+        """
+end
+
 function readReferences(refsdir::String, templates::String)
 
     num_refs = length(refs)

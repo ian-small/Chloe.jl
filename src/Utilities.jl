@@ -38,7 +38,7 @@ function readFasta(file)
     open(file) do f
         header = strip(readline(f))
         if !startswith(header, ">")
-            error("expecting '>' as start of fasta header found: $(header)")
+            error("expecting '>' as start of fasta header found: \"$(header)\"")
         end
         id = split(header, " ")[1][2:end]
         for (idx, line) in enumerate(eachline(f))
@@ -47,9 +47,8 @@ function readFasta(file)
                 continue
             end
             # see https://www.bioinformatics.org/sms/iupac.html
-            # also SWKMBDHV
             if match(r"^[ACTGRYNXSWKMBDHV.-]+$", line) === nothing
-                error("expecting nucleotide sequence found[$(idx)]: $(line)")
+                error("expecting nucleotide sequence found[$(idx)]: \"$(line)\"")
             end
             push!(seqs, line)
         end

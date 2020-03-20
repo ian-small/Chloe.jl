@@ -10,8 +10,9 @@ const levels = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, "warn" => Log
 
 const ADDRESS = "tcp://127.0.0.1:9999"
 
-MayBeString = Union{Nothing,String}
+
 MayBeIO = Union{Nothing,IOStream}
+
 
 function chloe_svr(;refsdir = "reference_1116", address=ADDRESS,
     template = "optimised_templates.v2.tsv", level="warn", async=false, logfile::MayBeString=nothing)
@@ -26,10 +27,10 @@ function chloe_svr(;refsdir = "reference_1116", address=ADDRESS,
 
     with_logger(logger) do
         reference = readReferences(refsdir, template)
-        @info "read meta data"
+        @info show_reference(reference)
         @info "using $(Threads.nthreads()) threads"
 
-        function chloe(fasta::String, fname::String)
+        function chloe(fasta::String, fname::MayBeString)
             annotate_one(fasta, reference, fname)
             return fname
         end
