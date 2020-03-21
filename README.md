@@ -19,3 +19,13 @@ ret = apicall(i, "chloe", fasta, output)
 @assert ret["code"] == 200
 fname = ret["data"]["data"]
 ```
+
+### Installing depenencies
+
+Start julia and type `]` then type:
+
+```
+pkg> activate .
+pkg> instantiate
+pkg> status
+```
