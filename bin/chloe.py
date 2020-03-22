@@ -2,7 +2,7 @@ import zmq
 import json
 import click
 
-#ADDRESS = "tcp://127.0.0.1:9999"
+# ADDRESS = "tcp://127.0.0.1:9999"
 ADDRESS = "ipc:///tmp/chloe-client"
 context = zmq.Context()
 
@@ -28,6 +28,7 @@ def address(f):
         show_default=True,
     )(f)
     f = click.option(
+        "-t",
         "--timeout",
         type=float,
         help="wait timeout in milliseconds [default: wait forever]",
@@ -66,16 +67,16 @@ def annotate(timeout, address, fasta, output):
     # click.secho(f"got {resp}")
     code = resp["code"]
     click.secho(
-        "OK" if code == 200 else f"No Server at {address}",
+        str(resp["data"]) if code == 200 else f"No Server at {address}",
         fg="green" if code == 200 else "red",
         bold=True,
     )
     data = resp["data"]
-    print('data', data)
+    print("data", data)
 
 
 @cli.command()
-@click.option("--nthreads", default=1)
+@click.option("-n", "--nthreads", default=1)
 @address
 def terminate(timeout, address, nthreads):
     """Shutdown the server."""
@@ -106,7 +107,7 @@ def ping(timeout, address):
     resp = socket.recv_json()
     code = resp["code"]
     click.secho(
-        "OK" if code == 200 else f"No Server at {address}",
+        str(resp["data"]) if code == 200 else f"No Server at {address}",
         fg="green" if code == 200 else "red",
         bold=True,
     )
