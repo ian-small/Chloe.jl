@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import zmq
 import json
 import click
@@ -7,11 +8,33 @@ ADDRESS = "ipc:///tmp/chloe-client"
 context = zmq.Context()
 
 
+class Socket:
+    def __init__(self, address, timeout=None):
+        self.socket, self.poller = setup_zmq(address)
+        self.timeout = timeout
+
+    def poll(self):
+        if self.timeout:
+            events = self.poller.poll(self.timeout)
+            if not events:
+                self.socket.close(linger=0)
+                self.poller.unregister(self.socket)
+                raise RuntimeError(f"no response after {self.timeout} milliseconds")
+
+    def msg(self, **kwargs):
+        self.socket.send_json(kwargs)
+        self.poll()
+        resp = self.socket.recv_json()
+        return resp["code"], resp["data"]
+
+
 def setup_zmq(address):
     #  Socket to talk to server
     socket = context.socket(zmq.REQ)  # pylint: disable=no-member
     socket.connect(address)
-    return socket
+    poller = zmq.Poller()
+    poller.register(socket, zmq.POLLIN)
+    return socket, poller
 
 
 @click.group()
@@ -36,15 +59,6 @@ def address(f):
     return f
 
 
-def poll(socket, timeout):
-    poller = zmq.Poller()
-    poller.register(socket, zmq.POLLIN)
-    events = poller.poll(timeout)
-    if not events:
-        socket.close(linger=0)
-        raise RuntimeError(f"no response after {timeout} milliseconds")
-
-
 @cli.command()
 @address
 @click.option(
@@ -56,38 +70,30 @@ def poll(socket, timeout):
 @click.argument("fasta")
 def annotate(timeout, address, fasta, output):
     """Annotate a fasta file."""
-    socket = setup_zmq(address)
-    msg = dict(cmd="chloe", args=[fasta, output])
-    # print("sending", msg)
-    socket.send_json(msg)
-    if timeout is not None:
-        poll(socket, timeout)
+    socket = Socket(address, timeout)
+    code, data = socket.msg(cmd="chloe", args=[fasta, output])
 
-    resp = socket.recv_json()
-    # click.secho(f"got {resp}")
-    code = resp["code"]
     click.secho(
-        str(resp["data"]) if code == 200 else f"No Server at {address}",
+        str(data) if code == 200 else f"No Server at {address}",
         fg="green" if code == 200 else "red",
         bold=True,
     )
-    data = resp["data"]
     print("data", data)
 
 
+def num_threads(socket):
+    _, data = socket.msg(cmd="threads")
+    return data
+
+
 @cli.command()
-@click.option("-n", "--nthreads", default=1)
+@click.option("-n", "--nthreads", default=0)
 @address
 def terminate(timeout, address, nthreads):
     """Shutdown the server."""
-    socket = setup_zmq(address)
-    msg = dict(cmd=":terminate")
-    for _ in range(nthreads):
-        socket.send_json(msg)
-        if timeout:
-            poll(socket, timeout)
-        resp = socket.recv_json()
-        code = resp["code"]
+    socket = Socket(address, timeout)
+    for _ in range(nthreads or num_threads(socket)):
+        code, _ = socket.msg(cmd=":terminate")
         click.secho(
             "OK" if code == 200 else f"No Server at {address}",
             fg="green" if code == 200 else "red",
@@ -99,15 +105,23 @@ def terminate(timeout, address, nthreads):
 @address
 def ping(timeout, address):
     """Ping the server."""
-    socket = setup_zmq(address)
-    msg = dict(cmd="ping")
-    socket.send_json(msg)
-    if timeout:
-        poll(socket, timeout)
-    resp = socket.recv_json()
-    code = resp["code"]
+    socket = Socket(address, timeout)
+    code, data = socket.msg(cmd="ping")
     click.secho(
-        str(resp["data"]) if code == 200 else f"No Server at {address}",
+        str(data) if code == 200 else f"No Server at {address}",
+        fg="green" if code == 200 else "red",
+        bold=True,
+    )
+
+
+@cli.command()
+@address
+def workers(timeout, address):
+    """Number of service workers"""
+    socket = Socket(address, timeout)
+    code, data = socket.msg(cmd="threads")
+    click.secho(
+        str(data) if code == 200 else f"No Server at {address}",
         fg="green" if code == 200 else "red",
         bold=True,
     )

@@ -51,13 +51,17 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
         end
 
         function ping()
-            return "OK version=$(VERSION) on thread=$(Threads.threadid())"
+            return "OK version=$(VERSION) on thread=$(Threads.threadid()) of $(length(address))"
+        end
+        function threads()
+            return length(address)
         end
         if length(address) == 1
             process(
                     JuliaWebAPI.create_responder([
                             (chloe, false),
-                            (ping, false)
+                            (ping, false),
+                            (threads, false)
 
                         ], address[1], !connect, "chloe"); async=async
                     )
@@ -66,7 +70,8 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
                     process(
                         JuliaWebAPI.create_responder([
                             (chloe, false),
-                            (ping, false)
+                            (ping, false),
+                            (threads, false)
 
                         ], addr, !connect, "chloe"); async=async
                     )
