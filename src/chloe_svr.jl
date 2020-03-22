@@ -6,15 +6,22 @@ using ArgParse
 using Logging
 using LogRoller
 
-const levels = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, "warn" => Logging.Warn, 
-"error"=>Logging.Error)
+const LEVELS = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, 
+                    "warn" => Logging.Warn, "error"=>Logging.Error)
 
 const ADDRESS = "tcp://127.0.0.1:9999"
 
+function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
+    template = "optimised_templates.v2.tsv", level="warn", async=false,
+    logfile::MayBeString=nothing, connect=false, nthreads=1)
+    
+    llevel = get(LEVELS, level, Logging.Warn)
+    
+    if length(address) === 0
+        push!(address, ADDRESS)
+    end
 
-function chloe_svr(;refsdir = "reference_1116", address=ADDRESS,
-    template = "optimised_templates.v2.tsv", level="warn", async=false, logfile::MayBeString=nothing)
-    llevel = get(levels, level, Logging.Warn)
+    address = repeat(address, nthreads)
 
     if logfile === nothing
         logger = ConsoleLogger(stderr,llevel)
@@ -22,27 +29,43 @@ function chloe_svr(;refsdir = "reference_1116", address=ADDRESS,
         logger = RollingLogger(logfile::String, 10 * 1000000, 2, llevel);
     end
 
+    conn = connect ? "connecting to" : "listening on"
+
     with_logger(logger) do
         reference = readReferences(refsdir, template)
         @info show_reference(reference)
         @info "using $(Threads.nthreads()) threads"
+        @info "$(conn) $(address)"
 
         function chloe(fasta::String, fname::MayBeString)
+            @info "running on thread: $(Threads.threadid())"
             annotate_one(fasta, reference, fname)
+            @info "finished on thread: $(Threads.threadid())"
             return fname
         end
 
         function ping()
-            return "OK"
+            return "OK $(Threads.threadid())"
         end
-    
-        process(
-            JuliaWebAPI.create_responder([
-                (chloe, false),
-                (ping, false)
+        if length(address) == 1
+            process(
+                    JuliaWebAPI.create_responder([
+                            (chloe, false),
+                            (ping, false)
 
-            ], address, true, "chloe"); async=async
-        )
+                        ], address[1], !connect, "chloe"); async=async
+                    )
+        else
+            Threads.@threads for addr in address
+                    process(
+                        JuliaWebAPI.create_responder([
+                            (chloe, false),
+                            (ping, false)
+
+                        ], addr, !connect, "chloe"); async=async
+                    )
+            end
+        end
         if isa(logger, RollingLogger)
             close(logger::RollingLogger)
         end
@@ -67,8 +90,9 @@ args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_
         help = "template tsv"
     "--address", "-a"
         arg_type = String
-        default = ADDRESS
-        help = "ZMQ address to listen on"
+        default = []
+        help = "ZMQ address(es) to listen on or connect to"
+        action = :append_arg
     "--logfile"
         arg_type=String
         metavar="FILE"
@@ -78,9 +102,17 @@ args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_
         metavar = "LOGLEVEL"
         default ="warn"
         help = "log level (warn,debug,info,error)"
-        "--async"
+    "--async"
         action = :store_true
         help = "run APIresponder async"
+    "--connect"
+        action = :store_true
+        help = "connect to addresses instead of bind"
+    "--nthreads"
+        arg_type = Int
+        default = 1
+        help = "number of threads when connecting"
+
 end
 args.epilog = """
 Run Chloe as a background ZMQ service

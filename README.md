@@ -29,3 +29,8 @@ pkg> activate .
 pkg> instantiate
 pkg> status
 ```
+
+See https://github.com/nextjournal/julia-lang/blob/master/examples/clustermanager/0mq/ZMQCM.jl#L117
+
+and http://zguide.zeromq.org/py:all#Multithreading-with-ZeroMQ
+
