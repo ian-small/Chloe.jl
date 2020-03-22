@@ -12,6 +12,8 @@ const LEVELS = Dict("info"=>Logging.Info, "debug"=> Logging.Debug,
 
 const ADDRESS = "tcp://127.0.0.1:9999"
 
+# change this if you change the API!
+const VERSION = "1.0"
 
 function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
     template = "optimised_templates.v2.tsv", level="warn", async=false,
@@ -36,7 +38,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
     with_logger(logger) do
         reference = readReferences(refsdir, template)
         @info show_reference(reference)
-        @info "using $(Threads.nthreads()) threads"
+        @info "chloe version $(VERSION) using $(Threads.nthreads()) threads"
         @info "$(conn) $(address)"
 
         function chloe(fasta::String, fname::MayBeString)
@@ -49,7 +51,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
         end
 
         function ping()
-            return "OK $(Threads.threadid())"
+            return "OK version=$(VERSION) on thread=$(Threads.threadid())"
         end
         if length(address) == 1
             process(
