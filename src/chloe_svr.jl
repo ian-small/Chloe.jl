@@ -5,6 +5,7 @@ using JuliaWebAPI
 using ArgParse
 using Logging
 using LogRoller
+using Dates
 
 const LEVELS = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, 
                     "warn" => Logging.Warn, "error"=>Logging.Error)
@@ -40,9 +41,11 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
 
         function chloe(fasta::String, fname::MayBeString)
             @info "running on thread: $(Threads.threadid())"
-            annotate_one(fasta, reference, fname)
-            @info "finished on thread: $(Threads.threadid())"
-            return fname
+            start = now()
+            filename = annotate_one(fasta, reference, fname)
+            elapsed = now() - start
+            @info "finished on thread: $(Threads.threadid()) after $(elapsed)"
+            return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename)
         end
 
         function ping()

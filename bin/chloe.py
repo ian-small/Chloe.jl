@@ -2,7 +2,8 @@ import zmq
 import json
 import click
 
-ADDRESS = "tcp://127.0.0.1:9999"
+#ADDRESS = "tcp://127.0.0.1:9999"
+ADDRESS = "ipc:///tmp/chloe-client"
 context = zmq.Context()
 
 
@@ -69,6 +70,8 @@ def annotate(timeout, address, fasta, output):
         fg="green" if code == 200 else "red",
         bold=True,
     )
+    data = resp["data"]
+    print('data', data)
 
 
 @cli.command()
