@@ -1,4 +1,6 @@
 
+using GZip
+
 function gbff2fasta(infile)
     open(infile) do f
         while !eof(f)
@@ -32,10 +34,18 @@ function gbff2fasta(infile)
     return
 end
 
+function maybe_gzopen(f::Function, filename, args...; kwargs...)
+    if endswith(filename, ".gz")
+        GZip.open(f, filename, args...; kwargs...)
+    else
+        open(f, filename, args...; kwargs...)
+    end
+end
 function readFasta(file)
     id = ""
     seqs = Array{String}(undef, 0)
-    open(file) do f
+
+    maybe_gzopen(file) do f
         header = strip(readline(f))
         if !startswith(header, ">")
             error("expecting '>' as start of fasta header found: \"$(header)\"")

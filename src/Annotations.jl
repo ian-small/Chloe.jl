@@ -821,7 +821,7 @@ function writeSFF(outfile::String, id, fstrand_models::Array{Array{Feature,1},1}
 
     genome_length = length(fstrand_feature_stacks[1].stack)
 
-    open(outfile, "w") do outfile
+    maybe_gzopen(outfile, "w") do outfile
         write(outfile, id, "\t", string(genome_length), "\n")
         model_ids = Dict{String,Integer}()
         for model in fstrand_models
