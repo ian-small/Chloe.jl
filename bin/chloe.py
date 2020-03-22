@@ -20,6 +20,7 @@ def cli():
 
 def address(f):
     f = click.option(
+        "-a",
         "--address",
         default=ADDRESS,
         help="network address to connect to julia server",
@@ -55,7 +56,7 @@ def annotate(timeout, address, fasta, output):
     """Annotate a fasta file."""
     socket = setup_zmq(address)
     msg = dict(cmd="chloe", args=[fasta, output])
-    #print("sending", msg)
+    # print("sending", msg)
     socket.send_json(msg)
     if timeout is not None:
         poll(socket, timeout)
@@ -66,25 +67,28 @@ def annotate(timeout, address, fasta, output):
     click.secho(
         "OK" if code == 200 else f"No Server at {address}",
         fg="green" if code == 200 else "red",
-        bold=True)
+        bold=True,
+    )
 
 
 @cli.command()
+@click.option("--nthreads", default=1)
 @address
-def terminate(timeout, address):
+def terminate(timeout, address, nthreads):
     """Shutdown the server."""
     socket = setup_zmq(address)
     msg = dict(cmd=":terminate")
-    socket.send_json(msg)
-    if timeout:
-        poll(socket, timeout)
-    resp = socket.recv_json()
-    code = resp["code"]
-    click.secho(
-        "OK" if code == 200 else f"No Server at {address}",
-        fg="green" if code == 200 else "red",
-        bold=True,
-    )
+    for _ in range(nthreads):
+        socket.send_json(msg)
+        if timeout:
+            poll(socket, timeout)
+        resp = socket.recv_json()
+        code = resp["code"]
+        click.secho(
+            "OK" if code == 200 else f"No Server at {address}",
+            fg="green" if code == 200 else "red",
+            bold=True,
+        )
 
 
 @cli.command()
@@ -107,4 +111,3 @@ def ping(timeout, address):
 
 if __name__ == "__main__":
     cli()
-
