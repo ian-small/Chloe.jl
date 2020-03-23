@@ -58,14 +58,15 @@ function readFasta(file)
             end
             # see https://www.bioinformatics.org/sms/iupac.html
             if match(r"^[ACTGRYNXSWKMBDHV.-]+$", line) === nothing
-                error("expecting nucleotide sequence found[$(idx)]: \"$(line)\"")
+                error("expecting nucleotide sequence found[$(idx + 1)]: \"$(line)\"")
             end
             push!(seqs, line)
         end
         return id, join(seqs, "")
     end
 end
-const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
+const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 
+                  'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
     
 function revComp(dna)
     reverse(map(x->get(COMP, x, 'N'), dna))

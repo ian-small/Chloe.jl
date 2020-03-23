@@ -3,30 +3,13 @@ using ZeroMQ_jll
 using JuliaWebAPI
 
 # doesn't seem to work!
+# trying to use inproc://worker ZMQ to create a DEALER/ROUTER
+# *within* the chloe server process.
 
-# function default_endpoint(f::Function)
-#     endpt = string(f)
-#     # separate the module (more natural URL, assumes 'using Module')
-#     if '.' in endpt
-#         endpt = rsplit(endpt, '.', limit = 2)[2]
-#     end
-#     endpt
-# end
-# function _add_spec(spec::Tuple, api::APIResponder)
-#     fn = spec[1]
-#     resp_json = (length(spec) > 1) ? spec[2] : false
-#     resp_headers = (length(spec) > 2) ? spec[3] : Dict{String,String}()
-#     api_name = (length(spec) > 3) ? spec[4] : default_endpoint(fn)
-#     register(api, fn, resp_json = resp_json, resp_headers = resp_headers, endpt = api_name)
-# end
+# But julia ZMQ is missing the proxy function and my attempts
+# to monkeypatch it doesn't seem to work... so
+# I need a second process to run the DEALER/ROUTER ... see bin/broker.py
 
-# function create_responder(apispecs::Array, addr, bind, nid, ctx::Context, open = false)
-#     api = APIResponder(ZMQTransport(addr, REP, bind, ctx), JSONMsgFormat(), nid, open)
-#     for spec in apispecs
-#         _add_spec(spec, api)
-#     end
-#     api
-# end
 function ping()
     return "OK $(Threads.threadid())"
 end
@@ -50,14 +33,13 @@ function start_broker(url::String)
 
     ZMQ.bind(router, url)
     ZMQ.bind(dealer, "inproc://workers")
-    # ZMQ.bind(dealer, "tcp://127.0.0.1:9998")
 
     @info "listening on $(url)"
-    rc = ccall((:zmq_proxy, libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
     # missing: ZMQ.proxy(router, dealer)
+    rc = ccall((:zmq_proxy, libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
     println("done $(rc)")
 
-    # control never comes here
+    # control never comes here... clean up anyway.
     ZMQ.close(router)
     ZMQ.close(dealer)
     ZMQ.close(ctx)

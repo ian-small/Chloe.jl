@@ -101,7 +101,10 @@ function readTemplates(file::String)
             if path_components[3] ≠ "intron"
                 push!(gene_exons, path_components[1])
             end
-            template = FeatureTemplate(fields[1], parse(Float32, fields[2]), parse(Float32, fields[3]), parse(Int32, fields[4]))
+            template = FeatureTemplate(fields[1], 
+                parse(Float32, fields[2]),
+                parse(Float32, fields[3]),
+                parse(Int32, fields[4]))
             push!(templates, template)
         end
     end
@@ -295,7 +298,7 @@ function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Annota
         end
     end
     if length(phases) == 0
-        @warn "No annotations found for  $(feat.path)"
+        @warn "No annotations found for $(feat.path)"
         return 0
     end
     # println(feat.path," ",phases)

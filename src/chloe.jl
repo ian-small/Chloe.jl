@@ -7,15 +7,10 @@ using Logging
 const levels = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => Logging.Warn, 
 "error" => Logging.Error)
  
-function chloe(;refsdir = "reference_1116", fasta_files = String[], verbose = false,
+function chloe(;refsdir = "reference_1116", fasta_files = String[],
     template = "optimised_templates.v2.tsv", level = "warn", output::MayBeString = nothing)
     with_logger(ConsoleLogger(stderr, get(levels, level, Logging.Warn))) do 
-        try
-            annotate(refsdir, template, fasta_files, output)
-        catch err
-            @error "chloe failed! $(err.msg)"
-            # rethrow()
-        end
+        annotate(refsdir, template, fasta_files, output)
     end
 end
 
@@ -46,9 +41,6 @@ end
         metavar = "TSV"
         dest_name = "template"
         help = "template tsv"
-    "--verbose", "-v"
-        action = :store_true
-        help = "increase verbosity"
     "--level", "-l"
         arg_type = String
         default = "warn"

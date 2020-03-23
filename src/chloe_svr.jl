@@ -116,7 +116,7 @@ args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_
     "--async"
         action = :store_true
         help = "run APIresponder async"
-    "--connect"
+    "--connect", "-c"
         action = :store_true
         help = "connect to addresses instead of bind"
     "--nthreads"

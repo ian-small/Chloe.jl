@@ -9,13 +9,26 @@ include("Alignments3.jl")
 using Dates
 
 # refsdir = ARGS[1]
-# const refs = Dict("NC_004543"=>"Anthoceros","AP000423"=>"Arabidopsis","MF177093"=>"Azolla","NC_001319"=>"Marchantia","NC_022137"=>"Marsilea","JX512022"=>"Medicago","Z00044"=>"Nicotiana","AP005672"=>"Physcomitrella","KT634228"=>"Picea","FJ755183"=>"Selaginella","NC_002202"=>"Spinacia","NC_001666"=>"Zea")
+# const refs = Dict("NC_004543"=>"Anthoceros","AP000423"=>"Arabidopsis","MF177093"=>"Azolla","NC_001319"=>"Marchantia","NC_022137"=>"Marsilea",
+# "JX512022"=>"Medicago","Z00044"=>"Nicotiana","AP005672"=>"Physcomitrella","KT634228"=>"Picea","FJ755183"=>"Selaginella","NC_002202"=>"Spinacia","NC_001666"=>"Zea")
 # const refs = Dict("AP000423"=>"Arabidopsis","JX512022"=>"Medicago","Z00044"=>"Nicotiana","KT634228"=>"Picea","NC_002202"=>"Spinacia","NC_001666"=>"Zea")
 # const refs = Dict("NC_001666"=>"Zea")
 # const refs = Dict("BK010421"=>"Arabidopsis")
-const refs = Dict("AP000423" => "Arabidopsis","JX512022" => "Medicago","Z00044" => "Nicotiana","KT634228" => "Picea",
-    "NC_002202" => "Spinacia","NC_001666" => "Zea","NC_005086" => "Amborella","NC_016986" => "Ginkgo","NC_021438" => "Gnetum",
-    "NC_030504" => "Liriodendron","NC_024542" => "Nymphaea","NC_031333" => "Oryza","NC_026040" => "Zamia")
+const refs = Dict(
+    "AP000423"  => "Arabidopsis",
+    "JX512022"  => "Medicago",
+    "Z00044"    => "Nicotiana",
+    "KT634228"  => "Picea",
+    "NC_002202" => "Spinacia",
+    "NC_001666" => "Zea",
+    "NC_005086" => "Amborella",
+    "NC_016986" => "Ginkgo",
+    "NC_021438" => "Gnetum",
+    "NC_030504" => "Liriodendron",
+    "NC_024542" => "Nymphaea",
+    "NC_031333" => "Oryza",
+    "NC_026040" => "Zamia"
+)
 
 struct Reference
     refloops::Vector{String}
@@ -116,8 +129,8 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
             blocks_aligned_to_targetr[refcount - 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref forward and target reverse strands
         end       
     end
-    Threads.@threads for i in 1:length(reference.refloops) 
-        alignit(i)
+    Threads.@threads for refno in 1:length(reference.refloops) 
+        alignit(refno)
     end
 
     t3 = time_ns()
@@ -233,10 +246,7 @@ function annotate(refsdir::String, templates::String, fa_files::Array{String,1},
 
     reference = readReferences(refsdir, templates)
 
- 
     for infile in fa_files
-
         annotate_one(infile, reference, output)
-
     end
 end
