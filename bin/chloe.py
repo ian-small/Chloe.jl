@@ -78,7 +78,7 @@ def annotate(timeout, address, fasta, output):
         fg="green" if code == 200 else "red",
         bold=True,
     )
-    print("data", data)
+    print("returned data", data)
 
 
 def num_threads(socket):

@@ -2,13 +2,13 @@
 
 # Chloe Server
 
-Running the chloe server
+Running the chloe server. In a terminal type:
 
 ```bash
 JULIA_NUM_THREADS=4 julia src/chloe_svr.jl --level=info
 ```
 
-Invoking values on the server
+In another terminal start julia:
 
 ```julia
 using JuliaWebAPI
@@ -16,13 +16,16 @@ using JuliaWebAPI
 i = APIInvoker("tcp://127.0.0.1:9999")
 # fasta and output should be relative to the server's working directory!
 ret = apicall(i, "chloe", fasta, output)
-@assert ret["code"] == 200
-fname = ret["data"]["data"]
+code, data = ret["code"], ret["data"]
+@assertcode == 200
+fname, elapsed = data["filename"], data["elapsed"]
+# to terminate the server
+apicall(i, ":terminate")
 ```
 
 ### Installing depenencies
 
-Start julia and type `]` then type:
+Start julia -- in this directory -- and type `]` then type:
 
 ```
 pkg> activate .
@@ -30,7 +33,10 @@ pkg> instantiate
 pkg> status
 ```
 
-See https://github.com/nextjournal/julia-lang/blob/master/examples/clustermanager/0mq/ZMQCM.jl#L117
 
-and http://zguide.zeromq.org/py:all#Multithreading-with-ZeroMQ
+#### Notes:
+
+See:
+
+* http://zguide.zeromq.org/py:all#Multithreading-with-ZeroMQ
 
