@@ -1,6 +1,6 @@
 name = "Chloe"
 uuid = "ca11047d-399f-4cb1-8477-165950ce0018"
-authors = ["Ian Small <ian.small@uwa.eud.au>", "Ian Castleden <ian.castleden@uwa.edu.au>"]
+authors = ["Ian Small <ian.small@uwa.edu.au>", "Ian Castleden <ian.castleden@uwa.edu.au>"]
 version = "0.1.0"
 
 [deps]
