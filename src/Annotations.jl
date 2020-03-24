@@ -248,7 +248,7 @@ function alignTemplateToStack(feature_stack::FeatureStack, shadowstack)
     return best_hit, tlen
 end
 
-function getModelID(model_ids, model)
+function getModelID!(model_ids, model)
     gene_name = split(first(model).path, '/')[1]
     instance_count = 1
     model_id = gene_name * "/" * string(instance_count)
@@ -829,12 +829,12 @@ function writeSFF(outfile::String, id, fstrand_models::Array{Array{Feature,1},1}
         model_ids = Dict{String,Integer}()
         for model in fstrand_models
             isempty(model) && continue
-            model_id = getModelID(model_ids, model)
+            model_id = getModelID!(model_ids, model)
             writeModelToSFF(outfile, model, model_id, targetloopf, gene_exons, maxlengths, fstrand_feature_stacks, '+')
         end
         for model in rstrand_models
             isempty(model) && continue
-            model_id = getModelID(model_ids, model)
+            model_id = getModelID!(model_ids, model)
             writeModelToSFF(outfile, model, model_id, targetloopr, gene_exons, maxlengths, rstrand_feature_stacks, '-')
         end
     end
