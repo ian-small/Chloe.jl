@@ -1,6 +1,12 @@
 # Chloe: Organelle Annotator
 
-# Chloe Server
+To run the annotator type:
+
+```
+julia annotate.jl --help
+```
+
+## Chloe Server
 
 Running the chloe server. In a terminal type:
 
@@ -15,15 +21,15 @@ using JuliaWebAPI
 
 i = APIInvoker("tcp://127.0.0.1:9999")
 # fasta and output should be relative to the server's working directory!
-ret = apicall(i, "chloe", fasta, output)
+ret = apicall(i, "chloe", fastafile, outputfile) # outputfile is optional
 code, data = ret["code"], ret["data"]
-@assertcode == 200
-fname, elapsed = data["filename"], data["elapsed"]
+@assert code === 200
+fname, elapsed_ms = data["filename"], data["elapsed"]
 # to terminate the server
 apicall(i, ":terminate")
 ```
 
-### Installing depenencies
+## Installing depenencies
 
 Start julia -- in this directory -- and type `]` then type:
 
@@ -34,7 +40,7 @@ pkg> status
 ```
 
 
-#### Notes:
+### Notes:
 
 See:
 
