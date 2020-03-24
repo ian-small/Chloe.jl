@@ -34,15 +34,14 @@ function gbff2fasta(infile)
     return
 end
 
-function maybe_gzopen(f::Function, filename, args...; kwargs...)
+function maybe_gzopen(f::Function, filename::String, args...; kwargs...)
     if endswith(filename, ".gz")
         GZip.open(f, filename, args...; kwargs...)
     else
         open(f, filename, args...; kwargs...)
     end
 end
-function readFasta(file)
-    id = ""
+function readFasta(file::String)
     seqs = Array{String}(undef, 0)
 
     maybe_gzopen(file) do f
@@ -50,7 +49,7 @@ function readFasta(file)
         if !startswith(header, ">")
             error("expecting '>' as start of fasta header found: \"$(header)\"")
         end
-        id = split(header, " ")[1][2:end]
+        nc_id = split(header, " ")[1][2:end]
         for (idx, line) in enumerate(eachline(f))
             line = uppercase(strip(line))
             if length(line) === 0
@@ -62,7 +61,7 @@ function readFasta(file)
             end
             push!(seqs, line)
         end
-        return id, join(seqs, "")
+        return nc_id::String, join(seqs, "")
     end
 end
 const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 
