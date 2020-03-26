@@ -44,10 +44,10 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
         function chloe(fasta::String, fname::MayBeString)
             @info "running on thread: $(Threads.threadid())"
             start = now()
-            filename = annotate_one(fasta, reference, fname)
+            filename, target_id = annotate_one(fasta, reference, fname)
             elapsed = now() - start
-            @info "finished on thread: $(Threads.threadid()) after $(elapsed)"
-            return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename)
+            @info "finished $(target_id) on thread: $(Threads.threadid()) after $(elapsed)"
+            return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename, "ncid" => string(target_id))
         end
 
         function ping()

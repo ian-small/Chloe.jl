@@ -46,3 +46,9 @@ See:
 
 * http://zguide.zeromq.org/py:all#Multithreading-with-ZeroMQ
 
+Possible useful REPL packages
+
+* add Revise
+* add OhMyREPL
+* `@code_warntype f()` check type system
+

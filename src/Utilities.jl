@@ -61,7 +61,7 @@ function readFasta(file::String)
             end
             push!(seqs, line)
         end
-        return nc_id::String, join(seqs, "")
+        return string(nc_id), join(seqs, "")
     end
 end
 const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 

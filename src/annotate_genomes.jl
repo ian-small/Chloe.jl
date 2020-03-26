@@ -238,7 +238,7 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
         reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks,
         targetloopf, targetloopr)
     @info "[$(target_id)] Overall: $(ns(time_ns() - t1))"
-    return fname
+    return fname, target_id
 
 end
 
