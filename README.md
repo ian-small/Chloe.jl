@@ -1,9 +1,11 @@
 # Chloe: Organelle Annotator
 
-To run the annotator type:
+To run the annotator or write gff3 or create suffix array files type:
 
-```
-julia annotate.jl --help
+```bash
+julia chloe.jl --help
+# or for specific commands e.g.
+julia chloe.jl annotate --help
 ```
 
 ## Chloe Server
