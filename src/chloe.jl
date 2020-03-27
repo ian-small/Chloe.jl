@@ -1,6 +1,8 @@
 
 
 include("annotate_genomes.jl")
+include("sff2GFF3.jl")
+include("make_suffix_array.jl")
 using ArgParse
 using Logging
 
@@ -8,18 +10,52 @@ const levels = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => 
 "error" => Logging.Error)
  
 function chloe(;refsdir = "reference_1116", fasta_files = String[],
-    template = "optimised_templates.v2.tsv", level = "warn", output::MayBeString = nothing)
-    with_logger(ConsoleLogger(stderr, get(levels, level, Logging.Warn))) do 
-        annotate(refsdir, template, fasta_files, output)
-    end
+    template = "optimised_templates.v2.tsv", output::MayBeString = nothing)
+
+    annotate(refsdir, template, fasta_files, output)
+
 end
 
 
 # const julia_v07 = VERSION > v"0.7-"
 
-    args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
+args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
 
-    @add_arg_table! args begin
+@add_arg_table! args begin
+    "annotate"
+        help = "annotate fasta files"
+        action = :command
+    "gff3"
+        help = "write out gff3 files from sff files"
+        action = :command
+    "suffix"
+        help = "generate suffix arrays from fasta files"
+        action = :command
+    "--level", "-l"
+        arg_type = String
+        default = "warn"
+        help = "log level (warn,debug,info,error)"
+end
+
+@add_arg_table! args["gff3"]  begin
+    "sff-files"
+        arg_type = String
+        nargs = '+'
+        required = true
+        action = :store_arg
+        help = "sff files to process"   
+end
+
+@add_arg_table! args["suffix"]  begin
+    "fasta-files"
+        arg_type = String
+        nargs = '+'
+        required = true
+        action = :store_arg
+        help = "fasta files to process"
+end
+
+@add_arg_table! args["annotate"]  begin
     "fasta-files"
         arg_type = String
         nargs = '+'
@@ -41,11 +77,8 @@ end
         metavar = "TSV"
         dest_name = "template"
         help = "template tsv"
-    "--level", "-l"
-        arg_type = String
-        default = "warn"
-        help = "log level (warn,debug,info,error)"
 end
+
 # args.epilog = """
 #     examples:\n
 #     \ua0\ua0 # chloe.jl -t template.tsv -r reference_dir fasta1 fasta2 ...\n
@@ -53,9 +86,18 @@ end
 
 function real_main() 
     parsed_args = parse_args(ARGS, args; as_symbols = true)
-    # filter!(kv->kv.second ∉ (nothing, false), parsed_args)
-    chloe(;parsed_args...)
-
+    level = parsed_args[:level]
+    with_logger(ConsoleLogger(stderr, get(levels, level, Logging.Warn))) do 
+        cmd = parsed_args[:_COMMAND_]
+        a = parsed_args[cmd]
+        if cmd == :gff3
+            writeallGFF3(;a...)
+        elseif cmd == :annotate
+            chloe(;a...)
+        elseif cmd == :suffix
+            writesuffixarray(;a...)
+        end
+    end
 end
 
 

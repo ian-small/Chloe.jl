@@ -1,5 +1,5 @@
-include("Utilities.jl")
-include("Annotations.jl")
+# include("Utilities.jl")
+# include("Annotations.jl")
 
 function mergeAdjacentFeaturesinModel!(genome_id, genome_length, strand, model::Array{Feature,1})
     f1_pointer = 1
@@ -88,30 +88,33 @@ function writeGFF3(outfile, genemodel::FeatureArray)
     end
     write(outfile, "###\n")
 end
+function writeallGFF3(;sff_files = String[])
+    for infile in sff_files
+        fstrand_features, rstrand_features = readFeatures(infile)
+        # for each strand
+        # group into gene models
+        fstrand_models = groupFeaturesIntoGeneModels(fstrand_features)
+        models_as_feature_arrays = Array{FeatureArray}(undef, 0)
+        for model in fstrand_models
+            push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome, fstrand_features.genome_length, '+', model))
+        end
 
-for infile in ARGS
-    fstrand_features, rstrand_features = readFeatures(infile)
-    # for each strand
-    # group into gene models
-    fstrand_models = groupFeaturesIntoGeneModels(fstrand_features)
-    models_as_feature_arrays = Array{FeatureArray}(undef, 0)
-    for model in fstrand_models
-        push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome, fstrand_features.genome_length, '+', model))
-    end
+        rstrand_models = groupFeaturesIntoGeneModels(rstrand_features)
+        for model in rstrand_models
+            push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome, fstrand_features.genome_length, '-', model))
+        end
 
-    rstrand_models = groupFeaturesIntoGeneModels(rstrand_features)
-    for model in rstrand_models
-        push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome, fstrand_features.genome_length, '-', model))
-    end
+        # interleave gene models from both strands
+        sort!(models_as_feature_arrays, by = m->m.features[1].start)
 
-    # interleave gene models from both strands
-    sort!(models_as_feature_arrays, by = m->m.features[1].start)
-
-    # write models in GFF3 format
-    open(fstrand_features.genome * ".gff3", "w") do outfile
-        write(outfile, "##gff-version 3.2.1\n")
-        for model in models_as_feature_arrays
-            writeGFF3(outfile, model)
+        # write models in GFF3 format
+        fname = fstrand_features.genome * ".gff3";
+        @info "writing gff3: $(fname)"
+        open(fname, "w") do outfile
+            write(outfile, "##gff-version 3.2.1\n")
+            for model in models_as_feature_arrays
+                writeGFF3(outfile, model)
+            end
         end
     end
 end
