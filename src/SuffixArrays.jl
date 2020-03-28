@@ -31,7 +31,7 @@ end
 
 function makeSuffixArrayT(seqloop::DNAString)::SuffixArray # assumes seqloop is circular
 
-	last::Int = trunc(Int32, cld((length(seqloop) + 1) / 2, 3))
+	last::Int32 = trunc(Int32, cld((length(seqloop) + 1) / 2, 3))
 	suffixes = Array{SubString}(undef, last * 3)
 
 	frame = translateDNA(seqloop)

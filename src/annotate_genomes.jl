@@ -83,7 +83,7 @@ end
 const ns(td) = Time(Nanosecond(td))
 
 MayBeString = Union{Nothing,String}
-Strand = Tuple{AAFeature,VFeatureStack}
+Strand = Tuple{AAFeature,AFeatureStack}
 
 function do_strand(target_id::String, strand::Char, start_ns::UInt64, target_length::Int64,
     reference::Reference, coverages::Dict{String,Float32},
@@ -131,7 +131,7 @@ function do_strand(target_id::String, strand::Char, start_ns::UInt64, target_len
 
 
     target_strand_models = groupFeaturesIntoGeneModels(target_strand_features)
-    target_strand_models = refineGeneModels!(target_length, targetloop, target_strand_models, strand_annotations, strand_feature_stacks)
+    target_strand_models = refineGeneModels!(target_strand_models, target_length, targetloop, strand_annotations, strand_feature_stacks)
 
     t8 = time_ns()
     @info "[$(target_id)]$(strand) refining gene models: $(ns(t8 - t7))"

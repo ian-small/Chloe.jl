@@ -8,6 +8,27 @@ mutable struct Feature
     # to be in the correct reading frame
     phase::Int8
 end
+const feat_tags(feat::Feature) = split(feat.path, '/')
+function getFeatureName(feature::Feature)
+    feat_tags(feature)[1]
+end
+function featureType(feature::Feature)
+    feat_tags(feature)[3]
+end
+
+function getFeatureType(feature::Feature)
+    types = ["CDS","intron","tRNA","rRNA"]
+    for t in types
+        if isType(feature, t)
+            return t
+        end
+    end
+    return nothing
+end
+function isType(feature::Feature, gene::String)
+    occursin(gene, feature.path)
+end
+
 AFeature = Array{Feature}
 AAFeature = Array{AFeature}
 # entire set of Features for one strand of one genome
@@ -55,8 +76,7 @@ end
 # checks all blocks for overlap so could be speeded up by using an interval tree
 function pushFeature(from::String, feature::Feature, blocks::AlignedBlocks)::Array{Annotation}
     pushed_features = Array{Annotation}(undef, 0)
-    tags = split(feature.path, '/')
-    feature_type = tags[3]
+    feature_type = featureType(feature)
     for block in blocks
         if rangesOverlap(feature.start, feature.length, block[1], block[3])
             startA = max(feature.start, block[1])
@@ -68,7 +88,7 @@ function pushFeature(from::String, feature::Feature, blocks::AlignedBlocks)::Arr
             else
                 phase = 0
             end
-            path_components = split(feature.path, '/')
+            path_components = feat_tags(feature)
             annotation_path = join([path_components[1],"?",path_components[3],path_components[4]], "/")
             pushed_feature = Annotation(from, annotation_path, startA - block[1] + block[2],
                                         flength, offset5, feature.length - (startA - feature.start) - flength, phase)
@@ -136,11 +156,11 @@ struct FeatureStack
     template::FeatureTemplate
 end
 
-VFeatureStack = Array{FeatureStack}
+AFeatureStack = Array{FeatureStack}
 
 function stackFeatures(length::Integer, annotations::AnnotationArray,
-    templates::Array{FeatureTemplate})::Tuple{VFeatureStack,Array{Int32}}
-    stacks = VFeatureStack(undef, 0)
+    templates::Array{FeatureTemplate})::Tuple{AFeatureStack,Array{Int32}}
+    stacks = AFeatureStack(undef, 0)
     shadowstack::Array{Int32} = fill(-1, length) # will be negative image of all stacks combined,
     # initialised to small negative number; acts as prior expectation for feature-finding
     for annotation in annotations.annotations
@@ -161,18 +181,6 @@ function stackFeatures(length::Integer, annotations::AnnotationArray,
     end
     return stacks, shadowstack
 end
-
-# mutable struct AnnotatedFeature
-#     path::String
-#     start::Int32
-#     length::Int32
-#     # phase is the number of nucleotides to skip at the start of the
-#     # sequence to be in the correct reading frame
-#     phase::Int8
-#     annotations::Array{Annotation,1}
-#     stack::Vector{Int32}
-#     template::FeatureTemplate
-# end
 
 function expandBoundaryInChunks(feature_stack::FeatureStack, shadowstack, origin, direction, max)
     glen = length(shadowstack)
@@ -250,8 +258,8 @@ function alignTemplateToStack(feature_stack::FeatureStack, shadowstack)
     return best_hit, tlen
 end
 
-function getModelID!(model_ids, model)
-    gene_name = split(first(model).path, '/')[1]
+function getModelID!(model_ids, model::AFeature)
+    gene_name = getFeatureName(first(model))
     instance_count = 1
     model_id = gene_name * "/" * string(instance_count)
     while get(model_ids, model_id, 0) ≠ 0
@@ -373,25 +381,8 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationA
     return feat, end5s, end5ws
 end
 
-function getFeatureType(feat::Feature)
-    types = ["CDS","intron","tRNA","rRNA"]
-    for t in types
-        if occursin(t, feat.path)
-            return t
-        end
-    end
-    return nothing
-end
 
-function getFeatureName(path::String)
-    tags = split(path, "/")
-    return tags[1]
-end
 
-function getFeatureName(feature::Feature)
-    tags = split(feature.path, "/")
-    return tags[1]
-end
 
 function groupFeaturesIntoGeneModels(features::FeatureArray)::AAFeature
     gene_models = AAFeature(undef, 0)
@@ -413,7 +404,7 @@ function groupFeaturesIntoGeneModels(features::FeatureArray)::AAFeature
     return gene_models
 end
 
-function translateFeature(genome::String, feat::Feature)
+function translateFeature(genome::DNAString, feat::Feature)
     @assert feat.start > 0
     feat.length < 3 && return ""
 
@@ -428,7 +419,7 @@ function translateFeature(genome::String, feat::Feature)
     return String(peptide)
 end
 
-function translateModel(genome::String, model::AFeature)
+function translateModel(genome::DNAString, model::AFeature)
 
     DNA = ""
     for (i, feat) in enumerate(model)
@@ -473,7 +464,7 @@ function startScore(cds::Feature, codon::SubString)
     end
 end
 
-function findStartCodon2!(genome_length::Integer, genomeloop::String, cds::Feature, predicted_starts,
+function findStartCodon2!(cds::Feature, genome_length::Integer, genomeloop::DNAString, predicted_starts,
                           predicted_starts_weights, feature_stack, shadowstack)
     # define range in which to search from upstream stop to end of feat
     start5 = cds.start + cds.phase
@@ -528,7 +519,7 @@ function findStartCodon2!(genome_length::Integer, genomeloop::String, cds::Featu
     return cds
 end
 
-function findStartCodon!(genome_length::Integer, genomeloop::String, cds::Feature)
+function findStartCodon!(cds::Feature, genome_length::Integer, genomeloop::DNAString)
     # assumes phase has been correctly set
     # search for start codon 5'-3' beginning at cds.start, save result; abort if stop encountered
     start3 = cds.start + cds.phase
@@ -540,7 +531,7 @@ function findStartCodon!(genome_length::Integer, genomeloop::String, cds::Featur
         return cds
     end
 
-    gene = split(cds.path, '/')[1]
+    gene = getFeatureName(cds)
     allowACG = false
     allowGTG = false
     if gene == "rps19"; allowGTG = true; end
@@ -586,7 +577,7 @@ function findStartCodon!(genome_length::Integer, genomeloop::String, cds::Featur
     return cds
 end
 
-function setLongestORF!(genome_length::Integer, targetloop::String, feat::Feature)
+function setLongestORF!(feat::Feature, genome_length::Integer, targetloop::DNAString)
     orfs = []
     translation_start = feat.start
     translation_stop = translation_start + 2
@@ -656,9 +647,9 @@ function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, stacks::Array{
     feat2.start = fulcrum + 1
 end
 
-function refineGeneModels!(genome_length::Integer, targetloop::String,
-                          gene_models::AAFeature, annotations::AnnotationArray,
-                          feature_stacks::Array{FeatureStack})::AAFeature
+function refineGeneModels!(gene_models::AAFeature, genome_length::Integer, targetloop::DNAString,
+                          annotations::AnnotationArray,
+                          feature_stacks::AFeatureStack)::AAFeature
     for model in gene_models
         isempty(model) && continue
         # sort features in model by mid-point to avoid cases where long intron overlaps short exon
@@ -667,13 +658,13 @@ function refineGeneModels!(genome_length::Integer, targetloop::String,
         last_exon = last(model)
         # println(last_exon)
         # if CDS, find phase, stop codon and set feature.length
-        if occursin("CDS", last_exon.path)
+        if isType(last_exon, "CDS")
             translation = translateFeature(targetloop, last_exon)
             # @debug "translation" translation
             last_exon.phase = getFeaturePhaseFromAnnotationOffsets(last_exon, annotations)
             # println(last_exon)
-            if !occursin("rps12A", last_exon.path)
-                setLongestORF!(genome_length, targetloop, last_exon)
+            if !isType(last_exon, "rps12A")
+                setLongestORF!(last_exon, genome_length, targetloop)
             end
             # println(last_exon)
             translation = translateFeature(targetloop, last_exon)
@@ -694,7 +685,7 @@ function refineGeneModels!(genome_length::Integer, targetloop::String,
             end
             # @debug "feature" feature
             # if CDS, check phase is compatible
-            if occursin("CDS", feature.path)
+            if isType(feature, "CDS")
                 feature.phase = getFeaturePhaseFromAnnotationOffsets(feature, annotations)
                 if (@isdefined last_cds_examined) && phaseCounter(feature.phase, feature.length % 3) != last_cds_examined.phase
                     @warn "Incompatible phases for $(feature.path) $(last_cds_examined.path)"
@@ -705,13 +696,13 @@ function refineGeneModels!(genome_length::Integer, targetloop::String,
         end
         # if CDS, find start codon and set feature.start
         first_exon = first(model)
-        if occursin("CDS", first_exon.path)
+        if isType(first_exon, "CDS")
             # println(first_exon)
             first_exon.phase = getFeaturePhaseFromAnnotationOffsets(first_exon, annotations)
-            if !occursin("rps12B", last_exon.path)
-                first_exon = findStartCodon!(genome_length, targetloop, first_exon)
+            if !isType(last_exon, "rps12B")
+                first_exon = findStartCodon!(first_exon, genome_length, targetloop)
                 # println(first_exon)
-                # first_exon = findStartCodon2!(genome_length,targetloop,first_exon)
+                # first_exon = findStartCodon2!(first_exon,genome_length,targetloop)
                 # println(first_exon)
             end
             # println(first_exon)
@@ -738,9 +729,10 @@ function getGeneModelByName(gm_name::String, gene_models::AAFeature)::Union{Noth
     return nothing
 end
 
-function writeModelToSFF(outfile, model::AFeature, model_id, targetloop, gene_exons,
-                         maxlengths, feature_stacks, strand)
-    gene = split(first(model).path, '/')[1]
+function writeModelToSFF(outfile, model::AFeature, model_id::String,
+                        targetloop::DNAString, gene_exons,
+                         maxlengths, feature_stacks, strand::Char)
+    gene = getFeatureName(first(model))
     expected_exons = gene_exons[gene]
     exon_count = 0
     cds = false
@@ -804,19 +796,23 @@ function writeModelToSFF(outfile, model::AFeature, model_id, targetloop, gene_ex
     end
 end
 
-function writeSFF(outfile::String, id, fstrand_models::AAFeature,
-                  rstrand_models::AAFeature, gene_exons,
-                  fstrand_feature_stacks, rstrand_feature_stacks, targetloopf, targetloopr)
+function writeSFF(outfile::String, id::String, 
+                fstrand_models::AAFeature,
+                rstrand_models::AAFeature,
+                gene_exons::Dict{String,Int32},
+                fstrand_feature_stacks::AFeatureStack, 
+                rstrand_feature_stacks::AFeatureStack, 
+                targetloopf::DNAString, targetloopr::DNAString)
 
-    maxlengths = Dict{String,Integer}()
+    maxlengths = Dict{String,Int32}()
     for (fmodel, rmodel) in zip(fstrand_models, rstrand_models)
-        gene = split(first(fmodel).path, '/')[1]
+        gene = getFeatureName(first(fmodel))
         gene_length = last(fmodel).start + last(fmodel).length - first(fmodel).start
         maxlen = get(maxlengths, gene, 0)
         if gene_length > maxlen
             maxlengths[gene] = gene_length
         end
-        gene = split(first(rmodel).path, '/')[1]
+        gene = getFeatureName(first(rmodel))
         gene_length = last(rmodel).start + last(rmodel).length - first(rmodel).start
         maxlen = get(maxlengths, gene, 0)
         if gene_length > maxlen
@@ -828,7 +824,7 @@ function writeSFF(outfile::String, id, fstrand_models::AAFeature,
 
     maybe_gzopen(outfile, "w") do outfile
         write(outfile, id, "\t", string(genome_length), "\n")
-        model_ids = Dict{String,Integer}()
+        model_ids = Dict{String,Int32}()
         for model in fstrand_models
             isempty(model) && continue
             model_id = getModelID!(model_ids, model)
