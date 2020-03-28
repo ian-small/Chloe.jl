@@ -85,7 +85,7 @@ function lcps2AlignmentBlocks(lcps, circular, min_run_length)::AlignedBlocks
     return aligned_blocks
 end
 
-function blockCoverage(blocks)
+function blockCoverage(blocks::AlignedBlocks)
     cumulative_length = 0
     for block in blocks
         cumulative_length += block[3]

@@ -1,7 +1,7 @@
 
 using GZip
 
-function gbff2fasta(infile)
+function gbff2fasta(infile::String)
     open(infile) do f
         while !eof(f)
             line = readline(f)
@@ -110,7 +110,7 @@ function loop_wrap(genome_length::Integer, position::Integer)
 end
 
 # wraps range within genome loop
-function range_wrap(genome_length::Integer, range::UnitRange{Integer})
+function range_wrap(genome_length::Integer, range::UnitRange{Integer})::UnitRange{Integer}
     @assert range.start <= range.stop
     loop_length = genome_length + genome_length - 1
     # if start of range is negative, move range to end of genome
@@ -134,7 +134,7 @@ function range_wrap(genome_length::Integer, range::UnitRange{Integer})
     return range::UnitRange{Integer}
 end
 
-function isStartCodon(codon::AbstractString, allow_editing::Bool, allow_GTG::Bool)
+function isStartCodon(codon::AbstractString, allow_editing::Bool, allow_GTG::Bool)::Bool
     codon == "ATG" && return true
     if allow_editing && codon == "ACG"
         return true
@@ -144,7 +144,7 @@ function isStartCodon(codon::AbstractString, allow_editing::Bool, allow_GTG::Boo
     return false
 end
 
-function isStopCodon(codon::AbstractString, allow_editing::Bool)
+function isStopCodon(codon::AbstractString, allow_editing::Bool)::Bool
     if codon in ["TAA","TAG","TGA"]
         return true
     elseif allow_editing && codon in ["CAA","CAG","CGA"]
@@ -171,7 +171,7 @@ const genetic_code = Dict{String,Char}("TTT" => 'F',"TTC" => 'F',
     "AGT" => 'S',"AGC" => 'S',"AGA" => 'R',"AGG" => 'R',
     "GGT" => 'G',"GGC" => 'G',"GGA" => 'G',"GGG" => 'G')
 
-function translateDNA(dna::AbstractString)
+function translateDNA(dna::AbstractString)::String
     peptide_length = fld(length(dna), 3)
     peptide = Array{Char}(undef, peptide_length)
     aa = 0
