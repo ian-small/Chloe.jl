@@ -1,9 +1,8 @@
 
 include("Utilities.jl")
 include("SuffixArrays.jl")
-include("Annotations.jl")
 include("Alignments3.jl")
-
+include("Annotations.jl")
 
 
 using Dates
@@ -31,9 +30,9 @@ const ReferenceOrganisms = Dict(
 )
 
 struct Reference
-    refloops::Vector{String}
-    refSAs::Array{Array{Int32}}
-    refRAs::Array{Array{Int32}}
+    refloops::Array{String}
+    refSAs::Array{SuffixArray}
+    refRAs::Array{SuffixArray}
     ref_features::Array{FeatureArray}
     feature_templates::Array{FeatureTemplate}
     gene_exons::Dict{String,Int32}
@@ -46,14 +45,14 @@ function show_reference(reference::Reference)
         """
 end
 
-function readReferences(refsdir::String, templates::String)
+function readReferences(refsdir::String, templates::String)::Reference
 
     num_refs = length(ReferenceOrganisms)
 
-    refloops = Vector{String}(undef, num_refs * 2)
-    refSAs = Array{Array{Int32,1}}(undef, num_refs * 2)
-    refRAs = Array{Array{Int32,1}}(undef, num_refs * 2)
-    ref_features = Array{FeatureArray,1}(undef, num_refs * 2)
+    refloops = Array{String}(undef, num_refs * 2)
+    refSAs = Array{SuffixArray}(undef, num_refs * 2)
+    refRAs = Array{SuffixArray}(undef, num_refs * 2)
+    ref_features = Array{FeatureArray}(undef, num_refs * 2)
 
     files = readdir(refsdir)
     iff_files = files[findall(x->endswith(x, ".sff"), files)]

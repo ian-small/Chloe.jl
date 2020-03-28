@@ -1,6 +1,5 @@
 using Printf
 
-
 mutable struct Feature
     path::String
     start::Int32
@@ -19,7 +18,7 @@ struct FeatureArray
     features::AFeature
 end
 
-function readFeatures(file::String)
+function readFeatures(file::String)::Tuple{FeatureArray,FeatureArray}
     open(file) do f
         header = split(readline(f), '\t')
         f_strand_features = FeatureArray(header[1], parse(Int32, header[2]), '+', AFeature(undef, 0))
@@ -54,7 +53,7 @@ struct Annotation
 end
 
 # checks all blocks for overlap so could be speeded up by using an interval tree
-function pushFeature(from::String, feature::Feature, blocks)::Array{Annotation}
+function pushFeature(from::String, feature::Feature, blocks::AlignedBlocks)::Array{Annotation}
     pushed_features = Array{Annotation}(undef, 0)
     tags = split(feature.path, '/')
     feature_type = tags[3]
@@ -89,7 +88,7 @@ end
 
 using StatsBase
 
-function readTemplates(file::String)
+function readTemplates(file::String)::Tuple{Array{FeatureTemplate},Dict{String,Int32}}
     templates = FeatureTemplate[]
     gene_exons = String[]
     open(file) do f
@@ -116,9 +115,10 @@ struct AnnotationArray
     annotations::Array{Annotation}
 end
 
-function pushFeatures(reffeaturearray, target_id, target_strand, aligned_blocks)
+function pushFeatures(reffeaturearray::FeatureArray, target_id::String, 
+    target_strand::Char, aligned_blocks::AlignedBlocks)::AnnotationArray
     # pushed_features = AnnotationArray(target_id, target_strand, Array{Annotation,1}(undef, 0))
-    annotations = Array{Annotation,1}(undef, 0)
+    annotations = Array{Annotation}(undef, 0)
     for feature in reffeaturearray.features
         new_features = pushFeature(reffeaturearray.genome, feature, aligned_blocks)
         if !isempty(new_features)
@@ -132,11 +132,11 @@ end
 
 struct FeatureStack
     path::String
-    stack::Vector{Int32}
+    stack::Array{Int32}
     template::FeatureTemplate
 end
 
-VFeatureStack = Vector{FeatureStack}
+VFeatureStack = Array{FeatureStack}
 
 function stackFeatures(length::Integer, annotations::AnnotationArray,
     templates::Array{FeatureTemplate})::Tuple{VFeatureStack,Array{Int32}}

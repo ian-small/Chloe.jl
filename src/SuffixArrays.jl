@@ -1,14 +1,15 @@
-SuffixVector = Vector{Int32}
+# SuffixVector = Vector{Int32}
 SuffixArray = Array{Int32}
+DNAString = AbstractString
 
 struct GenomeWithSAs
     id::String
     sequence::String
-    forwardSA::SuffixVector
-    reverseSA::SuffixVector
+    forwardSA::SuffixArray
+    reverseSA::SuffixArray
 end
 
-function makeSuffixArray(source, circular)::SuffixArray
+function makeSuffixArray(source::DNAString, circular::Bool)::SuffixArray
 
     if circular
 		last = Int((length(source) + 1) / 2)
@@ -28,10 +29,10 @@ function makeSuffixArray(source, circular)::SuffixArray
 
 end
 
-function makeSuffixArrayT(seqloop::AbstractString)::SuffixArray # assumes seqloop is circular
+function makeSuffixArrayT(seqloop::DNAString)::SuffixArray # assumes seqloop is circular
 
 	last::Int = trunc(Int32, cld((length(seqloop) + 1) / 2, 3))
-	suffixes = Vector{SubString}(undef, last * 3)
+	suffixes = Array{SubString}(undef, last * 3)
 
 	frame = translateDNA(seqloop)
 	for offset = 1:last
@@ -50,7 +51,7 @@ function makeSuffixArrayT(seqloop::AbstractString)::SuffixArray # assumes seqloo
 	return makeSuffixArray(suffixes)
 end
 
-function makeSuffixArray(suffixes::Vector{SubString})::SuffixArray
+function makeSuffixArray(suffixes::Array{SubString})::SuffixArray
 
     suffixArray = SuffixArray(undef, length(suffixes))
     suffixArray = sortperm!(suffixArray, suffixes)
@@ -59,9 +60,9 @@ function makeSuffixArray(suffixes::Vector{SubString})::SuffixArray
 
 end
 
-function makeSuffixArrayRanksArray(SA::Union{SuffixVector, SuffixVector})::Array{Int32}
+function makeSuffixArrayRanksArray(SA::SuffixArray)::SuffixArray
     len = length(SA)
-    RA = Array{Int32}(undef, len)
+    RA = SuffixArray(undef, len)
     for i = 1:len
         RA[SA[i]] = i
     end
