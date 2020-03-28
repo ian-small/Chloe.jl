@@ -202,6 +202,21 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     target_rstrand_models, rstrand_feature_stacks = do_strand(target_id, '-', t3, target_length, reference, coverages,
         blocks_aligned_to_targetr, target_seqf, targetloopr)
 
+    # strands = Dict{Char,Strand}()
+    # workers = [
+    # ()->{
+    #     strands['+'] = do_strand(target_id, '+', t3, target_length, reference, coverages,
+    #         blocks_aligned_to_targetf, target_seqf, targetloopf)
+
+    # },
+    # ()->{
+    #     strands['-'] = do_strand(target_id, '-', t3, target_length, reference, coverages,
+    #         blocks_aligned_to_targetr, target_seqf, targetloopr)
+    # }]
+    # Threads.@threads for worker in workers
+    #     worker()
+    # end
+
     if output != nothing
         fname = output::String
         if isdir(fname)
@@ -210,9 +225,13 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     else
         fname = "$(target_id).sff"
     end
+
+    # target_fstrand_models, fstrand_feature_stacks = strands['+']
+    # target_rstrand_models, rstrand_feature_stacks = strands['-']
+
     writeSFF(fname, target_id, target_fstrand_models, target_rstrand_models,
-        reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks,
-        targetloopf, targetloopr)
+    reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks,
+    targetloopf, targetloopr)
     @info "[$(target_id)] Overall: $(ns(time_ns() - t1))"
     return fname, target_id
 

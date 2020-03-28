@@ -60,7 +60,7 @@ end
 
 # part or all of a Feature annotated by alignment
 struct Annotation
-    from_genome::String
+    from_genome::DNAString
     path::String
     start::Int32
     length::Int32
@@ -74,7 +74,7 @@ struct Annotation
 end
 
 # checks all blocks for overlap so could be speeded up by using an interval tree
-function pushFeature(from::String, feature::Feature, blocks::AlignedBlocks)::Array{Annotation}
+function pushFeature(from::DNAString, feature::Feature, blocks::AlignedBlocks)::Array{Annotation}
     pushed_features = Array{Annotation}(undef, 0)
     feature_type = featureType(feature)
     for block in blocks
@@ -90,7 +90,8 @@ function pushFeature(from::String, feature::Feature, blocks::AlignedBlocks)::Arr
             end
             path_components = feat_tags(feature)
             annotation_path = join([path_components[1],"?",path_components[3],path_components[4]], "/")
-            pushed_feature = Annotation(from, annotation_path, startA - block[1] + block[2],
+            pushed_feature = Annotation(from, annotation_path, 
+                                        startA - block[1] + block[2],
                                         flength, offset5, feature.length - (startA - feature.start) - flength, phase)
             # println(feature," ",block," ",pushed_feature)
             push!(pushed_features, pushed_feature)
@@ -130,7 +131,7 @@ function readTemplates(file::String)::Tuple{Array{FeatureTemplate},Dict{String,I
 end
 
 struct AnnotationArray
-    genome::String
+    genome::DNAString
     strand::Char
     annotations::Array{Annotation}
 end
