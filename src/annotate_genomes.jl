@@ -1,9 +1,9 @@
 
-
 include("Utilities.jl")
 include("SuffixArrays.jl")
 include("Annotations.jl")
 include("Alignments3.jl")
+
 
 
 using Dates
@@ -84,6 +84,60 @@ end
 const ns(td) = Time(Nanosecond(td))
 
 MayBeString = Union{Nothing,String}
+Strand = Tuple{AAFeature,VFeatureStack}
+
+function do_strand(target_id::String, strand::Char, start_ns::UInt64, target_length::Int64,
+    reference::Reference, coverages::Dict{String,Float32},
+    blocks_aligned_to_target::Array{AlignedBlocks},
+    target_seq::String, targetloop::String)::Strand
+
+    annotations = Array{Annotation}(undef, 0)
+    for (ref_feature_array, blocks) in zip(reference.ref_features, blocks_aligned_to_target)
+        annotations = cat(annotations, pushFeatures(ref_feature_array, target_id, strand, blocks).annotations, dims = 1)
+    end
+    sort!(annotations, by = x->x.path)
+    strand_annotations = AnnotationArray(target_id, strand, annotations)
+
+    t4 = time_ns()
+    @info "[$(target_id)]$(strand) pushing annotations: $(ns(t4 - start_ns))"
+
+    strand_feature_stacks, shadow = stackFeatures(length(target_seq), strand_annotations, reference.feature_templates)
+
+    t5 = time_ns()
+    @info "[$(target_id)]$(strand) stacking features: $(ns(t5 - t4))"
+
+    target_strand_features = FeatureArray(target_id, target_length, strand, AFeature(undef, 0))
+
+    for (i, stack) in enumerate(strand_feature_stacks)
+        left_border, length = alignTemplateToStack(stack, shadow)
+        left_border == 0 && continue
+        depth, coverage = getDepthAndCoverage(stack, left_border, length)
+            # println(fstack.path," ",depth," ",coverage)
+        if ((depth >= stack.template.threshold_counts) && (coverage >= stack.template.threshold_coverage))
+            push!(target_strand_features.features, Feature(stack.path, left_border, length, 0))
+        else
+            @debug "[$(target_id)]$(strand) Below threshold: $(stack.path)"
+        end
+    end
+
+    t6 = time_ns()
+    @info "[$(target_id)]$(strand) aligning templates: $(ns(t6 - t5))"
+
+    for feat in target_strand_features.features
+        feat = refineMatchBoundariesByOffsets!(feat, strand_annotations, target_length, coverages)
+    end
+
+    t7 = time_ns()
+    @info "[$(target_id)]$(strand) refining match boundaries: $(ns(t7 - t6))"
+
+
+    target_strand_models = groupFeaturesIntoGeneModels(target_strand_features)
+    target_strand_models = refineGeneModels!(target_length, targetloop, target_strand_models, strand_annotations, strand_feature_stacks)
+
+    t8 = time_ns()
+    @info "[$(target_id)]$(strand) refining gene models: $(ns(t8 - t7))"
+    return target_strand_models, strand_feature_stacks
+end
 
 function annotate_one(fasta::String, reference::Reference, output::MayBeString)
 
@@ -99,6 +153,8 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     
     target_seqr = revComp(target_seqf)
     targetloopf = target_seqf * target_seqf[1:end - 1]
+    targetloopr = target_seqr * target_seqr[1:end - 1]
+    
     target_saf = makeSuffixArray(targetloopf, true)
     target_raf = makeSuffixArrayRanksArray(target_saf)
 
@@ -106,20 +162,9 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
 
     @info "[$(target_id)] making suffix arrays: $(ns(t2 - t1)))"
 
-    blocks_aligned_to_targetf = Array{Array{Tuple{Int32,Int32,Int32}}}(undef, num_refs * 2)
-    blocks_aligned_to_targetr = Array{Array{Tuple{Int32,Int32,Int32}}}(undef, num_refs * 2)
-    # refcount = 0
-    # for (refcount, (refloop, refSA, refRA)) in enumerate(zip(reference.refloops, reference.refSAs, reference.refRAs))
-    #     # refcount += 1
-    #     f_aligned_blocks, r_aligned_blocks = alignLoops(refloop, refSA, refRA, targetloopf, target_saf, target_raf)
-    #     if refcount % 2 == 1 # aligning + strand to + strand
-    #         blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref forward and target forward strands
-    #         blocks_aligned_to_targetr[refcount + 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref reverse and target reverse strands
-    #     else    # aligning - strand to + strand
-    #         blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref reverse and target forward strands
-    #         blocks_aligned_to_targetr[refcount - 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref forward and target reverse strands
-    #     end
-    # end
+    blocks_aligned_to_targetf = Array{AlignedBlocks}(undef, num_refs * 2)
+    blocks_aligned_to_targetr = Array{AlignedBlocks}(undef, num_refs * 2)
+
     function alignit(refcount)
         refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
         f_aligned_blocks, r_aligned_blocks = alignLoops(refloop, refSA, refRA, targetloopf, target_saf, target_raf)
@@ -134,12 +179,11 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     Threads.@threads for refno in 1:length(reference.refloops) 
         alignit(refno)
     end
-
     t3 = time_ns()
     
     @info "[$(target_id)] aligning: $(ns(t3 - t2))" 
 
-    coverages = Dict{String,Real}()
+    coverages = Dict{String,Float32}()
     for (i, ref) in enumerate(ReferenceOrganisms)
         coverage = 0
         coverage += blockCoverage(blocks_aligned_to_targetf[i * 2 - 1])
@@ -148,85 +192,13 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     end
     @debug "[$(target_id)] coverages:" coverages
 
+    target_fstrand_models, fstrand_feature_stacks = do_strand(target_id, '+', t3, target_length, reference, coverages,
+        blocks_aligned_to_targetf, target_seqf, targetloopf)
 
-    # f_strand_annotations = AnnotationArray(target_id, '+', Array{Annotation,1}(undef, 0))
-    # r_strand_annotations = AnnotationArray(target_id, '-', Array{Annotation,1}(undef, 0))
-    # for (ref_feature_array, blocksf, blocksr) in zip(reference.ref_features, blocks_aligned_to_targetf, blocks_aligned_to_targetr)
-    #     f_strand_annotations.annotations = cat(f_strand_annotations.annotations, pushFeatures(ref_feature_array, target_id, '+', blocksf).annotations, dims = 1)
-    #     r_strand_annotations.annotations = cat(r_strand_annotations.annotations, pushFeatures(ref_feature_array, target_id, '-', blocksr).annotations, dims = 1)
-    # end
-    # sort!(f_strand_annotations.annotations, by = x->x.path)
-    # sort!(r_strand_annotations.annotations, by = x->x.path)
+    t3 = time_ns();
 
-    f_annotations = Array{Annotation,1}(undef, 0)
-    r_annotations = Array{Annotation,1}(undef, 0)
-    for (ref_feature_array, blocksf, blocksr) in zip(reference.ref_features, blocks_aligned_to_targetf, blocks_aligned_to_targetr)
-        f_annotations = cat(f_annotations, pushFeatures(ref_feature_array, target_id, '+', blocksf).annotations, dims = 1)
-        r_annotations = cat(r_annotations, pushFeatures(ref_feature_array, target_id, '-', blocksr).annotations, dims = 1)
-    end
-    sort!(f_annotations, by = x->x.path)
-    sort!(r_annotations, by = x->x.path)
-    f_strand_annotations = AnnotationArray(target_id, '+', f_annotations)
-    r_strand_annotations = AnnotationArray(target_id, '-', r_annotations)
-
-    t4 = time_ns()
-    @info "[$(target_id)] pushing annotations: $(ns(t4 - t3))"
-
-    fstrand_feature_stacks, fshadow = stackFeatures(length(target_seqf), f_strand_annotations, reference.feature_templates)
-    rstrand_feature_stacks, rshadow = stackFeatures(length(target_seqr), r_strand_annotations, reference.feature_templates)
-
-    t5 = time_ns()
-    @info "[$(target_id)] stacking features: $(ns(t5 - t3))"
-
-    target_fstrand_features = FeatureArray(target_id, target_length, '+', Array{Feature,1}(undef, 0))
-
-    for (i, fstack) in enumerate(fstrand_feature_stacks)
-        left_border, length = alignTemplateToStack(fstack, fshadow)
-        left_border == 0 && continue
-        depth, coverage = getDepthAndCoverage(fstack, left_border, length)
-            # println(fstack.path," ",depth," ",coverage)
-        if ((depth >= fstack.template.threshold_counts) && (coverage >= fstack.template.threshold_coverage))
-            push!(target_fstrand_features.features, Feature(fstack.path, left_border, length, 0))
-        else
-            # println("Below threshold: " * fstack.path)
-        end
-    end
-
-    target_rstrand_features = FeatureArray(target_id, target_length, '-', Array{Feature,1}(undef, 0))
-
-    for (i, rstack) in enumerate(rstrand_feature_stacks)
-        left_border, length = alignTemplateToStack(rstack, rshadow)
-        left_border == 0 && continue
-        depth, coverage = getDepthAndCoverage(rstack, left_border, length)
-        if ((depth >= rstack.template.threshold_counts) && (coverage >= rstack.template.threshold_coverage))
-            push!(target_rstrand_features.features, Feature(rstack.path, left_border, length, 0))
-        else
-            # println("Below threshold: " * fstack.path)
-        end
-    end
-
-    t6 = time_ns()
-    @info "[$(target_id)] aligning templates: $(ns(t6 - t5))"
-
-    for feat in target_fstrand_features.features
-        feat = refineMatchBoundariesByOffsets!(feat, f_strand_annotations, target_length, coverages)
-    end
-
-    for feat in target_rstrand_features.features
-        feat = refineMatchBoundariesByOffsets!(feat, r_strand_annotations, target_length, coverages)
-    end
-
-    t7 = time_ns()
-    @info "[$(target_id)] refining match boundaries: $(ns(t7 - t6))"
-
-    target_fstrand_models = groupFeaturesIntoGeneModels(target_fstrand_features)
-    target_fstrand_models = refineGeneModels!(target_length, targetloopf, target_fstrand_models, f_strand_annotations, fstrand_feature_stacks)
-    target_rstrand_models = groupFeaturesIntoGeneModels(target_rstrand_features)
-    targetloopr = target_seqr * target_seqr[1:end - 1]
-    target_rstrand_models = refineGeneModels!(target_length, targetloopr, target_rstrand_models, r_strand_annotations, rstrand_feature_stacks)
-
-    t8 = time_ns()
-    @info "[$(target_id)] refining gene models: $(ns(t8 - t7))"
+    target_rstrand_models, rstrand_feature_stacks = do_strand(target_id, '-', t3, target_length, reference, coverages,
+        blocks_aligned_to_targetr, target_seqf, targetloopr)
 
     if output != nothing
         fname = output::String
@@ -244,7 +216,7 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
 
 end
 
-function annotate(refsdir::String, templates::String, fa_files::Array{String,1}, output::MayBeString)
+function annotate(refsdir::String, templates::String, fa_files::Array{String}, output::MayBeString)
 
     reference = readReferences(refsdir, templates)
 

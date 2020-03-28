@@ -1,5 +1,6 @@
 using Printf
 
+
 mutable struct Feature
     path::String
     start::Int32
@@ -8,20 +9,21 @@ mutable struct Feature
     # to be in the correct reading frame
     phase::Int8
 end
-
+AFeature = Array{Feature}
+AAFeature = Array{AFeature}
 # entire set of Features for one strand of one genome
 struct FeatureArray
     genome::String
     genome_length::Int32
     strand::Char
-    features::Array{Feature,1}
+    features::AFeature
 end
 
 function readFeatures(file::String)
     open(file) do f
         header = split(readline(f), '\t')
-        f_strand_features = FeatureArray(header[1], parse(Int32, header[2]), '+', Array{Feature,1}(undef, 0))
-        r_strand_features = FeatureArray(header[1], parse(Int32, header[2]), '-', Array{Feature,1}(undef, 0))
+        f_strand_features = FeatureArray(header[1], parse(Int32, header[2]), '+', AFeature(undef, 0))
+        r_strand_features = FeatureArray(header[1], parse(Int32, header[2]), '-', AFeature(undef, 0))
         while !eof(f)
             fields = split(readline(f), '\t')
             feature = Feature(fields[1], parse(Int, fields[3]), parse(Int, fields[4]), parse(Int, fields[5]))
@@ -52,8 +54,8 @@ struct Annotation
 end
 
 # checks all blocks for overlap so could be speeded up by using an interval tree
-function pushFeature(from::String, feature::Feature, blocks)::Array{Annotation,1}
-    pushed_features = Array{Annotation,1}(undef, 0)
+function pushFeature(from::String, feature::Feature, blocks)::Array{Annotation}
+    pushed_features = Array{Annotation}(undef, 0)
     tags = split(feature.path, '/')
     feature_type = tags[3]
     for block in blocks
@@ -111,7 +113,7 @@ end
 struct AnnotationArray
     genome::String
     strand::Char
-    annotations::Array{Annotation,1}
+    annotations::Array{Annotation}
 end
 
 function pushFeatures(reffeaturearray, target_id, target_strand, aligned_blocks)
@@ -134,9 +136,12 @@ struct FeatureStack
     template::FeatureTemplate
 end
 
-function stackFeatures(length::Integer, annotations::AnnotationArray, templates::Array{FeatureTemplate,1})
-    stacks = Vector{FeatureStack}(undef, 0)
-    shadowstack = fill(-1, length) # will be negative image of all stacks combined,
+VFeatureStack = Vector{FeatureStack}
+
+function stackFeatures(length::Integer, annotations::AnnotationArray,
+    templates::Array{FeatureTemplate})::Tuple{VFeatureStack,Array{Int32}}
+    stacks = VFeatureStack(undef, 0)
+    shadowstack::Array{Int32} = fill(-1, length) # will be negative image of all stacks combined,
     # initialised to small negative number; acts as prior expectation for feature-finding
     for annotation in annotations.annotations
         template_index = findfirst(x->x.path == annotation.path, templates)
@@ -302,7 +307,7 @@ function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Annota
     return StatsBase.mode(phases) # return most common phase
 end
 
-function weightedMode(values::Array{Int32,1}, weights::Array{Float32,1})
+function weightedMode(values::Array{Int32}, weights::Array{Float32})
     weightedCounts = zeros(0, 2)
     for (v, w) in zip(values, weights)
         row = findfirst(isequal(v), weightedCounts[:,1])
@@ -318,7 +323,7 @@ function weightedMode(values::Array{Int32,1}, weights::Array{Float32,1})
 end
 
 # uses weighted mode, weighting by alignment length and distance from boundary
-function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationArray, target_length::Integer, coverages::Dict{String,Real})
+function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationArray, target_length::Integer, coverages::Dict{String,Float32})
     # grab all the matching features
     matching_annotations = findall(x->x.path == feat.path, annotations.annotations)
     isempty(matching_annotations) && return feat
@@ -388,8 +393,8 @@ function getFeatureName(feature::Feature)
     return tags[1]
 end
 
-function groupFeaturesIntoGeneModels(features::FeatureArray)
-    gene_models = Array{Array{Feature,1},1}(undef, 0)
+function groupFeaturesIntoGeneModels(features::FeatureArray)::AAFeature
+    gene_models = AAFeature(undef, 0)
     current_model = Feature[]
     for feature in features.features
         if isempty(current_model)
@@ -405,7 +410,7 @@ function groupFeaturesIntoGeneModels(features::FeatureArray)
     end
     sort!(current_model, by = x->x.start)
     push!(gene_models, current_model)
-    return gene_models::Array{Array{Feature,1},1}
+    return gene_models
 end
 
 function translateFeature(genome::String, feat::Feature)
@@ -423,7 +428,7 @@ function translateFeature(genome::String, feat::Feature)
     return String(peptide)
 end
 
-function translateModel(genome::String, model::Array{Feature,1})
+function translateModel(genome::String, model::AFeature)
 
     DNA = ""
     for (i, feat) in enumerate(model)
@@ -652,8 +657,8 @@ function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, stacks::Array{
 end
 
 function refineGeneModels!(genome_length::Integer, targetloop::String,
-                          gene_models::Array{Array{Feature,1},1}, annotations::AnnotationArray,
-                          feature_stacks::Array{FeatureStack})
+                          gene_models::AAFeature, annotations::AnnotationArray,
+                          feature_stacks::Array{FeatureStack})::AAFeature
     for model in gene_models
         isempty(model) && continue
         # sort features in model by mid-point to avoid cases where long intron overlaps short exon
@@ -724,16 +729,16 @@ function getFeatureByName(fname::String, features::FeatureArray)
     return nothing
 end
 
-function getGeneModelByName(gm_name::String, gene_models::Array{Array{Feature,1},1})
+function getGeneModelByName(gm_name::String, gene_models::AAFeature)::Union{Nothing,AFeature}
     for model in gene_models
         if (startswith(model[1].path, gm_name))
-            return model::Array{Feature,1}
+            return model::AFeature
         end
     end
     return nothing
 end
 
-function writeModelToSFF(outfile, model::Array{Feature,1}, model_id, targetloop, gene_exons,
+function writeModelToSFF(outfile, model::AFeature, model_id, targetloop, gene_exons,
                          maxlengths, feature_stacks, strand)
     gene = split(first(model).path, '/')[1]
     expected_exons = gene_exons[gene]
@@ -799,8 +804,8 @@ function writeModelToSFF(outfile, model::Array{Feature,1}, model_id, targetloop,
     end
 end
 
-function writeSFF(outfile::String, id, fstrand_models::Array{Array{Feature,1},1},
-                  rstrand_models::Array{Array{Feature,1},1}, gene_exons,
+function writeSFF(outfile::String, id, fstrand_models::AAFeature,
+                  rstrand_models::AAFeature, gene_exons,
                   fstrand_feature_stacks, rstrand_feature_stacks, targetloopf, targetloopr)
 
     maxlengths = Dict{String,Integer}()

@@ -1,7 +1,7 @@
 # include("Utilities.jl")
 # include("Annotations.jl")
 
-function mergeAdjacentFeaturesinModel!(genome_id, genome_length, strand, model::Array{Feature,1})
+function mergeAdjacentFeaturesinModel!(genome_id, genome_length, strand, model::AFeature)
     f1_pointer = 1
     f2_pointer = 2
     while f2_pointer <= length(model)

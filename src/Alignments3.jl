@@ -1,3 +1,5 @@
+AlignedBlocks = Array{Tuple{Int32,Int32,Int32}}
+
 function compareSubStrings(a::SubString, b::SubString)
     # a, b = Iterators.Stateful(a), Iterators.Stateful(b)
     count::Int32 = 0
@@ -9,8 +11,8 @@ function compareSubStrings(a::SubString, b::SubString)
     return (count, 1)
 end
 
-function alignSAs(a::String, saa::Array{Int32}, b::String, sab::Array{Int32})
-    lcps = Vector{Tuple{Int32,Int32,Int32}}(undef, length(saa))
+function alignSAs(a::String, saa::Array{Int32}, b::String, sab::Array{Int32})::AlignedBlocks
+    lcps = AlignedBlocks(undef, length(saa))
     bpointer = 1
     for apointer = 1:length(saa)
         ssa = SubString(a, saa[apointer])
@@ -52,9 +54,9 @@ function matchLengthThreshold(m, n)
     return 26
 end
 
-function lcps2AlignmentBlocks(lcps, circular, min_run_length)
+function lcps2AlignmentBlocks(lcps, circular, min_run_length)::AlignedBlocks
     seqlen = length(lcps)
-    aligned_blocks = Vector{Tuple{Int32,Int32,Int32}}(undef, 0)
+    aligned_blocks = AlignedBlocks(undef, 0)
     a_start = lcps[1][1]
     b_start = lcps[1][2]
     pointer = -1
@@ -91,7 +93,7 @@ function blockCoverage(blocks)
     return cumulative_length
 end
 
-function fillGap(block1, block2, refloop, refSA, refRA, targetloop, targetSA, targetRA)
+function fillGap(block1, block2, refloop, refSA, refRA, targetloop, targetSA, targetRA)::AlignedBlocks
 
     ref_gap = block2[1] - block1[1] - block1[3]
     target_gap = block2[2] - block1[2] - block1[3]
@@ -159,18 +161,18 @@ function fillAllGaps(aligned_blocks, refloop, refSA, refRA, targetloop, targetSA
     return aligned_blocks
 end
 
-function revCompBlocks(blocks, a_length, b_length)
-    rev_blocks = Vector{Tuple{Int32,Int32,Int32}}(undef, length(blocks))
+function revCompBlocks(blocks, a_length, b_length)::AlignedBlocks
+    rev_blocks = AlignedBlocks(undef, length(blocks))
     for i = 1:length(blocks)
         block = blocks[i]
         rev_blocks[i] = (a_length - block[3] - block[1] + 2, b_length - block[3] - block[2] + 2, block[3])
     end
-    return rev_blocks::Vector{Tuple{Int32,Int32,Int32}}
+    return rev_blocks
 end
 
-function mergeBlockArrays(blocks1, blocks2)
+function mergeBlockArrays(blocks1, blocks2)::AlignedBlocks
     # assume sorted arrays
-    merged_array = Vector{Tuple{Int32,Int32,Int32}}(undef, 0)
+    merged_array = AlignedBlocks(undef, 0)
     blocks1_pointer = 1
     blocks2_pointer = 1
     while blocks1_pointer <= length(blocks1) && blocks2_pointer <= length(blocks2)
@@ -213,7 +215,10 @@ function mergeBlockArrays(blocks1, blocks2)
     return merged_array
 end
 
-function alignLoops(refloop, refSA, refRA, targetloop, target_SA, target_RA)
+AlignedBlock = Tuple{Int32,Int32,Int32}
+AlignedBlocks = Vector{AlignedBlock}
+
+function alignLoops(refloop, refSA, refRA, targetloop, target_SA, target_RA)::Tuple{AlignedBlocks,AlignedBlocks}
     # check if sequences are identical, allowing for rotation
     if length(refloop) == length(targetloop)
         match = findfirst(SubString(refloop, 1, floor(Int, (length(refloop) + 1) / 2)), targetloop)
@@ -240,7 +245,7 @@ function alignLoops(refloop, refSA, refRA, targetloop, target_SA, target_RA)
     # println(blockCoverage(tr_aligned_blocks))
 
 
-    #combine rt and tr blocks; tr blocks need [1] and [2] to be swapped
+    # combine rt and tr blocks; tr blocks need [1] and [2] to be swapped
     # for tr_block in tr_aligned_blocks
     #     push!(rt_aligned_blocks,(tr_block[2],tr_block[1],tr_block[3]))
     # end
@@ -251,5 +256,5 @@ function alignLoops(refloop, refSA, refRA, targetloop, target_SA, target_RA)
 
     rev_blocks = revCompBlocks(merged_blocks, length(refSA), length(target_SA))
     # println("Coverage: ", blockCoverage(merged_blocks) + blockCoverage(rev_blocks))
-    return merged_blocks::Vector{Tuple{Int32,Int32,Int32}}, rev_blocks::Vector{Tuple{Int32,Int32,Int32}}
+    return merged_blocks::AlignedBlocks, rev_blocks::AlignedBlocks
 end
