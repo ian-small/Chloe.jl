@@ -15,7 +15,7 @@ function compareSubStrings(a::SubString, b::SubString)
     return (count, 1)
 end
 
-function alignSAs(a::DNAString, saa::Array{Int32}, b::DNAString, sab::Array{Int32})::AlignedBlocks
+function alignSAs(a::DNAString, saa::SuffixArray, b::DNAString, sab::SuffixArray)::AlignedBlocks
     lcps = AlignedBlocks(undef, length(saa))
     bpointer = 1
     for apointer = 1:length(saa)
@@ -58,7 +58,7 @@ function matchLengthThreshold(m, n)
     return 26
 end
 
-function lcps2AlignmentBlocks(lcps, circular, min_run_length)::AlignedBlocks
+function lcps2AlignmentBlocks(lcps::AlignedBlocks, circular::Bool, min_run_length::Integer)::AlignedBlocks
     seqlen = length(lcps)
     aligned_blocks = AlignedBlocks(undef, 0)
     a_start = lcps[1][1]
@@ -90,14 +90,12 @@ function lcps2AlignmentBlocks(lcps, circular, min_run_length)::AlignedBlocks
 end
 
 function blockCoverage(blocks::AlignedBlocks)
-    cumulative_length = 0
-    for block in blocks
-        cumulative_length += block[3]
-    end
-    return cumulative_length
+    sum(map(b->b[3], blocks))
 end
 
-function fillGap(block1, block2, refloop, refSA, refRA, targetloop, targetSA, targetRA)::AlignedBlocks
+function fillGap(block1::AlignedBlock, block2::AlignedBlock, 
+        refloop::DNAString, refSA::SuffixArray, refRA::SuffixArray, 
+        targetloop::DNAString, targetSA::SuffixArray, targetRA::SuffixArray)::AlignedBlocks
 
     ref_gap = block2[1] - block1[1] - block1[3]
     target_gap = block2[2] - block1[2] - block1[3]
@@ -111,8 +109,8 @@ function fillGap(block1, block2, refloop, refSA, refRA, targetloop, targetSA, ta
     ref_ranks_slice = sort(refRA[ref_gap_range])
     target_ranks_slice = sort(targetRA[target_gap_range])
 
-    ref_gap_SA = Array{Int32}(undef, ref_gap)
-    target_gap_SA = Array{Int32}(undef, target_gap)
+    ref_gap_SA = SuffixArray(undef, ref_gap)
+    target_gap_SA = SuffixArray(undef, target_gap)
     for i = 1:ref_gap
         ref_gap_SA[i] = refSA[ref_ranks_slice[i]]
     end
@@ -139,8 +137,9 @@ function mergeBlocks(block1::AlignedBlock, block2::AlignedBlock)::Tuple{AlignedB
     return block1, block2
 end
 
-function fillAllGaps(aligned_blocks::AlignedBlocks, 
-    refloop::DNAString, refSA::SuffixArray, refRA, targetloop::DNAString, targetSA::SuffixArray, targetRA)::AlignedBlocks
+function fillAllGaps!(aligned_blocks::AlignedBlocks, 
+    refloop::DNAString, refSA::SuffixArray, refRA, 
+    targetloop::DNAString, targetSA::SuffixArray, targetRA::SuffixArray)::AlignedBlocks
     block1_pointer = 1
     block2_pointer = 2
     while block2_pointer <= length(aligned_blocks)
@@ -241,7 +240,7 @@ function alignLoops(refloop::DNAString,
     lcps = alignSAs(refloop, refSA, targetloop, target_SA)
     # set minimum match length to 18 based on matchLengthThreshold() calculation for 50-150kbp sequences
     rt_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(refSA), length(target_SA)))
-    rt_aligned_blocks = fillAllGaps(rt_aligned_blocks, refloop, refSA, refRA, targetloop, target_SA, target_RA)
+    rt_aligned_blocks = fillAllGaps!(rt_aligned_blocks, refloop, refSA, refRA, targetloop, target_SA, target_RA)
     # print("Coverage ref to target: ")
     # println(blockCoverage(rt_aligned_blocks))
 
@@ -249,7 +248,7 @@ function alignLoops(refloop::DNAString,
     lcps = alignSAs(targetloop, target_SA, refloop, refSA)
     # set minimum match length to 18 based on matchLengthThreshold() calculation for 50-150kbp sequences
     tr_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(refSA), length(target_SA)))
-    tr_aligned_blocks = fillAllGaps(tr_aligned_blocks, targetloop, target_SA, target_RA, refloop, refSA, refRA)
+    tr_aligned_blocks = fillAllGaps!(tr_aligned_blocks, targetloop, target_SA, target_RA, refloop, refSA, refRA)
     # print("Coverage target to ref: ")
     # println(blockCoverage(tr_aligned_blocks))
 

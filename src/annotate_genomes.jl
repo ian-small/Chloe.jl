@@ -30,10 +30,12 @@ const ReferenceOrganisms = Dict(
 )
 
 struct Reference
+    # 2* length(ReferenceOrganisms) from directory reference_1116
     refloops::Array{String}
     refSAs::Array{SuffixArray}
     refRAs::Array{SuffixArray}
     ref_features::Array{FeatureArray}
+    # from .tsv file
     feature_templates::Array{FeatureTemplate}
     gene_exons::Dict{String,Int32}
 end
@@ -156,6 +158,7 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     
     target_saf = makeSuffixArray(targetloopf, true)
     target_raf = makeSuffixArrayRanksArray(target_saf)
+    
 
     t2 = time_ns()
 

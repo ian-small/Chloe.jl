@@ -100,7 +100,7 @@ function pushFeature(from::String, feature::Feature, blocks::AlignedBlocks)::Arr
 end
 
 struct FeatureTemplate
-    path::String
+    path::String  # similar to .sff path
     threshold_counts::Float32
     threshold_coverage::Float32
     median_length::Int32
@@ -157,11 +157,12 @@ struct FeatureStack
 end
 
 AFeatureStack = Array{FeatureStack}
+ShadowStack = Array{Int32}
 
 function stackFeatures(length::Integer, annotations::AnnotationArray,
-    templates::Array{FeatureTemplate})::Tuple{AFeatureStack,Array{Int32}}
+    templates::Array{FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
     stacks = AFeatureStack(undef, 0)
-    shadowstack::Array{Int32} = fill(-1, length) # will be negative image of all stacks combined,
+    shadowstack::ShadowStack = fill(-1, length) # will be negative image of all stacks combined,
     # initialised to small negative number; acts as prior expectation for feature-finding
     for annotation in annotations.annotations
         template_index = findfirst(x->x.path == annotation.path, templates)
@@ -182,7 +183,7 @@ function stackFeatures(length::Integer, annotations::AnnotationArray,
     return stacks, shadowstack
 end
 
-function expandBoundaryInChunks(feature_stack::FeatureStack, shadowstack, origin, direction, max)
+function expandBoundaryInChunks(feature_stack::FeatureStack, shadowstack::ShadowStack, origin, direction, max)
     glen = length(shadowstack)
     pointer = origin
 
@@ -200,7 +201,7 @@ function expandBoundaryInChunks(feature_stack::FeatureStack, shadowstack, origin
     return genome_wrap(glen, pointer)
 end
 
-function expandBoundary(feature_stack::FeatureStack, shadowstack, origin, direction, max)
+function expandBoundary(feature_stack::FeatureStack, shadowstack::ShadowStack, origin, direction, max)
     glen = length(shadowstack)
     pointer = origin
     for i = direction:direction:direction * max
@@ -258,7 +259,7 @@ function alignTemplateToStack(feature_stack::FeatureStack, shadowstack)
     return best_hit, tlen
 end
 
-function getModelID!(model_ids, model::AFeature)
+function getModelID!(model_ids::Dict{String,Int32}, model::AFeature)
     gene_name = getFeatureName(first(model))
     instance_count = 1
     model_id = gene_name * "/" * string(instance_count)
@@ -331,7 +332,8 @@ function weightedMode(values::Array{Int32}, weights::Array{Float32})
 end
 
 # uses weighted mode, weighting by alignment length and distance from boundary
-function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationArray, target_length::Integer, coverages::Dict{String,Float32})
+function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationArray, 
+            target_length::Integer, coverages::Dict{String,Float32})
     # grab all the matching features
     matching_annotations = findall(x->x.path == feat.path, annotations.annotations)
     isempty(matching_annotations) && return feat
@@ -349,10 +351,10 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationA
         end
     end
     # println(length(overlapping_annotations))
-    end5s = Vector{Int32}(undef, 0)
-    end5ws = Vector{Float32}(undef, 0)
-    end3s = Vector{Int32}(undef, 0)
-    end3ws = Vector{Float32}(undef, 0)
+    end5s = Array{Int32}(undef, 0)
+    end5ws = Array{Float32}(undef, 0)
+    end3s = Array{Int32}(undef, 0)
+    end3ws = Array{Float32}(undef, 0)
 
     for annotation in overlapping_annotations
         # predicted 5' end is annotation start - offset5
@@ -730,8 +732,10 @@ function getGeneModelByName(gm_name::String, gene_models::AAFeature)::Union{Noth
 end
 
 function writeModelToSFF(outfile, model::AFeature, model_id::String,
-                        targetloop::DNAString, gene_exons,
-                         maxlengths, feature_stacks, strand::Char)
+                        targetloop::DNAString,
+                        gene_exons::Dict{String,Int32},
+                        maxlengths::Dict{String,Int32},
+                        feature_stacks::AFeatureStack, strand::Char)
     gene = getFeatureName(first(model))
     expected_exons = gene_exons[gene]
     exon_count = 0
