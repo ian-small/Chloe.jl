@@ -33,7 +33,7 @@ AFeature = Array{Feature}
 AAFeature = Array{AFeature}
 # entire set of Features for one strand of one genome
 struct FeatureArray
-    genome::String
+    genome_id::String
     genome_length::Int32
     strand::Char
     features::AFeature
@@ -131,23 +131,21 @@ function readTemplates(file::String)::Tuple{Array{FeatureTemplate},Dict{String,I
 end
 
 struct AnnotationArray
-    genome::DNAString
+    genome_id::String
     strand::Char
     annotations::Array{Annotation}
 end
 
-function pushFeatures(reffeaturearray::FeatureArray, target_id::String, 
+function pushFeatures(ref_featurearray::FeatureArray, target_id::String, 
     target_strand::Char, aligned_blocks::AlignedBlocks)::AnnotationArray
-    # pushed_features = AnnotationArray(target_id, target_strand, Array{Annotation,1}(undef, 0))
     annotations = Array{Annotation}(undef, 0)
-    for feature in reffeaturearray.features
-        new_features = pushFeature(reffeaturearray.genome, feature, aligned_blocks)
+    for feature in ref_featurearray.features
+        new_features = pushFeature(ref_featurearray.genome_id, feature, aligned_blocks)
         if !isempty(new_features)
             # pushed_features.annotations = cat(pushed_features.annotations, new_features, dims = 1)
             annotations = cat(annotations, new_features, dims = 1)
         end
     end
-    # return pushed_features::AnnotationArray
     return AnnotationArray(target_id, target_strand, annotations)
 end
 
@@ -168,7 +166,7 @@ function stackFeatures(length::Integer, annotations::AnnotationArray,
     for annotation in annotations.annotations
         template_index = findfirst(x->x.path == annotation.path, templates)
         if template_index == nothing
-            @warn "Can't find template for $(annotation.path)"
+            @error "Can't find template for $(annotation.path)"
         end
         if isempty(stacks) || (index = findfirst(x->x.path == annotation.path, stacks)) == nothing
             stack = FeatureStack(annotation.path, zeros(Int32, length), templates[template_index])
@@ -177,8 +175,9 @@ function stackFeatures(length::Integer, annotations::AnnotationArray,
             stack = stacks[index]
         end
         for i = annotation.start:annotation.start + annotation.length - 1
-            stack.stack[genome_wrap(length, i)] += 3 # +1 to counteract shadowstack initialisation, +1 to counteract addition to shadowstack
-            shadowstack[genome_wrap(length, i)] -= 1
+            gw = genome_wrap(length, i)
+            stack.stack[gw] += 3 # +1 to counteract shadowstack initialisation, +1 to counteract addition to shadowstack
+            shadowstack[gw] -= 1
         end
     end
     return stacks, shadowstack
@@ -214,7 +213,7 @@ function expandBoundary(feature_stack::FeatureStack, shadowstack::ShadowStack, o
     return pointer # not wrapped
 end
 
-function getDepthAndCoverage(feature_stack::FeatureStack, left, len)
+function getDepthAndCoverage(feature_stack::FeatureStack, left::Int32, len::Int32)::Tuple{Float64,Float64}
     coverage = 0
     max_count = 0
     sum_count = 0
@@ -236,7 +235,7 @@ function getDepthAndCoverage(feature_stack::FeatureStack, left, len)
     return depth, coverage / len
 end
 
-function alignTemplateToStack(feature_stack::FeatureStack, shadowstack)
+function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowStack)::Tuple{Int32,Int32}
     glen = length(feature_stack.stack)
     tlen = feature_stack.template.median_length
     score = 0
@@ -274,7 +273,7 @@ end
 
 function writeSFF(outfile::String, fstrand_features::FeatureArray, rstrand_features::FeatureArray)
     open(outfile, "w") do outfile
-        write(outfile, fstrand_features.genome, "\t", string(fstrand_features.genome_length), "\n")
+        write(outfile, fstrand_features.genome_id, "\t", string(fstrand_features.genome_length), "\n")
         for f in fstrand_features.features
             write(outfile, f.path)
             write(outfile, "\t")
@@ -298,7 +297,7 @@ function writeSFF(outfile::String, fstrand_features::FeatureArray, rstrand_featu
     end
 end
 
-function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::AnnotationArray)
+function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::AnnotationArray)::Int8
     matching_annotations = findall(x->x.path == feat.path, annotations.annotations)
     phases = Int8[]
     for annotation in annotations.annotations[matching_annotations]
@@ -317,7 +316,7 @@ function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Annota
     return StatsBase.mode(phases) # return most common phase
 end
 
-function weightedMode(values::Array{Int32}, weights::Array{Float32})
+function weightedMode(values::Array{Int32}, weights::Array{Float32})::Int32
     weightedCounts = zeros(0, 2)
     for (v, w) in zip(values, weights)
         row = findfirst(isequal(v), weightedCounts[:,1])

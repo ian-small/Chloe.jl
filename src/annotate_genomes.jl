@@ -87,10 +87,10 @@ const ns(td) = Time(Nanosecond(td))
 MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,AFeatureStack}
 
-function do_strand(target_id::String, strand::Char, start_ns::UInt64, target_length::Int64,
+function do_strand(target_id::String, start_ns::UInt64, target_length::Int64,
     reference::Reference, coverages::Dict{String,Float32},
-    blocks_aligned_to_target::Array{AlignedBlocks},
-    target_seq::String, targetloop::String)::Strand
+    strand::Char, blocks_aligned_to_target::Array{AlignedBlocks},
+    targetloop::String)::Strand
 
     annotations = Array{Annotation}(undef, 0)
     for (ref_feature_array, blocks) in zip(reference.ref_features, blocks_aligned_to_target)
@@ -102,7 +102,7 @@ function do_strand(target_id::String, strand::Char, start_ns::UInt64, target_len
     t4 = time_ns()
     @info "[$(target_id)]$(strand) pushing annotations: $(ns(t4 - start_ns))"
 
-    strand_feature_stacks, shadow = stackFeatures(length(target_seq), strand_annotations, reference.feature_templates)
+    strand_feature_stacks, shadow = stackFeatures(target_length, strand_annotations, reference.feature_templates)
 
     t5 = time_ns()
     @info "[$(target_id)]$(strand) stacking features: $(ns(t5 - t4))"
@@ -183,7 +183,7 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     end
     t3 = time_ns()
     
-    @info "[$(target_id)] aligning: $(ns(t3 - t2))" 
+    @info "[$(target_id)] aligning: ($(length(reference.refloops))) $(ns(t3 - t2))" 
 
     coverages = Dict{String,Float32}()
     for (i, ref) in enumerate(ReferenceOrganisms)
@@ -194,28 +194,27 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     end
     @debug "[$(target_id)] coverages:" coverages
 
-    target_fstrand_models, fstrand_feature_stacks = do_strand(target_id, '+', t3, target_length, reference, coverages,
-        blocks_aligned_to_targetf, target_seqf, targetloopf)
+    # target_fstrand_models, fstrand_feature_stacks = do_strand(target_id, '+', t3, target_length, reference, coverages,
+    #     blocks_aligned_to_targetf, target_seqf, targetloopf)
 
-    t3 = time_ns();
+    # t3 = time_ns();
 
-    target_rstrand_models, rstrand_feature_stacks = do_strand(target_id, '-', t3, target_length, reference, coverages,
-        blocks_aligned_to_targetr, target_seqf, targetloopr)
+    # target_rstrand_models, rstrand_feature_stacks = do_strand(target_id, '-', t3, target_length, reference, coverages,
+    #     blocks_aligned_to_targetr, target_seqf, targetloopr)
 
-    # strands = Dict{Char,Strand}()
-    # workers = [
-    # ()->{
-    #     strands['+'] = do_strand(target_id, '+', t3, target_length, reference, coverages,
-    #         blocks_aligned_to_targetf, target_seqf, targetloopf)
+    strands = Dict{Char,Strand}()
 
-    # },
-    # ()->{
-    #     strands['-'] = do_strand(target_id, '-', t3, target_length, reference, coverages,
-    #         blocks_aligned_to_targetr, target_seqf, targetloopr)
-    # }]
-    # Threads.@threads for worker in workers
-    #     worker()
-    # end
+    function watson()
+        strands['+'] = do_strand(target_id, t3, target_length, reference, coverages,
+            '+',blocks_aligned_to_targetf, targetloopf)
+    end
+    function crick()
+        strands['-'] = do_strand(target_id, t3, target_length, reference, coverages,
+            '-', blocks_aligned_to_targetr, targetloopr)
+    end
+    Threads.@threads for worker in [watson, crick]
+        worker()
+    end
 
     if output != nothing
         fname = output::String
@@ -226,8 +225,8 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
         fname = "$(target_id).sff"
     end
 
-    # target_fstrand_models, fstrand_feature_stacks = strands['+']
-    # target_rstrand_models, rstrand_feature_stacks = strands['-']
+    target_fstrand_models, fstrand_feature_stacks = strands['+']
+    target_rstrand_models, rstrand_feature_stacks = strands['-']
 
     writeSFF(fname, target_id, target_fstrand_models, target_rstrand_models,
     reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks,

@@ -27,7 +27,8 @@ function alignSAs(a::DNAString, saa::SuffixArray, b::DNAString, sab::SuffixArray
             newtuple = (saa[apointer], sab[bpointer], lcp)
             if (direction < 0 || bpointer == length(sab))
                 if (oldtuple[1] == 0) && (bpointer > 1)
-                    (lcp2, direction) = compareSubStrings(ssa, SubString(b, sab[bpointer - 1]))
+                    sab1 = SubString(b, sab[bpointer - 1])
+                    (lcp2, direction) = compareSubStrings(ssa, sab1)
                     oldtuple = (saa[apointer], sab[bpointer - 1], lcp2)
                 end
                 if (lcp >= oldtuple[3])
@@ -223,32 +224,32 @@ end
 AlignedBlock = Tuple{Int32,Int32,Int32}
 AlignedBlocks = Array{AlignedBlock}
 
-function alignLoops(refloop::DNAString, 
-                    refSA::SuffixArray, refRA::SuffixArray, 
-                    targetloop::DNAString,
+function alignLoops(ref_loop::DNAString, 
+                    ref_SA::SuffixArray, ref_RA::SuffixArray, 
+                    target_loop::DNAString,
                     target_SA::SuffixArray, target_RA::SuffixArray)::Tuple{AlignedBlocks,AlignedBlocks}
     # check if sequences are identical, allowing for rotation
-    if length(refloop) == length(targetloop)
-        match = findfirst(SubString(refloop, 1, floor(Int, (length(refloop) + 1) / 2)), targetloop)
+    if length(ref_loop) == length(target_loop)
+        match = findfirst(SubString(ref_loop, 1, floor(Int, (length(ref_loop) + 1) / 2)), target_loop)
         if !isnothing(match)
-            aligned_block = [(1, match[1], length(refloop))]
-            return aligned_block, revCompBlocks(aligned_block, length(refSA), length(target_SA))
+            aligned_block = [(1, match[1], length(ref_loop))]
+            return aligned_block, revCompBlocks(aligned_block, length(ref_SA), length(target_SA))
         end
     end
 
     # align from ref to target
-    lcps = alignSAs(refloop, refSA, targetloop, target_SA)
+    lcps = alignSAs(ref_loop, ref_SA, target_loop, target_SA)
     # set minimum match length to 18 based on matchLengthThreshold() calculation for 50-150kbp sequences
-    rt_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(refSA), length(target_SA)))
-    rt_aligned_blocks = fillAllGaps!(rt_aligned_blocks, refloop, refSA, refRA, targetloop, target_SA, target_RA)
+    rt_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(ref_SA), length(target_SA)))
+    rt_aligned_blocks = fillAllGaps!(rt_aligned_blocks, ref_loop, ref_SA, ref_RA, target_loop, target_SA, target_RA)
     # print("Coverage ref to target: ")
     # println(blockCoverage(rt_aligned_blocks))
 
     # align from target to ref
-    lcps = alignSAs(targetloop, target_SA, refloop, refSA)
+    lcps = alignSAs(target_loop, target_SA, ref_loop, ref_SA)
     # set minimum match length to 18 based on matchLengthThreshold() calculation for 50-150kbp sequences
-    tr_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(refSA), length(target_SA)))
-    tr_aligned_blocks = fillAllGaps!(tr_aligned_blocks, targetloop, target_SA, target_RA, refloop, refSA, refRA)
+    tr_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(ref_SA), length(target_SA)))
+    tr_aligned_blocks = fillAllGaps!(tr_aligned_blocks, target_loop, target_SA, target_RA, ref_loop, ref_SA, ref_RA)
     # print("Coverage target to ref: ")
     # println(blockCoverage(tr_aligned_blocks))
 
@@ -262,7 +263,7 @@ function alignLoops(refloop::DNAString,
     # print("Merged coverage: ")
     # println(blockCoverage(merged_blocks))
 
-    rev_blocks = revCompBlocks(merged_blocks, length(refSA), length(target_SA))
+    rev_blocks = revCompBlocks(merged_blocks, length(ref_SA), length(target_SA))
     # println("Coverage: ", blockCoverage(merged_blocks) + blockCoverage(rev_blocks))
     return merged_blocks, rev_blocks
 end
