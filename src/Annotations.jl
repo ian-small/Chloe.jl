@@ -18,7 +18,6 @@ struct FeatureArray
 end
 
 function readFeatures(file::String)
-    # let f_strand_features,r_strand_features
     open(file) do f
         header = split(readline(f), '\t')
         f_strand_features = FeatureArray(header[1], parse(Int32, header[2]), '+', Array{Feature,1}(undef, 0))
@@ -35,8 +34,6 @@ function readFeatures(file::String)
         end
         return f_strand_features, r_strand_features
     end
-    
-    # end
 end
 
 # part or all of a Feature annotated by alignment

@@ -15,6 +15,8 @@ Running the chloe server. In a terminal type:
 ```bash
 JULIA_NUM_THREADS=4 julia src/chloe_svr.jl --level=info
 ```
+(Julia refuses to use more threads that the number of CPUs on your machine:
+`python -c 'import multiprocessing as m; print(m.cpu_count())'`)
 
 In another terminal start julia:
 
@@ -22,7 +24,7 @@ In another terminal start julia:
 using JuliaWebAPI
 
 i = APIInvoker("tcp://127.0.0.1:9999")
-# fasta and output should be relative to the server's working directory or specify absolute path names!
+# fasta and output should be relative to the server's working directory, or specify absolute path names!
 ret = apicall(i, "chloe", fastafile, outputfile) # outputfile is optional
 code, data = ret["code"], ret["data"]
 @assert code === 200
@@ -36,8 +38,7 @@ apicall(i, ":terminate")
 The *actual* production configuration runs
 the server as a client of a DEALER/ROUTER server
 (see `bin/broker.py` and the `Makefile`) and connects to the
-DEALER end on
-`ipc:///tmp/chloe-worker` a unix named socket (so
+DEALER end on `ipc:///tmp/chloe-worker` a unix named socket (so
 the server is not visible on the network). The
 chloe website connects to `ipc:///tmp/chloe-client` which
 is the ROUTER end of broker. In this setup
@@ -45,8 +46,8 @@ you can run multiple chloe servers connecting
 to the same DEALER.
 
 The use of python to create a broker is
-unfortuate but the julia ZMQ package lacks the `proxy` function (why? See `src/dealer.jl` for my attempt
-to make this work).
+unfortuate but the julia ZMQ package lacks the `proxy` function 
+(why? See `src/dealer.jl` for my attempt to make this work).
 
 ## Installing depenencies
 

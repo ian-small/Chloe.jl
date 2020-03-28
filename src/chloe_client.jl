@@ -10,7 +10,7 @@ function chloe_client(;fasta = String[], address = ADDRESS, output::String)
     if res["code"] !== 200
         println("failed")
     else
-        println(".sff file: $(res["data"])")
+        println("result: $(res["data"])")
     end
 
 end

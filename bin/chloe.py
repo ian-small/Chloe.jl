@@ -92,6 +92,7 @@ def num_threads(socket):
 def terminate(timeout, address, nthreads):
     """Shutdown the server."""
     socket = Socket(address, timeout)
+    # terminate each thread.
     for _ in range(nthreads or num_threads(socket)):
         code, _ = socket.msg(cmd=":terminate")
         click.secho(

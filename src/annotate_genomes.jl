@@ -14,7 +14,7 @@ using Dates
 # const refs = Dict("AP000423"=>"Arabidopsis","JX512022"=>"Medicago","Z00044"=>"Nicotiana","KT634228"=>"Picea","NC_002202"=>"Spinacia","NC_001666"=>"Zea")
 # const refs = Dict("NC_001666"=>"Zea")
 # const refs = Dict("BK010421"=>"Arabidopsis")
-const refs = Dict(
+const ReferenceOrganisms = Dict(
     "AP000423"  => "Arabidopsis",
     "JX512022"  => "Medicago",
     "Z00044"    => "Nicotiana",
@@ -48,7 +48,7 @@ end
 
 function readReferences(refsdir::String, templates::String)
 
-    num_refs = length(refs)
+    num_refs = length(ReferenceOrganisms)
 
     refloops = Vector{String}(undef, num_refs * 2)
     refSAs = Array{Array{Int32,1}}(undef, num_refs * 2)
@@ -58,20 +58,22 @@ function readReferences(refsdir::String, templates::String)
     files = readdir(refsdir)
     iff_files = files[findall(x->endswith(x, ".sff"), files)]
 
-    for (i, ref) in enumerate(refs)
+    for (i, ref) in enumerate(ReferenceOrganisms)
         refgwsas = readGenomeWithSAs(joinpath(refsdir, ref.first * ".gwsas"), ref.first)
-        refloops[i * 2 - 1] = refgwsas.sequence * refgwsas.sequence[1:end - 1]
         rev = revComp(refgwsas.sequence)
+        
+        refloops[i * 2 - 1] = refgwsas.sequence * refgwsas.sequence[1:end - 1]
         refloops[i * 2] = rev * rev[1:end - 1]
+        
         refSAs[i * 2 - 1] = refgwsas.forwardSA
         refSAs[i * 2] = refgwsas.reverseSA
 
         refRAs[i * 2 - 1] = makeSuffixArrayRanksArray(refgwsas.forwardSA)
         refRAs[i * 2] = makeSuffixArrayRanksArray(refgwsas.reverseSA)
 
-        # feature_file = iff_files[findfirst(x->startswith(x,ref.second),iff_files)]
         feature_file = iff_files[findfirst(x->startswith(x, ref.second), iff_files)]
         f_strand_features, r_strand_features = readFeatures(joinpath(refsdir, feature_file))
+        
         ref_features[i * 2 - 1] = f_strand_features
         ref_features[i * 2] = r_strand_features
     end
@@ -85,7 +87,7 @@ MayBeString = Union{Nothing,String}
 
 function annotate_one(fasta::String, reference::Reference, output::MayBeString)
 
-    num_refs = length(refs)
+    num_refs = length(ReferenceOrganisms)
     t1 = time_ns()
     if !isfile(fasta)
         error("$(fasta): not a file!")
@@ -121,11 +123,11 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     function alignit(refcount)
         refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
         f_aligned_blocks, r_aligned_blocks = alignLoops(refloop, refSA, refRA, targetloopf, target_saf, target_raf)
+        blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref forward and target forward strands
+
         if refcount % 2 == 1 # aligning + strand to + strand
-            blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref forward and target forward strands
             blocks_aligned_to_targetr[refcount + 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref reverse and target reverse strands
         else    # aligning - strand to + strand
-            blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref reverse and target forward strands
             blocks_aligned_to_targetr[refcount - 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref forward and target reverse strands
         end       
     end
@@ -138,7 +140,7 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     @info "[$(target_id)] aligning: $(ns(t3 - t2))" 
 
     coverages = Dict{String,Real}()
-    for (i, ref) in enumerate(refs)
+    for (i, ref) in enumerate(ReferenceOrganisms)
         coverage = 0
         coverage += blockCoverage(blocks_aligned_to_targetf[i * 2 - 1])
         coverage += blockCoverage(blocks_aligned_to_targetf[i * 2])
