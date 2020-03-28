@@ -221,9 +221,6 @@ function mergeBlockArrays(blocks1::AlignedBlocks, blocks2::AlignedBlocks)::Align
     return merged_array
 end
 
-AlignedBlock = Tuple{Int32,Int32,Int32}
-AlignedBlocks = Array{AlignedBlock}
-
 function alignLoops(ref_loop::DNAString, 
                     ref_SA::SuffixArray, ref_RA::SuffixArray, 
                     target_loop::DNAString,
@@ -236,20 +233,39 @@ function alignLoops(ref_loop::DNAString,
             return aligned_block, revCompBlocks(aligned_block, length(ref_SA), length(target_SA))
         end
     end
+    function align(src, src_SA, src_RA, tgt, tgt_SA, tgt_RA)
+        lcps = alignSAs(src, src_SA, tgt, tgt_SA)
+        aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(src_SA), length(tgt_SA)))
+        aligned_blocks = fillAllGaps!(aligned_blocks, src, src_SA, src_RA, tgt, tgt_SA, tgt_RA)
+        aligned_blocks
+    end
+    block = Array{AlignedBlocks}(undef, 2)
+    function rt()
+        block[1] = align(ref_loop, ref_SA, ref_RA, target_loop, target_SA, target_RA)
+    end
+    function tr()
+        block[2] = align(target_loop, target_SA, target_RA, ref_loop, ref_SA, ref_RA)
+    end
 
+    Threads.@threads for worker in [rt, tr]
+        worker()
+    end
+
+    rt_aligned_blocks = block[1]
+    tr_aligned_blocks = block[2]
     # align from ref to target
-    lcps = alignSAs(ref_loop, ref_SA, target_loop, target_SA)
+    # lcps = alignSAs(ref_loop, ref_SA, target_loop, target_SA)
     # set minimum match length to 18 based on matchLengthThreshold() calculation for 50-150kbp sequences
-    rt_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(ref_SA), length(target_SA)))
-    rt_aligned_blocks = fillAllGaps!(rt_aligned_blocks, ref_loop, ref_SA, ref_RA, target_loop, target_SA, target_RA)
+    # rt_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(ref_SA), length(target_SA)))
+    # rt_aligned_blocks = fillAllGaps!(rt_aligned_blocks, ref_loop, ref_SA, ref_RA, target_loop, target_SA, target_RA)
     # print("Coverage ref to target: ")
     # println(blockCoverage(rt_aligned_blocks))
 
     # align from target to ref
-    lcps = alignSAs(target_loop, target_SA, ref_loop, ref_SA)
+    # lcps = alignSAs(target_loop, target_SA, ref_loop, ref_SA)
     # set minimum match length to 18 based on matchLengthThreshold() calculation for 50-150kbp sequences
-    tr_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(ref_SA), length(target_SA)))
-    tr_aligned_blocks = fillAllGaps!(tr_aligned_blocks, target_loop, target_SA, target_RA, ref_loop, ref_SA, ref_RA)
+    # tr_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(ref_SA), length(target_SA)))
+    # tr_aligned_blocks = fillAllGaps!(tr_aligned_blocks, target_loop, target_SA, target_RA, ref_loop, ref_SA, ref_RA)
     # print("Coverage target to ref: ")
     # println(blockCoverage(tr_aligned_blocks))
 

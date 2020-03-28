@@ -90,11 +90,11 @@ Strand = Tuple{AAFeature,AFeatureStack}
 function do_strand(target_id::String, start_ns::UInt64, target_length::Int64,
     reference::Reference, coverages::Dict{String,Float32},
     strand::Char, blocks_aligned_to_target::Array{AlignedBlocks},
-    targetloop::String)::Strand
+    targetloop::DNAString)::Strand
 
     annotations = Array{Annotation}(undef, 0)
     for (ref_feature_array, blocks) in zip(reference.ref_features, blocks_aligned_to_target)
-        annotations = cat(annotations, pushFeatures(ref_feature_array, target_id, strand, blocks).annotations, dims = 1)
+        annotations = cat(annotations, findOverlaps(ref_feature_array, blocks), dims = 1)
     end
     sort!(annotations, by = x->x.path)
     strand_annotations = AnnotationArray(target_id, strand, annotations)
@@ -105,15 +105,14 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int64,
     strand_feature_stacks, shadow = stackFeatures(target_length, strand_annotations, reference.feature_templates)
 
     t5 = time_ns()
-    @info "[$(target_id)]$(strand) stacking features: $(ns(t5 - t4))"
+    @info "[$(target_id)]$(strand) stacking features: (annotations=$(length(annotations))) $(ns(t5 - t4))"
 
     target_strand_features = FeatureArray(target_id, target_length, strand, AFeature(undef, 0))
 
-    for (i, stack) in enumerate(strand_feature_stacks)
+    for stack in strand_feature_stacks
         left_border, length = alignTemplateToStack(stack, shadow)
         left_border == 0 && continue
         depth, coverage = getDepthAndCoverage(stack, left_border, length)
-            # println(fstack.path," ",depth," ",coverage)
         if ((depth >= stack.template.threshold_counts) && (coverage >= stack.template.threshold_coverage))
             push!(target_strand_features.features, Feature(stack.path, left_border, length, 0))
         else
@@ -122,7 +121,7 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int64,
     end
 
     t6 = time_ns()
-    @info "[$(target_id)]$(strand) aligning templates: $(ns(t6 - t5))"
+    @info "[$(target_id)]$(strand) aligning templates (stack=$(length(strand_feature_stacks))): $(ns(t6 - t5))"
 
     for feat in target_strand_features.features
         feat = refineMatchBoundariesByOffsets!(feat, strand_annotations, target_length, coverages)
@@ -159,7 +158,6 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     target_saf = makeSuffixArray(targetloopf, true)
     target_raf = makeSuffixArrayRanksArray(target_saf)
     
-
     t2 = time_ns()
 
     @info "[$(target_id)] making suffix arrays: $(ns(t2 - t1)))"
@@ -194,27 +192,22 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     end
     @debug "[$(target_id)] coverages:" coverages
 
-    # target_fstrand_models, fstrand_feature_stacks = do_strand(target_id, '+', t3, target_length, reference, coverages,
-    #     blocks_aligned_to_targetf, target_seqf, targetloopf)
-
-    # t3 = time_ns();
-
-    # target_rstrand_models, rstrand_feature_stacks = do_strand(target_id, '-', t3, target_length, reference, coverages,
-    #     blocks_aligned_to_targetr, target_seqf, targetloopr)
-
-    strands = Dict{Char,Strand}()
+    strands = Array{Strand}(undef, 2)
 
     function watson()
-        strands['+'] = do_strand(target_id, t3, target_length, reference, coverages,
-            '+',blocks_aligned_to_targetf, targetloopf)
+        strands[1] = do_strand(target_id, t3, target_length, reference, coverages,
+            '+', blocks_aligned_to_targetf, targetloopf)
     end
     function crick()
-        strands['-'] = do_strand(target_id, t3, target_length, reference, coverages,
+        strands[2] = do_strand(target_id, t3, target_length, reference, coverages,
             '-', blocks_aligned_to_targetr, targetloopr)
     end
     Threads.@threads for worker in [watson, crick]
         worker()
     end
+
+    target_fstrand_models, fstrand_feature_stacks = strands[1]
+    target_rstrand_models, rstrand_feature_stacks = strands[2]
 
     if output != nothing
         fname = output::String
@@ -225,12 +218,10 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
         fname = "$(target_id).sff"
     end
 
-    target_fstrand_models, fstrand_feature_stacks = strands['+']
-    target_rstrand_models, rstrand_feature_stacks = strands['-']
-
     writeSFF(fname, target_id, target_fstrand_models, target_rstrand_models,
-    reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks,
-    targetloopf, targetloopr)
+        reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks,
+        targetloopf, targetloopr)
+
     @info "[$(target_id)] Overall: $(ns(time_ns() - t1))"
     return fname, target_id
 

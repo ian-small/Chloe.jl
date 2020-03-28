@@ -60,7 +60,7 @@ end
 
 # part or all of a Feature annotated by alignment
 struct Annotation
-    from_genome::DNAString
+    genome_id::String
     path::String
     start::Int32
     length::Int32
@@ -74,7 +74,7 @@ struct Annotation
 end
 
 # checks all blocks for overlap so could be speeded up by using an interval tree
-function pushFeature(from::DNAString, feature::Feature, blocks::AlignedBlocks)::Array{Annotation}
+function addOverlapBlocks(genome_id::String, feature::Feature, blocks::AlignedBlocks)::Array{Annotation}
     pushed_features = Array{Annotation}(undef, 0)
     feature_type = featureType(feature)
     for block in blocks
@@ -90,7 +90,7 @@ function pushFeature(from::DNAString, feature::Feature, blocks::AlignedBlocks)::
             end
             path_components = feat_tags(feature)
             annotation_path = join([path_components[1],"?",path_components[3],path_components[4]], "/")
-            pushed_feature = Annotation(from, annotation_path, 
+            pushed_feature = Annotation(genome_id, annotation_path, 
                                         startA - block[1] + block[2],
                                         flength, offset5, feature.length - (startA - feature.start) - flength, phase)
             # println(feature," ",block," ",pushed_feature)
@@ -136,17 +136,16 @@ struct AnnotationArray
     annotations::Array{Annotation}
 end
 
-function pushFeatures(ref_featurearray::FeatureArray, target_id::String, 
-    target_strand::Char, aligned_blocks::AlignedBlocks)::AnnotationArray
+function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Array{Annotation}
     annotations = Array{Annotation}(undef, 0)
     for feature in ref_featurearray.features
-        new_features = pushFeature(ref_featurearray.genome_id, feature, aligned_blocks)
-        if !isempty(new_features)
+        new_annotations = addOverlapBlocks(ref_featurearray.genome_id, feature, aligned_blocks)
+        if !isempty(new_annotations)
             # pushed_features.annotations = cat(pushed_features.annotations, new_features, dims = 1)
-            annotations = cat(annotations, new_features, dims = 1)
+            annotations = cat(annotations, new_annotations, dims = 1)
         end
     end
-    return AnnotationArray(target_id, target_strand, annotations)
+    return annotations
 end
 
 struct FeatureStack
@@ -158,10 +157,10 @@ end
 AFeatureStack = Array{FeatureStack}
 ShadowStack = Array{Int32}
 
-function stackFeatures(length::Integer, annotations::AnnotationArray,
+function stackFeatures(target_length::Integer, annotations::AnnotationArray,
     templates::Array{FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
     stacks = AFeatureStack(undef, 0)
-    shadowstack::ShadowStack = fill(-1, length) # will be negative image of all stacks combined,
+    shadowstack::ShadowStack = fill(-1, target_length) # will be negative image of all stacks combined,
     # initialised to small negative number; acts as prior expectation for feature-finding
     for annotation in annotations.annotations
         template_index = findfirst(x->x.path == annotation.path, templates)
@@ -169,17 +168,18 @@ function stackFeatures(length::Integer, annotations::AnnotationArray,
             @error "Can't find template for $(annotation.path)"
         end
         if isempty(stacks) || (index = findfirst(x->x.path == annotation.path, stacks)) == nothing
-            stack = FeatureStack(annotation.path, zeros(Int32, length), templates[template_index])
+            stack = FeatureStack(annotation.path, zeros(Int32, target_length), templates[template_index])
             push!(stacks, stack)
         else
             stack = stacks[index]
         end
         for i = annotation.start:annotation.start + annotation.length - 1
-            gw = genome_wrap(length, i)
+            gw = genome_wrap(target_length, i)
             stack.stack[gw] += 3 # +1 to counteract shadowstack initialisation, +1 to counteract addition to shadowstack
             shadowstack[gw] -= 1
         end
     end
+    @debug "found $(length(stacks)) FeatureStacks from $(length(annotations.annotations)) annotations"
     return stacks, shadowstack
 end
 
@@ -360,7 +360,7 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationA
         # predicted 5' end is annotation start - offset5
         push!(end5s, annotation.start - annotation.offset5)
         # weights
-        coverage = coverages[annotation.from_genome]
+        coverage = coverages[annotation.genome_id]
         weight = ((feat.length - (annotation.start - minstart)) / feat.length) * coverage
         push!(end5ws, weight * weight)
         # predicted 3' end is feature start + feature length + offset3 - 1
