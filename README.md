@@ -8,6 +8,8 @@ julia chloe.jl --help
 julia chloe.jl annotate --help
 ```
 
+(See installing dependencies below)
+
 ## Chloë Server
 
 Running the chloe server. In a terminal type:
@@ -49,7 +51,11 @@ The use of python to create a broker is
 unfortuate but the julia ZMQ package lacks the `proxy` function 
 (why? See `src/dealer.jl` for my attempt to make this work).
 
-## Installing depenencies
+## Installing dependencies
+
+There is a `Project.toml` file that contains all the project
+dependencies... here I think is what you are supposed to do:
+
 
 Start julia -- in this directory -- and type `]` then type:
 
@@ -57,6 +63,21 @@ Start julia -- in this directory -- and type `]` then type:
 pkg> activate .
 pkg> instantiate
 pkg> status
+```
+
+Unfortunately to run Chloe from the command line this doesn't work
+(or it does work but won't help you to run Chloe from the command line).
+
+You need to get the dependencies into the main julia "package"
+(`in ~/.julia/environments/v1.4/Project.toml`). So you will just have
+to run a julia REPL like above -- but don't "activate" -- just
+`add GZip ArgParse # etc` manually (How annoying is this!).
+
+Check the `Project.toml` file first but cut'n'paste the following into the julia
+package prompt:
+
+```julia
+pkg> add ArgParse Dates GZip JLD JuliaWebAPI LogRoller Logging Printf StatsBase
 ```
 
 

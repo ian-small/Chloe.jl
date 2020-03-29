@@ -1,3 +1,5 @@
 __pycache__/*
 *.log
 testo/*
+# we don't track the manifest file for... reasons
+Manifest.toml
