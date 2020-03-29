@@ -7,26 +7,22 @@ mutable struct Feature
     # phase is the number of nucleotides to skip at the start of the sequence 
     # to be in the correct reading frame
     phase::Int8
+    _path_components::Array{String}
+    Feature(path, start, length, phase) = new(path, start, length, phase, split(path, '/'))
 end
-const feat_tags(feat::Feature) = split(feat.path, '/')
+const featurePath(feature::Feature) = feature._path_components # split(feat.path, '/')
 function getFeatureName(feature::Feature)
-    feat_tags(feature)[1]
+    feature._path_components[1]
 end
-function featureType(feature::Feature)
-    feat_tags(feature)[3]
+function getFeatureType(feature::Feature)
+    feature._path_components[3]
 end
 
-function getFeatureType(feature::Feature)
-    types = ["CDS","intron","tRNA","rRNA"]
-    for t in types
-        if isType(feature, t)
-            return t
-        end
-    end
-    return nothing
-end
 function isType(feature::Feature, gene::String)
-    occursin(gene, feature.path)
+    gene == getFeatureType(feature)
+end
+function isFeatureName(feature::Feature, name::String)
+    name == getFeatureName(feature)
 end
 
 AFeature = Array{Feature}
@@ -76,7 +72,7 @@ end
 # checks all blocks for overlap so could be speeded up by using an interval tree
 function addOverlapBlocks(genome_id::String, feature::Feature, blocks::AlignedBlocks)::Array{Annotation}
     pushed_features = Array{Annotation}(undef, 0)
-    feature_type = featureType(feature)
+    feature_type = getFeatureType(feature)
     for block in blocks
         if rangesOverlap(feature.start, feature.length, block[1], block[3])
             startA = max(feature.start, block[1])
@@ -88,7 +84,7 @@ function addOverlapBlocks(genome_id::String, feature::Feature, blocks::AlignedBl
             else
                 phase = 0
             end
-            path_components = feat_tags(feature)
+            path_components = featurePath(feature)
             annotation_path = join([path_components[1],"?",path_components[3],path_components[4]], "/")
             pushed_feature = Annotation(genome_id, annotation_path, 
                                         startA - block[1] + block[2],
@@ -157,17 +153,20 @@ end
 AFeatureStack = Array{FeatureStack}
 ShadowStack = Array{Int32}
 
-function stackFeatures(target_length::Integer, annotations::AnnotationArray,
+function fillFeatureStack(target_length::Integer, annotations::AnnotationArray,
     templates::Array{FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
     stacks = AFeatureStack(undef, 0)
     shadowstack::ShadowStack = fill(-1, target_length) # will be negative image of all stacks combined,
     # initialised to small negative number; acts as prior expectation for feature-finding
     for annotation in annotations.annotations
         template_index = findfirst(x->x.path == annotation.path, templates)
-        if template_index == nothing
+        if template_index === nothing
             @error "Can't find template for $(annotation.path)"
         end
-        if isempty(stacks) || (index = findfirst(x->x.path == annotation.path, stacks)) == nothing
+        if isempty(stacks) || (index = findfirst(x->x.path == annotation.path, stacks)) === nothing
+            if template_index === nothing
+                continue # what to do?
+            end
             stack = FeatureStack(annotation.path, zeros(Int32, target_length), templates[template_index])
             push!(stacks, stack)
         else
@@ -183,7 +182,7 @@ function stackFeatures(target_length::Integer, annotations::AnnotationArray,
     return stacks, shadowstack
 end
 
-function expandBoundaryInChunks(feature_stack::FeatureStack, shadowstack::ShadowStack, origin, direction, max)
+function expandBoundaryInChunks(feature_stack::FeatureStack, shadowstack::ShadowStack, origin, direction, max)::Integer
     glen = length(shadowstack)
     pointer = origin
 
@@ -236,19 +235,20 @@ function getDepthAndCoverage(feature_stack::FeatureStack, left::Int32, len::Int3
 end
 
 function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowStack)::Tuple{Int32,Int32}
-    glen = length(feature_stack.stack)
+    stack = feature_stack.stack
+    glen = length(stack)
     tlen = feature_stack.template.median_length
     score = 0
     best_hit = 1
     for nt = 1:tlen
-        count = feature_stack.stack[genome_wrap(glen, nt)] + shadowstack[genome_wrap(glen, nt)]
+        count = stack[genome_wrap(glen, nt)] + shadowstack[genome_wrap(glen, nt)]
         score += count
     end
-    max_score = score;
+    max_score = score
     for nt = 2:glen
-        count = feature_stack.stack[genome_wrap(glen, nt - 1)] + shadowstack[genome_wrap(glen, nt)]
+        count = stack[genome_wrap(glen, nt - 1)] + shadowstack[genome_wrap(glen, nt)]
         score -= count
-        count = feature_stack.stack[genome_wrap(glen, nt + tlen - 1)] + shadowstack[genome_wrap(glen, nt)]
+        count = stack[genome_wrap(glen, nt + tlen - 1)] + shadowstack[genome_wrap(glen, nt)]
         score += count
         if score > max_score
             max_score = score
@@ -333,10 +333,10 @@ end
 
 # uses weighted mode, weighting by alignment length and distance from boundary
 function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationArray, 
-            target_length::Integer, coverages::Dict{String,Float32})
+            target_length::Integer, coverages::Dict{String,Float32})::Tuple{Feature,Array{Int32},Array{Float32}}
     # grab all the matching features
     matching_annotations = findall(x->x.path == feat.path, annotations.annotations)
-    isempty(matching_annotations) && return feat
+    isempty(matching_annotations) && return feat, [], []
     # println(length(matching_annotations))
     overlapping_annotations = []
     minstart = target_length
@@ -665,7 +665,7 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Integer, targe
             # @debug "translation" translation
             last_exon.phase = getFeaturePhaseFromAnnotationOffsets(last_exon, annotations)
             # println(last_exon)
-            if !isType(last_exon, "rps12A")
+            if !isFeatureName(last_exon, "rps12A")
                 setLongestORF!(last_exon, genome_length, targetloop)
             end
             # println(last_exon)
@@ -701,7 +701,7 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Integer, targe
         if isType(first_exon, "CDS")
             # println(first_exon)
             first_exon.phase = getFeaturePhaseFromAnnotationOffsets(first_exon, annotations)
-            if !isType(last_exon, "rps12B")
+            if !isFeatureName(last_exon, "rps12B")
                 first_exon = findStartCodon!(first_exon, genome_length, targetloop)
                 # println(first_exon)
                 # first_exon = findStartCodon2!(first_exon,genome_length,targetloop)

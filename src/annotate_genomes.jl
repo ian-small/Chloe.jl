@@ -100,12 +100,12 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int64,
     strand_annotations = AnnotationArray(target_id, strand, annotations)
 
     t4 = time_ns()
-    @info "[$(target_id)]$(strand) pushing annotations: $(ns(t4 - start_ns))"
+    @info "[$(target_id)]$(strand) overlapping ref annotations ($(length(annotations))): $(ns(t4 - start_ns))"
 
-    strand_feature_stacks, shadow = stackFeatures(target_length, strand_annotations, reference.feature_templates)
+    strand_feature_stacks, shadow = fillFeatureStack(target_length, strand_annotations, reference.feature_templates)
 
     t5 = time_ns()
-    @info "[$(target_id)]$(strand) stacking features: (annotations=$(length(annotations))) $(ns(t5 - t4))"
+    @info "[$(target_id)]$(strand) ref features stacks ($(length(strand_feature_stacks))): $(ns(t5 - t4))"
 
     target_strand_features = FeatureArray(target_id, target_length, strand, AFeature(undef, 0))
 
@@ -121,10 +121,10 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int64,
     end
 
     t6 = time_ns()
-    @info "[$(target_id)]$(strand) aligning templates (stack=$(length(strand_feature_stacks))): $(ns(t6 - t5))"
+    @info "[$(target_id)]$(strand) aligning templates ($(length(target_strand_features.features))): $(ns(t6 - t5))"
 
     for feat in target_strand_features.features
-        feat = refineMatchBoundariesByOffsets!(feat, strand_annotations, target_length, coverages)
+        refineMatchBoundariesByOffsets!(feat, strand_annotations, target_length, coverages)
     end
 
     t7 = time_ns()

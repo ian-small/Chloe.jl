@@ -79,7 +79,7 @@ function frameCounter(base::Integer, addition::Integer)
     return result
 end
 
-function phaseCounter(base::Integer, addition::Integer)
+function phaseCounter(base::Integer, addition::Integer)::Int8
     result = (base - addition) % 3
     if result < 0
         result = 3 + result
@@ -87,7 +87,7 @@ function phaseCounter(base::Integer, addition::Integer)
     return result
 end
 
-function rangesOverlap(start1::Integer, length1::Integer, start2::Integer, length2::Integer)
+function rangesOverlap(start1::Integer, length1::Integer, start2::Integer, length2::Integer)::Bool
     if start1 >= start2 + length2 || start2 >= start1 + length1
         return false
     else
@@ -96,14 +96,14 @@ function rangesOverlap(start1::Integer, length1::Integer, start2::Integer, lengt
 end
 
 # wraps to genome length
-function genome_wrap(genome_length::Integer, position::Integer)
+function genome_wrap(genome_length::Integer, position::Integer)::Integer
     0 < position <= genome_length && return position
     position <= 0 && return genome_length + position
     position > genome_length && return position - genome_length
 end
 
 # wraps to loop length, i.e. allows position to exceed genome length
-function loop_wrap(genome_length::Integer, position::Integer)
+function loop_wrap(genome_length::Integer, position::Integer)::Integer
     0 < position <= genome_length + genome_length - 1 && return position
     position <= 0 && return genome_length + position
     return position - genome_length
