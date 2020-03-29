@@ -253,27 +253,7 @@ function alignLoops(ref_loop::DNAString,
 
     rt_aligned_blocks = block[1]
     tr_aligned_blocks = block[2]
-    # align from ref to target
-    # lcps = alignSAs(ref_loop, ref_SA, target_loop, target_SA)
-    # set minimum match length to 18 based on matchLengthThreshold() calculation for 50-150kbp sequences
-    # rt_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(ref_SA), length(target_SA)))
-    # rt_aligned_blocks = fillAllGaps!(rt_aligned_blocks, ref_loop, ref_SA, ref_RA, target_loop, target_SA, target_RA)
-    # print("Coverage ref to target: ")
-    # println(blockCoverage(rt_aligned_blocks))
 
-    # align from target to ref
-    # lcps = alignSAs(target_loop, target_SA, ref_loop, ref_SA)
-    # set minimum match length to 18 based on matchLengthThreshold() calculation for 50-150kbp sequences
-    # tr_aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(ref_SA), length(target_SA)))
-    # tr_aligned_blocks = fillAllGaps!(tr_aligned_blocks, target_loop, target_SA, target_RA, ref_loop, ref_SA, ref_RA)
-    # print("Coverage target to ref: ")
-    # println(blockCoverage(tr_aligned_blocks))
-
-
-    # combine rt and tr blocks; tr blocks need [1] and [2] to be swapped
-    # for tr_block in tr_aligned_blocks
-    #     push!(rt_aligned_blocks,(tr_block[2],tr_block[1],tr_block[3]))
-    # end
     merged_blocks = mergeBlockArrays(rt_aligned_blocks, tr_aligned_blocks)
 
     # print("Merged coverage: ")
