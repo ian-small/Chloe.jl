@@ -39,6 +39,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
         reference = readReferences(refsdir, template)
         @info show_reference(reference)
         @info "chloe version $(VERSION) using $(Threads.nthreads()) threads"
+        @info "git version: $(strip(read(`git rev-parse HEAD`, String))[1:7])"
         @info "$(conn) $(address)"
 
         function chloe(fasta::String, fname::MayBeString)
