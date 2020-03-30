@@ -450,13 +450,13 @@ function startScore(cds::Feature, codon::SubString)
     if codon == "ATG"
         return 1.0
     elseif codon == "GTG"
-        if startswith(cds.path, "rps19")
+        if isFeatureName(cds, "rps19")
             return 1.0
         else
             return 0.01
         end
     elseif codon == "ACG"
-        if startswith(cds.path, "ndhD")
+        if isFeatureName(cds, "ndhD")
             return 1.0
         else
             return 0.01
@@ -715,7 +715,7 @@ end
 
 function getFeatureByName(fname::String, features::FeatureArray)
     for feat in features.features
-        if startswith(feat.path, fname)
+        if isFeatureName(feat, fname)
             return feat
         end
     end
@@ -724,7 +724,10 @@ end
 
 function getGeneModelByName(gm_name::String, gene_models::AAFeature)::Union{Nothing,AFeature}
     for model in gene_models
-        if (startswith(model[1].path, gm_name))
+        if isempty(model)
+            continue
+        end
+        if isFeatureName(model[1], gm_name)
             return model::AFeature
         end
     end
@@ -810,17 +813,25 @@ function writeSFF(outfile::String, id::String,
 
     maxlengths = Dict{String,Int32}()
     for (fmodel, rmodel) in zip(fstrand_models, rstrand_models)
-        gene = getFeatureName(first(fmodel))
-        gene_length = last(fmodel).start + last(fmodel).length - first(fmodel).start
-        maxlen = get(maxlengths, gene, 0)
-        if gene_length > maxlen
-            maxlengths[gene] = gene_length
+        if isempty(fmodel)
+            @warn "forward model has no features"
+        else
+            gene = getFeatureName(first(fmodel))
+            gene_length = last(fmodel).start + last(fmodel).length - first(fmodel).start
+            maxlen = get(maxlengths, gene, 0)
+            if gene_length > maxlen
+                maxlengths[gene] = gene_length
+            end
         end
-        gene = getFeatureName(first(rmodel))
-        gene_length = last(rmodel).start + last(rmodel).length - first(rmodel).start
-        maxlen = get(maxlengths, gene, 0)
-        if gene_length > maxlen
-            maxlengths[gene] = gene_length
+        if isempty(rmodel)
+            @warn "reverse model has no features"
+        else
+            gene = getFeatureName(first(rmodel))
+            gene_length = last(rmodel).start + last(rmodel).length - first(rmodel).start
+            maxlen = get(maxlengths, gene, 0)
+            if gene_length > maxlen
+                maxlengths[gene] = gene_length
+            end
         end
     end
 
