@@ -229,8 +229,8 @@ function alignLoops(ref_loop::DNAString,
     if length(ref_loop) == length(target_loop)
         match = findfirst(SubString(ref_loop, 1, floor(Int, (length(ref_loop) + 1) / 2)), target_loop)
         if !isnothing(match)
-            aligned_block = [(1, match[1], length(ref_loop))]
-            return aligned_block, revCompBlocks(aligned_block, length(ref_SA), length(target_SA))
+            aligned_blocks = [(Int32(1), Int32(match[1]), Int32(length(ref_loop)))]
+            return aligned_blocks, revCompBlocks(aligned_blocks, length(ref_SA), length(target_SA))
         end
     end
     function align(src, src_SA, src_RA, tgt, tgt_SA, tgt_RA)
