@@ -3,7 +3,7 @@ if [ ! -d testo ]; then
     mkdir testo
 fi
 echo "start annotations..."
-JULIA_NUM_THREADS=8 time -p julia src/chloe.jl -l info annotate -o testo testfa/*.fa
+JULIA_NUM_THREADS=8 time -p julia chloe.jl -l info annotate -o testo testfa/*.fa
 for f in $(ls testo)
 do 
     echo "diffing $f"
