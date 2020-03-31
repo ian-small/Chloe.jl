@@ -4,7 +4,7 @@ To run the annotator or write gff3 or create suffix array files type:
 
 ```bash
 julia chloe.jl --help
-# or for a specific commands e.g.
+# or for a specific command e.g.
 julia chloe.jl annotate --help
 ```
 
@@ -26,7 +26,7 @@ In another terminal start julia:
 using JuliaWebAPI
 
 i = APIInvoker("tcp://127.0.0.1:9999")
-# fasta and output should be relative to the server's working directory, or specify absolute path names!
+# fasta and output should be relative to the server's working directory, or specify absolute path names! yes "chloe" should be "annotate" but...
 ret = apicall(i, "chloe", fastafile, outputfile) # outputfile is optional
 code, data = ret["code"], ret["data"]
 @assert code === 200
@@ -66,10 +66,10 @@ pkg> status
 ```
 
 Unfortunately to run Chloe from the command line this doesn't work
-(or it does work but won't help you to run Chloe from the command line).
+(or it does "work" but won't help you to run Chloe from the command line).
 
 You need to get the dependencies into the main julia "package"
-(`in ~/.julia/environments/v1.4/Project.toml`). So you will just have
+(in `~/.julia/environments/v1.4/Project.toml`). So you will just have
 to run a julia REPL like above -- but don't "activate" -- just
 `add GZip ArgParse # etc` manually (How annoying is this!).
 

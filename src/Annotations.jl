@@ -43,7 +43,6 @@ function readFeatures(file::String)::Tuple{FeatureArray,FeatureArray}
         while !eof(f)
             fields = split(readline(f), '\t')
             feature = Feature(fields[1], parse(Int, fields[3]), parse(Int, fields[4]), parse(Int, fields[5]))
-            # println(feature)
             if fields[2][1] == '+'
                 push!(f_strand_features.features, feature)
             else
@@ -89,7 +88,7 @@ function addOverlapBlocks(genome_id::String, feature::Feature, blocks::AlignedBl
             pushed_feature = Annotation(genome_id, annotation_path, 
                                         startA - block[1] + block[2],
                                         flength, offset5, feature.length - (startA - feature.start) - flength, phase)
-            # println(feature," ",block," ",pushed_feature)
+
             push!(pushed_features, pushed_feature)
         end
     end
@@ -302,7 +301,6 @@ function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Annota
     phases = Int8[]
     for annotation in annotations.annotations[matching_annotations]
         if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
-            # println(feat.path," ",feat.start," ",annotation.start," ",annotation.offset5," ",annotation.phase)
             # estimating feature phase from annotation phase
             phase = phaseCounter(annotation.phase, feat.start - annotation.start)
             push!(phases, phase)
@@ -312,7 +310,6 @@ function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Annota
         @warn "No annotations found for $(feat.path)"
         return 0
     end
-    # println(feat.path," ",phases)
     return StatsBase.mode(phases) # return most common phase
 end
 
@@ -326,7 +323,6 @@ function weightedMode(values::Array{Int32}, weights::Array{Float32})::Int32
             weightedCounts[row,2] += w
         end
     end
-    # println(weightedCounts)
     maxweight, maxrow = findmax(weightedCounts[:,2])
     return Int32(weightedCounts[maxrow,1])
 end
@@ -337,7 +333,6 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationA
     # grab all the matching features
     matching_annotations = findall(x->x.path == feat.path, annotations.annotations)
     isempty(matching_annotations) && return feat, [], []
-    # println(length(matching_annotations))
     overlapping_annotations = []
     minstart = target_length
     maxend = 1
@@ -350,7 +345,6 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationA
             push!(overlapping_annotations, annotation)
         end
     end
-    # println(length(overlapping_annotations))
     end5s = Array{Int32}(undef, 0)
     end5ws = Array{Float32}(undef, 0)
     end3s = Array{Int32}(undef, 0)
@@ -660,24 +654,22 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
         sort!(model, by = f->f.start + f.length / 2)
         # @debug "model"  model
         last_exon = last(model)
-        # println(last_exon)
         # if CDS, find phase, stop codon and set feature.length
         if isType(last_exon, "CDS")
             translation = translateFeature(targetloop, last_exon)
             # @debug "translation" translation
             last_exon.phase = getFeaturePhaseFromAnnotationOffsets(last_exon, annotations)
-            # println(last_exon)
+
             if !isFeatureName(last_exon, "rps12A")
                 setLongestORF!(last_exon, genome_length, targetloop)
             end
-            # println(last_exon)
+
             translation = translateFeature(targetloop, last_exon)
-            # println(translation)
+
             last_cds_examined = last_exon
         end
         for i in length(model) - 1:-1:1
             feature = model[i]
-            # println(feature)
             # check adjacent to last exon, if not...
             gap = model[i + 1].start - (feature.start + feature.length)
             if gap ≠ 0 && gap < 100
@@ -701,15 +693,11 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
         # if CDS, find start codon and set feature.start
         first_exon = first(model)
         if isType(first_exon, "CDS")
-            # println(first_exon)
             first_exon.phase = getFeaturePhaseFromAnnotationOffsets(first_exon, annotations)
             if !isFeatureName(last_exon, "rps12B")
                 first_exon = findStartCodon!(first_exon, genome_length, targetloop)
-                # println(first_exon)
                 # first_exon = findStartCodon2!(first_exon,genome_length,targetloop)
-                # println(first_exon)
             end
-            # println(first_exon)
         end
     end
     return gene_models
@@ -760,8 +748,6 @@ function writeModelToSFF(outfile, model::AFeature, model_id::String,
     hasPrematureStop = false
     if cds
         protein = translateModel(targetloop, model)
-        # println(">",first(model).path)
-        # println(protein)
         if gene ≠ "rps12B" && !isStartCodon(SubString(targetloop, first(model).start, first(model).start + 2), true, true)
             hasStart = false
         end

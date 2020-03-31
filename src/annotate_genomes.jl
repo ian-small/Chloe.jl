@@ -7,12 +7,6 @@ include("Annotations.jl")
 
 using Dates
 
-# refsdir = ARGS[1]
-# const refs = Dict("NC_004543"=>"Anthoceros","AP000423"=>"Arabidopsis","MF177093"=>"Azolla","NC_001319"=>"Marchantia","NC_022137"=>"Marsilea",
-# "JX512022"=>"Medicago","Z00044"=>"Nicotiana","AP005672"=>"Physcomitrella","KT634228"=>"Picea","FJ755183"=>"Selaginella","NC_002202"=>"Spinacia","NC_001666"=>"Zea")
-# const refs = Dict("AP000423"=>"Arabidopsis","JX512022"=>"Medicago","Z00044"=>"Nicotiana","KT634228"=>"Picea","NC_002202"=>"Spinacia","NC_001666"=>"Zea")
-# const refs = Dict("NC_001666"=>"Zea")
-# const refs = Dict("BK010421"=>"Arabidopsis")
 const ReferenceOrganisms = Dict(
     "AP000423"  => "Arabidopsis",
     "JX512022"  => "Medicago",

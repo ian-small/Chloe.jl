@@ -15,6 +15,14 @@ const ADDRESS = "tcp://127.0.0.1:9999"
 # change this if you change the API!
 const VERSION = "1.0"
 
+function git_version()
+    try
+        strip(read(`git rev-parse HEAD`, String))
+    catch
+        "unknown"
+    end
+end
+
 function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
     template = "optimised_templates.v2.tsv", level="warn", async=false,
     logfile::MayBeString=nothing, connect=false, nthreads=1)
@@ -38,8 +46,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
     with_logger(logger) do
         reference = readReferences(refsdir, template)
         @info show_reference(reference)
-        @info "chloe version $(VERSION) using $(Threads.nthreads()) threads"
-        @info "git version: $(strip(read(`git rev-parse HEAD`, String))[1:7])"
+        @info "chloe version $(VERSION) (git: $(git_version()[1:7])) using $(Threads.nthreads()) threads"
         @info "$(conn) $(address)"
 
         function chloe(fasta::String, fname::MayBeString)
@@ -85,9 +92,9 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
     end
 end
 
-args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
+svr_args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
 
-@add_arg_table! args begin
+@add_arg_table! svr_args begin
     "--reference", "-r"
         arg_type = String
         default = "reference_1116"
@@ -126,12 +133,12 @@ args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_
         help = "number of threads when connecting"
 
 end
-args.epilog = """
+svr_args.epilog = """
 Run Chloe as a background ZMQ service
 """
 
 function real_main() 
-    parsed_args = parse_args(ARGS, args; as_symbols = true)
+    parsed_args = parse_args(ARGS, svr_args; as_symbols = true)
     # filter!(kv->kv.second ∉ (nothing, false), parsed_args)
     chloe_svr(;parsed_args...)
 end

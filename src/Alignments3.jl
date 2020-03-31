@@ -132,7 +132,6 @@ function mergeBlocks(block1::AlignedBlock, block2::AlignedBlock)::Tuple{AlignedB
     gap2 = block2[2] - block1[2] - block1[3]
     if gap1 == gap2 && gap1 < 12
         p = probMatch(block1[3] + gap1, block2[3] + gap2, block2[3])
-        # println(block1," ",block2," ",p)
         if p < 0.01
             return (block1[1], block1[2], block1[3] + gap1 + block2[3]), nothing
         end
