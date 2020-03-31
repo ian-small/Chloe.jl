@@ -31,6 +31,7 @@ const ReferenceOrganisms = Dict(
 
 struct Reference
     # 2* length(ReferenceOrganisms) from directory reference_1116
+    refsrc::Array{String}
     refloops::Array{String}
     refSAs::Array{SuffixArray}
     refRAs::Array{SuffixArray}
@@ -46,7 +47,11 @@ function show_reference(reference::Reference)
         ref seq loops=$(length(reference.refloops))[$(sum(map(x->length(x), reference.refloops)))]
         """
 end
+"""
+readReferences(reference_dir, template_tsv)
 
+creates a Reference object to feed into `annotate_one`
+"""
 function readReferences(refsdir::String, templates::String)::Reference
 
     num_refs = length(ReferenceOrganisms)
@@ -55,6 +60,7 @@ function readReferences(refsdir::String, templates::String)::Reference
     refSAs = Array{SuffixArray}(undef, num_refs * 2)
     refRAs = Array{SuffixArray}(undef, num_refs * 2)
     ref_features = Array{FeatureArray}(undef, num_refs * 2)
+    refsrc = Array{String}(undef, num_refs * 2)
 
     files = readdir(refsdir)
     iff_files = files[findall(x->endswith(x, ".sff"), files)]
@@ -77,9 +83,13 @@ function readReferences(refsdir::String, templates::String)::Reference
         
         ref_features[i * 2 - 1] = f_strand_features
         ref_features[i * 2] = r_strand_features
+
+        refsrc[i * 2 - 1] = ref.first *  ":fwd"
+        refsrc[i * 2] = ref.first * ":rev"
+
     end
     feature_templates, gene_exons = readTemplates(templates)
-    return Reference(refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons)
+    return Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons)
 end
 
 const ns(td) = Time(Nanosecond(td))
@@ -87,7 +97,7 @@ const ns(td) = Time(Nanosecond(td))
 MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,AFeatureStack}
 
-function do_strand(target_id::String, start_ns::UInt64, target_length::Int64,
+function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     reference::Reference, coverages::Dict{String,Float32},
     strand::Char, blocks_aligned_to_target::Array{AlignedBlocks},
     targetloop::DNAString)::Strand
@@ -139,7 +149,21 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int64,
     return target_strand_models, strand_feature_stacks
 end
 
-function annotate_one(fasta::String, reference::Reference, output::MayBeString)
+"""
+annotate_one(fasta_file, references [,output_sff_file])
+
+Annotate a single fasta file containting a *single* circular
+DNA entry
+
+writes an .sff file to `output_sff_file` or uses that id in the
+fasta file to write `{target_id}.sff` in the current directory.
+
+If output_sff_file is a *directory* write `{target_id}.sff` into that
+directory.
+
+`reference` are the reference annotations (see `readReferences`)
+"""
+function annotate_one(fasta::String, reference::Reference, output::MayBeString = nothing)
 
     num_refs = length(ReferenceOrganisms)
     t1 = time_ns()
@@ -147,7 +171,7 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
         error("$(fasta): not a file!")
     end
     target_id, target_seqf = readFasta(fasta)
-    target_length = length(target_seqf)
+    target_length = Int32(length(target_seqf))
     
     @info "[$(target_id)] length: $(target_length)"
     
@@ -165,9 +189,12 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     blocks_aligned_to_targetf = Array{AlignedBlocks}(undef, num_refs * 2)
     blocks_aligned_to_targetr = Array{AlignedBlocks}(undef, num_refs * 2)
 
-    function alignit(refcount)
+    function alignit(refcount::Int64)
         refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
         f_aligned_blocks, r_aligned_blocks = alignLoops(refloop, refSA, refRA, targetloopf, target_saf, target_raf)
+        
+        @debug "Coverage[$(reference.refsrc[refcount])]: " forward = blockCoverage(f_aligned_blocks)  reverse = blockCoverage(r_aligned_blocks)
+
         blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref forward and target forward strands
 
         if refcount % 2 == 1 # aligning + strand to + strand
@@ -192,18 +219,19 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString)
     end
     @debug "[$(target_id)] coverages:" coverages
 
-    strands = Array{Strand}(undef, 2)
 
-    function watson()
+    function watson(strands::Array{Strand})
         strands[1] = do_strand(target_id, t3, target_length, reference, coverages,
             '+', blocks_aligned_to_targetf, targetloopf)
     end
-    function crick()
+    function crick(strands::Array{Strand})
         strands[2] = do_strand(target_id, t3, target_length, reference, coverages,
             '-', blocks_aligned_to_targetr, targetloopr)
     end
+
+    strands = Array{Strand}(undef, 2)
     Threads.@threads for worker in [watson, crick]
-        worker()
+        worker(strands)
     end
 
     target_fstrand_models, fstrand_feature_stacks = strands[1]

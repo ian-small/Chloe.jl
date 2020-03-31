@@ -3,3 +3,5 @@ __pycache__/*
 testo/*
 # we don't track the manifest file for... reasons
 Manifest.toml
+.ipynb_checkpoints/
+Untitled*.ipynb

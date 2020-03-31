@@ -28,6 +28,7 @@ def update(c):
         res = c.run("git pull", warn=True)
         if not res.failed and not git_uptodate(res):
             secho('restarting service use: "fab ping" to check restart', fg="magenta")
+            # hopefully supervisor will restart (see etc/supervisor-chloe-celery.conf)
             c.run("python bin/chloe.py terminate")
 
 

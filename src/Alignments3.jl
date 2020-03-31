@@ -4,7 +4,7 @@ AlignedBlocks = Array{AlignedBlock}
 
 DNAString = AbstractString
 
-function compareSubStrings(a::SubString, b::SubString)
+function compareSubStrings(a::SubString, b::SubString)::Tuple{Int32,Int64}
     # a, b = Iterators.Stateful(a), Iterators.Stateful(b)
     count::Int32 = 0
     for (c, d) in zip(a, b)
@@ -45,13 +45,13 @@ function alignSAs(a::DNAString, saa::SuffixArray, b::DNAString, sab::SuffixArray
     return sort!(lcps)
 end
 
-function probMatch(m, n, k)
+function probMatch(m::T, n::T, k::Integer)::Float64 where {T <: Integer}
     m < k && return 0
     n < k && return 0
     return 1 - (((1 - 1 / 4^k)^(m - k + 1))^(n - k + 1))
 end
 
-function matchLengthThreshold(m, n)
+function matchLengthThreshold(m::T, n::T)::Int64 where {T <: Integer}
     for k = 1:25
         p = probMatch(m, n, k)
         p < 0.1 && return max(k, 2)
@@ -94,6 +94,7 @@ function blockCoverage(blocks::AlignedBlocks)
     sum(map(b->b[3], blocks))
 end
 
+
 function fillGap(block1::AlignedBlock, block2::AlignedBlock, 
         refloop::DNAString, refSA::SuffixArray, refRA::SuffixArray, 
         targetloop::DNAString, targetSA::SuffixArray, targetRA::SuffixArray)::AlignedBlocks
@@ -118,6 +119,7 @@ function fillGap(block1::AlignedBlock, block2::AlignedBlock,
     for i = 1:target_gap
         target_gap_SA[i] = targetSA[target_ranks_slice[i]]
     end
+    @debug "fillGap: " ref_gap_range = length(ref_gap_range) target_gap_range = length(target_gap_range)
 
     # align gap SAs to get lcps
     gap_lcps = alignSAs(refloop, ref_gap_SA, targetloop, target_gap_SA)
@@ -138,8 +140,10 @@ function mergeBlocks(block1::AlignedBlock, block2::AlignedBlock)::Tuple{AlignedB
     return block1, block2
 end
 
+# this is the killer....
+# most of it spent in fillGap
 function fillAllGaps!(aligned_blocks::AlignedBlocks, 
-    refloop::DNAString, refSA::SuffixArray, refRA, 
+    refloop::DNAString, refSA::SuffixArray, refRA::SuffixArray, 
     targetloop::DNAString, targetSA::SuffixArray, targetRA::SuffixArray)::AlignedBlocks
     block1_pointer = 1
     block2_pointer = 2
@@ -233,7 +237,8 @@ function alignLoops(ref_loop::DNAString,
             return aligned_blocks, revCompBlocks(aligned_blocks, length(ref_SA), length(target_SA))
         end
     end
-    function align(src, src_SA, src_RA, tgt, tgt_SA, tgt_RA)
+    function align(src::DNAString, src_SA::SuffixArray, src_RA::SuffixArray, tgt::DNAString, tgt_SA::SuffixArray, tgt_RA::SuffixArray)
+        # ~30% for alignSAs and 60% for fillAllGaps!
         lcps = alignSAs(src, src_SA, tgt, tgt_SA)
         aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(src_SA), length(tgt_SA)))
         aligned_blocks = fillAllGaps!(aligned_blocks, src, src_SA, src_RA, tgt, tgt_SA, tgt_RA)
@@ -256,10 +261,8 @@ function alignLoops(ref_loop::DNAString,
 
     merged_blocks = mergeBlockArrays(rt_aligned_blocks, tr_aligned_blocks)
 
-    # print("Merged coverage: ")
-    # println(blockCoverage(merged_blocks))
+
 
     rev_blocks = revCompBlocks(merged_blocks, length(ref_SA), length(target_SA))
-    # println("Coverage: ", blockCoverage(merged_blocks) + blockCoverage(rev_blocks))
     return merged_blocks, rev_blocks
 end

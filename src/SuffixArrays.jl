@@ -1,5 +1,3 @@
-# SuffixVector = Vector{Int32}
-
 SuffixArray = Array{Int32}
 DNAString = AbstractString
 

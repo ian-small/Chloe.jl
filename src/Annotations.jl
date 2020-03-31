@@ -153,10 +153,10 @@ end
 AFeatureStack = Array{FeatureStack}
 ShadowStack = Array{Int32}
 
-function fillFeatureStack(target_length::Integer, annotations::AnnotationArray,
+function fillFeatureStack(target_length::Int32, annotations::AnnotationArray,
     templates::Array{FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
     stacks = AFeatureStack(undef, 0)
-    shadowstack::ShadowStack = fill(-1, target_length) # will be negative image of all stacks combined,
+    shadowstack::ShadowStack = fill(Int32(-1), target_length) # will be negative image of all stacks combined,
     # initialised to small negative number; acts as prior expectation for feature-finding
     for annotation in annotations.annotations
         template_index = findfirst(x->x.path == annotation.path, templates)
@@ -172,7 +172,7 @@ function fillFeatureStack(target_length::Integer, annotations::AnnotationArray,
         else
             stack = stacks[index]
         end
-        for i = annotation.start:annotation.start + annotation.length - 1
+        for i = annotation.start:annotation.start + annotation.length - Int32(1)
             gw = genome_wrap(target_length, i)
             stack.stack[gw] += 3 # +1 to counteract shadowstack initialisation, +1 to counteract addition to shadowstack
             shadowstack[gw] -= 1
@@ -521,9 +521,10 @@ function findStartCodon2!(cds::Feature, genome_length::Integer, genomeloop::DNAS
     return cds
 end
 
-function findStartCodon!(cds::Feature, genome_length::Integer, genomeloop::DNAString)
+function findStartCodon!(cds::Feature, genome_length::Int32, genomeloop::DNAString)
     # assumes phase has been correctly set
     # search for start codon 5'-3' beginning at cds.start, save result; abort if stop encountered
+    Three = Int32(3)
     start3 = cds.start + cds.phase
     codon = SubString(genomeloop, start3, start3 + 2)
     if isStartCodon(codon, true, true)  # allow ACG and GTG codons if this is predicted start
@@ -543,7 +544,7 @@ function findStartCodon!(cds::Feature, genome_length::Integer, genomeloop::DNASt
             start3 = nothing
             break
         end
-        start3 = genome_wrap(genome_length, start3 + 3)
+        start3 = genome_wrap(genome_length, start3 + Three)
         codon = SubString(genomeloop, start3, start3 + 2)
     end
     # search for start codon 3'-5' beginning at cds.start, save result; abort if stop encountered
@@ -554,7 +555,7 @@ function findStartCodon!(cds::Feature, genome_length::Integer, genomeloop::DNASt
             start5 = nothing
             break
         end
-        start5 = genome_wrap(genome_length, start5 - 3)
+        start5 = genome_wrap(genome_length, start5 - Three)
         codon = SubString(genomeloop, start5, start5 + 2)
     end
     # return cds with start set to nearer of the two choices
@@ -579,23 +580,24 @@ function findStartCodon!(cds::Feature, genome_length::Integer, genomeloop::DNASt
     return cds
 end
 
-function setLongestORF!(feat::Feature, genome_length::Integer, targetloop::DNAString)
+function setLongestORF!(feat::Feature, genome_length::Int32, targetloop::DNAString)
     orfs = []
+    zero, one, two, three = Int32(0), Int32(1), Int32(2), Int32(3)
     translation_start = feat.start
-    translation_stop = translation_start + 2
-    for nt = translation_start + feat.phase:3:feat.start + feat.length - 3
-        translation_stop = nt + 2
+    translation_stop = translation_start + two
+    for nt = translation_start + feat.phase:three:feat.start + feat.length - three
+        translation_stop = nt + two
         codon = SubString(targetloop, nt, translation_stop)
         if isStopCodon(codon, false)
             push!(orfs, (translation_start, translation_stop, true))
-            translation_start = nt + 3
+            translation_start = nt + three
         end
     end
     push!(orfs, (translation_start, translation_stop, false))
-    maxgap = 0
+    maxgap = zero
     local longest_orf
     for orf in orfs
-        gap = orf[2] - orf[1] + 1
+        gap = orf[2] - orf[1] + one
         if gap > maxgap
             maxgap = gap
             longest_orf = orf
@@ -605,13 +607,13 @@ function setLongestORF!(feat::Feature, genome_length::Integer, targetloop::DNASt
     if longest_orf[1] > feat.start # must be an internal stop
         feat.phase = 0
     end
-    feat.length = longest_orf[2] - longest_orf[1] + 1
+    feat.length = longest_orf[2] - longest_orf[1] + one
     feat.start = genome_wrap(genome_length, longest_orf[1])
 
     if !longest_orf[3]
        # orf is still open, so extend until stop
-        translation_start = longest_orf[2] - 2
-        codon = SubString(targetloop, translation_start, translation_start + 2)
+        translation_start = longest_orf[2] - two
+        codon = SubString(targetloop, translation_start, translation_start + two)
         if isStopCodon(codon, true)
             return feat
         end
@@ -649,7 +651,7 @@ function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, stacks::Array{
     feat2.start = fulcrum + 1
 end
 
-function refineGeneModels!(gene_models::AAFeature, genome_length::Integer, targetloop::DNAString,
+function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetloop::DNAString,
                           annotations::AnnotationArray,
                           feature_stacks::AFeatureStack)::AAFeature
     for model in gene_models
@@ -689,7 +691,7 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Integer, targe
             # if CDS, check phase is compatible
             if isType(feature, "CDS")
                 feature.phase = getFeaturePhaseFromAnnotationOffsets(feature, annotations)
-                if (@isdefined last_cds_examined) && phaseCounter(feature.phase, feature.length % 3) != last_cds_examined.phase
+                if (@isdefined last_cds_examined) && phaseCounter(feature.phase, feature.length % Int32(3)) != last_cds_examined.phase
                     @warn "Incompatible phases for $(feature.path) $(last_cds_examined.path)"
                     # refine boundaries (how?)
                 end
@@ -713,7 +715,9 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Integer, targe
     return gene_models
 end
 
-function getFeatureByName(fname::String, features::FeatureArray)
+MaybeFeature = Union{Feature,Nothing}
+MaybeAFeature = Union{AFeature,Nothing}
+function getFeatureByName(fname::String, features::FeatureArray)::MaybeFeature
     for feat in features.features
         if isFeatureName(feat, fname)
             return feat
@@ -722,7 +726,7 @@ function getFeatureByName(fname::String, features::FeatureArray)
     return nothing
 end
 
-function getGeneModelByName(gm_name::String, gene_models::AAFeature)::Union{Nothing,AFeature}
+function getGeneModelByName(gm_name::String, gene_models::AAFeature)::MaybeAFeature
     for model in gene_models
         if isempty(model)
             continue

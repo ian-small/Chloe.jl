@@ -41,7 +41,7 @@ function maybe_gzopen(f::Function, filename::String, args...; kwargs...)
         open(f, filename, args...; kwargs...)
     end
 end
-function readFasta(file::String)
+function readFasta(file::String)::Tuple{String,String}
     seqs = Array{String}(undef, 0)
 
     maybe_gzopen(file) do f
@@ -67,11 +67,11 @@ end
 const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 
                   'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
     
-function revComp(dna)
+function revComp(dna::T)::T where {T <: AbstractString}
     reverse(map(x->get(COMP, x, 'N'), dna))
 end
 
-function frameCounter(base::Integer, addition::Integer)
+function frameCounter(base::T, addition::T) where {T <: Integer}
     result = (base - addition) % 3
     if result <= 0
         result = 3 + result
@@ -79,7 +79,7 @@ function frameCounter(base::Integer, addition::Integer)
     return result
 end
 
-function phaseCounter(base::Integer, addition::Integer)::Int8
+function phaseCounter(base::Int8, addition::Int32)::Int8
     result = (base - addition) % 3
     if result < 0
         result = 3 + result
@@ -87,7 +87,7 @@ function phaseCounter(base::Integer, addition::Integer)::Int8
     return result
 end
 
-function rangesOverlap(start1::Integer, length1::Integer, start2::Integer, length2::Integer)::Bool
+function rangesOverlap(start1::T, length1::T, start2::T, length2::T)::Bool where {T <: Integer}
     if start1 >= start2 + length2 || start2 >= start1 + length1
         return false
     else
@@ -96,21 +96,21 @@ function rangesOverlap(start1::Integer, length1::Integer, start2::Integer, lengt
 end
 
 # wraps to genome length
-function genome_wrap(genome_length::Integer, position::Integer)::Integer
+function genome_wrap(genome_length::T, position::T)::T where {T <: Integer}
     0 < position <= genome_length && return position
     position <= 0 && return genome_length + position
     position > genome_length && return position - genome_length
 end
 
 # wraps to loop length, i.e. allows position to exceed genome length
-function loop_wrap(genome_length::Integer, position::Integer)::Integer
+function loop_wrap(genome_length::T, position::T)::T where {T <: Integer}
     0 < position <= genome_length + genome_length - 1 && return position
     position <= 0 && return genome_length + position
     return position - genome_length
 end
 
 # wraps range within genome loop
-function range_wrap(genome_length::Integer, range::UnitRange{Integer})::UnitRange{Integer}
+function range_wrap(genome_length::T, range::UnitRange{T})::UnitRange{T} where {T <: Integer}
     @assert range.start <= range.stop
     loop_length = genome_length + genome_length - 1
     # if start of range is negative, move range to end of genome
