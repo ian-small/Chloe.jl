@@ -44,9 +44,11 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
     conn = connect ? "connecting to" : "listening on"
 
     with_logger(logger) do
+        Sys.set_process_title("chloe-svr")
+        machine = gethostname()
         reference = readReferences(refsdir, template)
         @info show_reference(reference)
-        @info "chloe version $(VERSION) (git: $(git_version()[1:7])) using $(Threads.nthreads()) threads"
+        @info "chloe version $(VERSION) (git: $(git_version()[1:7])) using $(Threads.nthreads()) threads on machine $(machine)"
         @info "$(conn) $(address)"
 
         function chloe(fasta::String, fname::MayBeString)
@@ -70,7 +72,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
             return Dict("elapsed" => Dates.toms(elapsed), "sff" => sff, "ncid" => string(target_id))
         end
         function ping()
-            return "OK version=$(VERSION) on thread=$(Threads.threadid()) of $(length(address))"
+            return "OK version=$(VERSION) on thread=$(Threads.threadid())/$(length(address)) on $(machine)"
         end
         function threads()
             return length(address)

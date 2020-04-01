@@ -85,14 +85,14 @@ def annotate(timeout, address, fasta, output):
 @address
 @click.argument("fasta")
 def annotate2(timeout, address, fasta):
-    """Annotate a fasta file."""
+    """Annotate a fasta file (send and receive file content)."""
     socket = Socket(address, timeout)
     with open(fasta) as fp:
         fasta = fp.read()
     code, data = socket.msg(cmd="annotate", args=[fasta])
 
     if code != 200:
-        click.secho(data.get("msg"), fg="red", bold=True)
+        click.secho(data, fg="red", bold=True)
         return
 
     ncid, sff = data["ncid"], data["sff"]
