@@ -119,7 +119,7 @@ function fillGap(block1::AlignedBlock, block2::AlignedBlock,
     for i = 1:target_gap
         target_gap_SA[i] = targetSA[target_ranks_slice[i]]
     end
-    @debug "fillGap: " ref_gap_range = length(ref_gap_range) target_gap_range = length(target_gap_range)
+    # @debug "fillGap: " ref_gap_range = length(ref_gap_range) target_gap_range = length(target_gap_range)
 
     # align gap SAs to get lcps
     gap_lcps = alignSAs(refloop, ref_gap_SA, targetloop, target_gap_SA)

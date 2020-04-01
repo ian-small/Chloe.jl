@@ -199,7 +199,7 @@ function annotate_one(fasta::Union{String,IOBuffer,IOStream}, reference::Referen
         refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
         f_aligned_blocks, r_aligned_blocks = alignLoops(refloop, refSA, refRA, targetloopf, target_saf, target_raf)
         
-        @debug "Coverage[$(reference.refsrc[refcount])]: " forward = blockCoverage(f_aligned_blocks)  reverse = blockCoverage(r_aligned_blocks)
+        @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount])]: " forward = blockCoverage(f_aligned_blocks)  reverse = blockCoverage(r_aligned_blocks)
 
         blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref forward and target forward strands
 
