@@ -260,8 +260,6 @@ function alignLoops(ref_loop::DNAString,
 
     merged_blocks = mergeBlockArrays(rt_aligned_blocks, tr_aligned_blocks)
 
-
-
     rev_blocks = revCompBlocks(merged_blocks, length(ref_SA), length(target_SA))
     return merged_blocks, rev_blocks
 end

@@ -31,7 +31,6 @@ function gbff2fasta(infile::String)
             end
         end
     end
-    return
 end
 
 function maybe_gzopen(f::Function, filename::String, args...; kwargs...)
@@ -41,29 +40,35 @@ function maybe_gzopen(f::Function, filename::String, args...; kwargs...)
         open(f, filename, args...; kwargs...)
     end
 end
-function readFasta(file::String)::Tuple{String,String}
-    seqs = Array{String}(undef, 0)
-
-    maybe_gzopen(file) do f
-        header = strip(readline(f))
-        if !startswith(header, ">")
-            error("expecting '>' as start of fasta header found: \"$(header)\"")
-        end
-        nc_id = split(header, " ")[1][2:end]
-        for (idx, line) in enumerate(eachline(f))
-            line = uppercase(strip(line))
-            if length(line) === 0
-                continue
-            end
-            # see https://www.bioinformatics.org/sms/iupac.html
-            if match(r"^[ACTGRYNXSWKMBDHV.-]+$", line) === nothing
-                error("expecting nucleotide sequence found[$(idx + 1)]: \"$(line)\"")
-            end
-            push!(seqs, line)
-        end
-        return string(nc_id), join(seqs, "")
+function readFasta(fasta::String)::Tuple{String,String}
+    if !isfile(fasta)
+        error("$(fasta): not a file!")
+    end
+    maybe_gzopen(fasta) do f
+        readFasta(f)
     end
 end
+function readFasta(f::Union{IOStream,IOBuffer})::Tuple{String,String}
+    seqs = Array{String}(undef, 0)
+    header = strip(readline(f))
+    if !startswith(header, ">")
+        error("expecting '>' as start of fasta header found: \"$(header)\"")
+    end
+    nc_id = split(header, " ")[1][2:end]
+    for (idx, line) in enumerate(eachline(f))
+        line = uppercase(strip(line))
+        if length(line) === 0
+            continue
+        end
+        # see https://www.bioinformatics.org/sms/iupac.html
+        if match(r"^[ACTGRYNXSWKMBDHV.-]+$", line) === nothing
+            error("expecting nucleotide sequence found[$(idx + 1)]: \"$(line)\"")
+        end
+        push!(seqs, line)
+    end
+    return string(nc_id), join(seqs, "")
+end
+
 const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 
                   'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
     

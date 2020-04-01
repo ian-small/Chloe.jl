@@ -19,9 +19,9 @@ end
 
 # const julia_v07 = VERSION > v"0.7-"
 
-args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
+cmd_args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
 
-@add_arg_table! args begin
+@add_arg_table! cmd_args begin
     "annotate"
         help = "annotate fasta files"
         action = :command
@@ -37,7 +37,7 @@ args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into 
         help = "log level (warn,debug,info,error)"
 end
 
-@add_arg_table! args["gff3"]  begin
+@add_arg_table! cmd_args["gff3"]  begin
     "sff-files"
         arg_type = String
         nargs = '+'
@@ -46,7 +46,7 @@ end
         help = "sff files to process"   
 end
 
-@add_arg_table! args["suffix"]  begin
+@add_arg_table! cmd_args["suffix"]  begin
     "fasta-files"
         arg_type = String
         nargs = '+'
@@ -55,7 +55,7 @@ end
         help = "fasta files to process"
 end
 
-@add_arg_table! args["annotate"]  begin
+@add_arg_table! cmd_args["annotate"]  begin
     "fasta-files"
         arg_type = String
         nargs = '+'
@@ -84,8 +84,8 @@ end
 #     \ua0\ua0 # chloe.jl -t template.tsv -r reference_dir fasta1 fasta2 ...\n
 #     """
 
-function real_main() 
-    parsed_args = parse_args(ARGS, args; as_symbols = true)
+function cmd_main() 
+    parsed_args = parse_args(ARGS, cmd_args; as_symbols = true)
     level = parsed_args[:level]
     with_logger(ConsoleLogger(stderr, get(levels, level, Logging.Warn))) do 
         cmd = parsed_args[:_COMMAND_]
@@ -102,6 +102,6 @@ end
 
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    real_main()
+    cmd_main()
 end
 

@@ -18,7 +18,7 @@ Running the chloe server. In a terminal type:
 JULIA_NUM_THREADS=4 julia src/chloe_svr.jl --level=info
 ```
 (Julia refuses to use more threads that the number of CPUs on your machine:
-`python -c 'import multiprocessing as m; print(m.cpu_count())'`)
+`Sys.CPU_THREADS` or `python -c 'import multiprocessing as m; print(m.cpu_count())'`)
 
 In another terminal start julia:
 
@@ -92,4 +92,40 @@ Possible useful REPL packages
 * add Revise: reload edited files within REPL
 * add OhMyREPL: pretty print code
 * `@code_warntype f()` check type system
+* ProfileView https://github.com/timholy/ProfileView.jl
 
+
+## Distributed
+
+* https://docs.julialang.org/en/v1/stdlib/Distributed/index.html
+
+Start with 3 workers and load code:
+
+`julia -p 3 -L src/chloe_cmds.jl`
+
+now you can type
+
+```julia
+using Distributed
+refs = readReferences("reference_1116", "optimised_templates.v2.tsv");
+io = IOBuffer(read("testfa/NC_020019.1.fa", String))
+o = IOBuffer()
+r = @spawnat :any annotate_one(io, refs, o)
+
+o2, id = fetch(r)
+# o is empty!
+sff = String(take!(o2))
+```
+
+This also works
+
+```julia
+using Distrbuted
+addprocs(3)
+@everywhere include("src/chloe_cmd.jl")
+io = IOBuffer(read("testfa/NC_020019.1.fa", String))
+o = IOBuffer()
+r = @async fetch(@spawnat :any annotate_one(io, refs, o))
+io, uid = @sync r.result
+
+```

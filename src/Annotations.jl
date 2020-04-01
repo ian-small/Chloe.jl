@@ -107,6 +107,10 @@ using StatsBase
 function readTemplates(file::String)::Tuple{Array{FeatureTemplate},Dict{String,Int32}}
     templates = FeatureTemplate[]
     gene_exons = String[]
+    if !isfile(file)
+        error("$(file) is not a file")
+    end
+
     open(file) do f
         header = readline(f)
         while !eof(f)
@@ -726,7 +730,7 @@ function getGeneModelByName(gm_name::String, gene_models::AAFeature)::MaybeAFeat
     return nothing
 end
 
-function writeModelToSFF(outfile, model::AFeature, model_id::String,
+function writeModelToSFF(outfile::Union{IOStream,IOBuffer}, model::AFeature, model_id::String,
                         targetloop::DNAString,
                         gene_exons::Dict{String,Int32},
                         maxlengths::Dict{String,Int32},
@@ -793,14 +797,8 @@ function writeModelToSFF(outfile, model::AFeature, model_id::String,
     end
 end
 
-function writeSFF(outfile::String, id::String, 
-                fstrand_models::AAFeature,
-                rstrand_models::AAFeature,
-                gene_exons::Dict{String,Int32},
-                fstrand_feature_stacks::AFeatureStack, 
-                rstrand_feature_stacks::AFeatureStack, 
-                targetloopf::DNAString, targetloopr::DNAString)
-
+function calc_maxlengths(fstrand_models::AAFeature,
+    rstrand_models::AAFeature)::Dict{String,Int32}
     maxlengths = Dict{String,Int32}()
     for (fmodel, rmodel) in zip(fstrand_models, rstrand_models)
         if isempty(fmodel)
@@ -824,12 +822,25 @@ function writeSFF(outfile::String, id::String,
             end
         end
     end
+    maxlengths
+end
+
+function writeSFF(outfile::Union{String,IOStream,IOBuffer}, id::String, 
+                fstrand_models::AAFeature,
+                rstrand_models::AAFeature,
+                gene_exons::Dict{String,Int32},
+                fstrand_feature_stacks::AFeatureStack, 
+                rstrand_feature_stacks::AFeatureStack, 
+                targetloopf::DNAString, targetloopr::DNAString)
+
+    maxlengths = calc_maxlengths(fstrand_models, rstrand_models)
 
     genome_length = length(fstrand_feature_stacks[1].stack)
 
-    maybe_gzopen(outfile, "w") do outfile
-        write(outfile, id, "\t", string(genome_length), "\n")
+
+    function out(outfile::Union{IOStream,IOBuffer})
         model_ids = Dict{String,Int32}()
+        write(outfile, id, "\t", string(genome_length), "\n")
         for model in fstrand_models
             isempty(model) && continue
             model_id = getModelID!(model_ids, model)
@@ -840,5 +851,12 @@ function writeSFF(outfile::String, id::String,
             model_id = getModelID!(model_ids, model)
             writeModelToSFF(outfile, model, model_id, targetloopr, gene_exons, maxlengths, rstrand_feature_stacks, '-')
         end
+    end
+    if typeof(outfile) == String
+        maybe_gzopen(outfile::String, "w") do io
+            out(io)
+        end
+    else
+        out(outfile)
     end
 end

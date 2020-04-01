@@ -1,6 +1,7 @@
 #!/usr/bin/env python
-import zmq
 import json
+from io import StringIO
+import zmq
 import click
 
 # ADDRESS = "tcp://127.0.0.1:9999"
@@ -78,6 +79,27 @@ def annotate(timeout, address, fasta, output):
         fg="green" if code == 200 else "red",
         bold=True,
     )
+
+
+@cli.command()
+@address
+@click.argument("fasta")
+def annotate2(timeout, address, fasta):
+    """Annotate a fasta file."""
+    socket = Socket(address, timeout)
+    with open(fasta) as fp:
+        fasta = fp.read()
+    code, data = socket.msg(cmd="annotate", args=[fasta])
+
+    if code != 200:
+        click.secho(data.get("msg"), fg="red", bold=True)
+        return
+
+    ncid, sff = data["ncid"], data["sff"]
+    click.secho(ncid, fg="green")
+    with StringIO(sff) as fp:
+        for line in fp:
+            print(line, end="")
 
 
 def num_threads(socket):

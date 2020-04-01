@@ -58,6 +58,17 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
             return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename, "ncid" => string(target_id))
         end
 
+        function annotate(fasta::String)
+            @info "running on thread: $(Threads.threadid())"
+            start = now()
+            input = IOBuffer(fasta)
+            io, target_id = annotate_one(input, reference)
+            sff = String(take!(io))
+            elapsed = now() - start
+            @info "finished $(target_id) on thread: $(Threads.threadid()) after $(elapsed)"
+
+            return Dict("elapsed" => Dates.toms(elapsed), "sff" => sff, "ncid" => string(target_id))
+        end
         function ping()
             return "OK version=$(VERSION) on thread=$(Threads.threadid()) of $(length(address))"
         end
@@ -68,6 +79,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
             process(
                     JuliaWebAPI.create_responder([
                             (chloe, false),
+                            (annotate, false),
                             (ping, false),
                             (threads, false)
 
@@ -78,6 +90,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
                     process(
                         JuliaWebAPI.create_responder([
                             (chloe, false),
+                            (annotate, false),
                             (ping, false),
                             (threads, false)
 
@@ -137,7 +150,7 @@ svr_args.epilog = """
 Run Chloe as a background ZMQ service
 """
 
-function real_main() 
+function svr_main() 
     parsed_args = parse_args(ARGS, svr_args; as_symbols = true)
     # filter!(kv->kv.second ∉ (nothing, false), parsed_args)
     chloe_svr(;parsed_args...)
@@ -145,6 +158,6 @@ end
 
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    real_main()
+    svr_main()
 end
 

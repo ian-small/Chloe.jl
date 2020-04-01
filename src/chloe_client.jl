@@ -18,9 +18,9 @@ end
 
 # const julia_v07 = VERSION > v"0.7-"
 
-args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
+client_args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
 
-@add_arg_table! args begin
+@add_arg_table! client_args begin
     "fasta"
         arg_type = String
         nargs = 1
@@ -37,17 +37,17 @@ args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into 
 
 end
 
-args.epilog = """
+client_args.epilog = """
 Annotate a fasta file unsing Chloe server
 """
 
-function real_main() 
-    parsed_args = parse_args(ARGS, args; as_symbols = true)
+function client_main() 
+    parsed_args = parse_args(ARGS, client_args; as_symbols = true)
     # filter!(kv->kv.second ∉ (nothing, false), parsed_args)
     chloe_client(;parsed_args...)
 end
 
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    real_main()
+    client_main()
 end

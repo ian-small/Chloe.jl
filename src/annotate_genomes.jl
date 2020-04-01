@@ -55,12 +55,22 @@ function readReferences(refsdir::String, templates::String)::Reference
     refRAs = Array{SuffixArray}(undef, num_refs * 2)
     ref_features = Array{FeatureArray}(undef, num_refs * 2)
     refsrc = Array{String}(undef, num_refs * 2)
-
+    if !isdir(refsdir)
+        error("$(refsdir) is not a directory")
+    end
     files = readdir(refsdir)
-    iff_files = files[findall(x->endswith(x, ".sff"), files)]
+    idx = findall(x->endswith(x, ".sff"), files)
+    if isempty(idx)
+        error("no sff files found!")
+    end
+    iff_files = files[idx]
 
     for (i, ref) in enumerate(ReferenceOrganisms)
-        refgwsas = readGenomeWithSAs(joinpath(refsdir, ref.first * ".gwsas"), ref.first)
+        path = joinpath(refsdir, ref.first * ".gwsas")
+        if !isfile(path)
+            error("no gwsas file $(path)")
+        end
+        refgwsas = readGenomeWithSAs(path, ref.first)
         rev = revComp(refgwsas.sequence)
         
         refloops[i * 2 - 1] = refgwsas.sequence * refgwsas.sequence[1:end - 1]
@@ -71,8 +81,11 @@ function readReferences(refsdir::String, templates::String)::Reference
 
         refRAs[i * 2 - 1] = makeSuffixArrayRanksArray(refgwsas.forwardSA)
         refRAs[i * 2] = makeSuffixArrayRanksArray(refgwsas.reverseSA)
-
-        feature_file = iff_files[findfirst(x->startswith(x, ref.second), iff_files)]
+        idx = findfirst(x->startswith(x, ref.second), iff_files)
+        if idx === nothing
+            error("no sff file for $(ref.second)")
+        end
+        feature_file = iff_files[idx]
         f_strand_features, r_strand_features = readFeatures(joinpath(refsdir, feature_file))
         
         ref_features[i * 2 - 1] = f_strand_features
@@ -157,13 +170,12 @@ directory.
 
 `reference` are the reference annotations (see `readReferences`)
 """
-function annotate_one(fasta::String, reference::Reference, output::MayBeString = nothing)
+MayBeIO = Union{String,IOBuffer,IOStream,Nothing}
+function annotate_one(fasta::Union{String,IOBuffer,IOStream}, reference::Reference, output::MayBeIO = nothing)
 
     num_refs = length(ReferenceOrganisms)
     t1 = time_ns()
-    if !isfile(fasta)
-        error("$(fasta): not a file!")
-    end
+
     target_id, target_seqf = readFasta(fasta)
     target_length = Int32(length(target_seqf))
     
@@ -232,9 +244,13 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString =
     target_rstrand_models, rstrand_feature_stacks = strands[2]
 
     if output != nothing
-        fname = output::String
-        if isdir(fname)
-            fname = joinpath(fname, "$(target_id).sff")
+        if typeof(output) == String
+            fname = output::String
+            if isdir(fname)
+                fname = joinpath(fname, "$(target_id).sff")
+            end
+        else
+            fname = output
         end
     else
         fname = "$(target_id).sff"
@@ -248,7 +264,9 @@ function annotate_one(fasta::String, reference::Reference, output::MayBeString =
     return fname, target_id
 
 end
-
+function annotate_one(fasta::Union{String,IOBuffer,IOStream}, reference::Reference)
+    annotate_one(fasta, reference, IOBuffer())
+end
 function annotate(refsdir::String, templates::String, fa_files::Array{String}, output::MayBeString)
 
     reference = readReferences(refsdir, templates)
