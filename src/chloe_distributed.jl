@@ -71,7 +71,7 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
         function ping()
             return "OK version=$(VERSION) procs=$(nprocs) on $(machine)"
         end
-        function threads()
+        function nconn()
             return nprocs
         end
         # we need to create separate ZMQ sockets to ensure strict
@@ -82,7 +82,7 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
                         (chloe, false),
                         (annotate, false),
                         (ping, false),
-                        (threads, false)
+                        (nconn, false)
 
                     ], address, false, "chloe"); async=false
                 )

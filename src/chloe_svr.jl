@@ -25,7 +25,7 @@ end
 
 function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
     template = "optimised_templates.v2.tsv", level="warn",
-    logfile::MayBeString=nothing, connect=false, nthreads=1)
+    logfile::MayBeString=nothing, connect=false, nconn=1)
     async = false
     
     llevel = get(LEVELS, level, Logging.Warn)
@@ -34,7 +34,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
         push!(address, ADDRESS)
     end
 
-    address = repeat(address, nthreads)
+    address = repeat(address, nconn)
 
     if logfile === nothing
         logger = ConsoleLogger(stderr,llevel)
@@ -49,7 +49,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
         machine = gethostname()
         reference = readReferences(refsdir, template)
         @info show_reference(reference)
-        @info "chloe version $(VERSION) (git: $(git_version()[1:7])) using $(nthreads) threads on machine $(machine)"
+        @info "chloe version $(VERSION) (git: $(git_version()[1:7])) using $(nconn) threads on machine $(machine)"
         @info "$(conn) $(address)"
 
         function chloe(fasta::String, fname::MayBeString)
@@ -75,7 +75,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
         function ping()
             return "OK version=$(VERSION) on thread=$(Threads.threadid())/$(length(address)) on $(machine)"
         end
-        function threads()
+        function nconn()
             return length(address)
         end
         if length(address) == 1
@@ -84,7 +84,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
                             (chloe, false),
                             (annotate, false),
                             (ping, false),
-                            (threads, false)
+                            (nconn, false)
 
                         ], address[1], !connect, "chloe"); async=async
                     )
@@ -95,7 +95,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
                         (chloe, false),
                         (annotate, false),
                         (ping, false),
-                        (threads, false)
+                        (nconn, false)
 
                     ], addr, !connect, "chloe"); async=async
                 )
@@ -140,7 +140,7 @@ svr_args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" int
     "--connect", "-c"
         action = :store_true
         help = "connect to addresses instead of bind"
-    "--nthreads"
+    "--nconn"
         arg_type = Int
         default = 1
         help = "number of threads when connecting"

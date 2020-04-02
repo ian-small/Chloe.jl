@@ -127,21 +127,21 @@ def annotate2(timeout, address, fastas):
                 print(line, end="")
 
 
-def num_threads(socket):
-    _, data = socket.msg(cmd="threads")
+def num_conn(socket):
+    _, data = socket.msg(cmd="nconn")
     return data
 
 
 @cli.command()
-@click.option("-n", "--nthreads", default=0)
+@click.option("-n", "--nconn", default=0)
 @addresses
-def terminate(timeout, address, nthreads):
+def terminate(timeout, address, nconn):
     """Shutdown the server."""
     socket = Socket(address, timeout)
     # terminate each thread.
-    threads = nthreads or num_threads(socket)
-    click.secho(f"terminating {threads} server(s) @ {address}", fg="magenta")
-    for _ in range(threads):
+    nconn = nconn or num_conn(socket)
+    click.secho(f"terminating {nconn} server(s) @ {address}", fg="magenta")
+    for _ in range(nconn):
         code, _ = socket.msg(cmd=":terminate")
         click.secho(
             "OK" if code == 200 else f"No Server at {address}",
@@ -168,7 +168,7 @@ def ping(timeout, address):
 def workers(timeout, address):
     """Number of service workers"""
     socket = Socket(address, timeout)
-    code, data = socket.msg(cmd="threads")
+    code, data = socket.msg(cmd="nconn")
     click.secho(
         str(data) if code == 200 else f"No Server at {address}",
         fg="green" if code == 200 else "red",
