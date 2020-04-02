@@ -4,7 +4,7 @@ AlignedBlocks = Array{AlignedBlock}
 
 DNAString = AbstractString
 
-function compareSubStrings(a::SubString, b::SubString)::Tuple{Int32,Int64}
+function compareSubStrings(a::SubString, b::SubString)::Tuple{Int32,Int}
     # a, b = Iterators.Stateful(a), Iterators.Stateful(b)
     count::Int32 = 0
     for (c, d) in zip(a, b)
@@ -51,7 +51,7 @@ function probMatch(m::T, n::T, k::Integer)::Float64 where {T <: Integer}
     return 1 - (((1 - 1 / 4^k)^(m - k + 1))^(n - k + 1))
 end
 
-function matchLengthThreshold(m::T, n::T)::Int64 where {T <: Integer}
+function matchLengthThreshold(m::T, n::T)::Int where {T <: Integer}
     for k = 1:25
         p = probMatch(m, n, k)
         p < 0.1 && return max(k, 2)
@@ -239,6 +239,7 @@ function alignLoops(ref_loop::DNAString,
     function align(src::DNAString, src_SA::SuffixArray, src_RA::SuffixArray, tgt::DNAString, tgt_SA::SuffixArray, tgt_RA::SuffixArray)
         # ~30% for alignSAs and 60% for fillAllGaps!
         lcps = alignSAs(src, src_SA, tgt, tgt_SA)
+        @debug "align[$(Threads.threadid())]" lcps = length(lcps)
         aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(src_SA), length(tgt_SA)))
         aligned_blocks = fillAllGaps!(aligned_blocks, src, src_SA, src_RA, tgt, tgt_SA, tgt_RA)
         aligned_blocks
