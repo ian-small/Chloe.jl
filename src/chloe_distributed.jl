@@ -8,10 +8,11 @@ using Logging
 using LogRoller
 using Distributed
 
-const LEVELS = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, 
-                    "warn" => Logging.Warn, "error"=>Logging.Error)
+const LEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, 
+                    "warn" => Logging.Warn, "error"=> Logging.Error)
 
-const ADDRESS = "tcp://127.0.0.1:9999"
+# const ADDRESS = "tcp://127.0.0.1:9999"
+const ADDRESS = "ipc:///tmp/chloe-worker"
 
 # change this if you change the API!
 const VERSION = "1.0"
@@ -26,22 +27,17 @@ end
 
 
 MayBeString = Union{Nothing, String}
-MayBeInt = Union{Nothing, Int}
 function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
     template = "optimised_templates.v2.tsv", level="warn", nprocs=3,
-    logfile::MayBeString=nothing, connect=false)
+    logfile::MayBeString=nothing)
     
     llevel = get(LEVELS, level, Logging.Warn)
-
-
 
     if logfile === nothing
         logger = ConsoleLogger(stderr,llevel)
     else
         logger = RollingLogger(logfile::String, 10 * 1000000, 2, llevel);
     end
-
-    conn = connect ? "connecting to" : "listening on"
 
     with_logger(logger) do
 
@@ -52,7 +48,7 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
 
         @info show_reference(reference)
         @info "chloe version $(VERSION) (git: $(git_version()[1:7])) threads=$(nthreads) on machine $(machine)"
-        @info "$(conn) $(address)"
+        @info "connecting to $(address)"
 
         function chloe(fasta::String, fname::MayBeString)
             start = now()
@@ -78,16 +74,19 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
         function threads()
             return nprocs
         end
+        # we need to create separate ZMQ sockets to ensure strict
+        # request/response (not e.g. request-request response-response)
         @sync for i in 1:nprocs
             @async process(
-                    JuliaWebAPI.create_responder([
-                            (chloe, false),
-                            (annotate, false),
-                            (ping, false),
-                            (threads, false)
+                JuliaWebAPI.create_responder([
+                        (chloe, false),
+                        (annotate, false),
+                        (ping, false),
+                        (threads, false)
 
-                        ], address, !connect, "chloe"); async=false
-                    )
+                    ], address, false, "chloe"); async=false
+                )
+
         end
 
         if isa(logger, RollingLogger)
@@ -115,7 +114,7 @@ distributed_args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn
     "--address", "-a"
         arg_type = String
         metavar ="URL"
-        help = "ZMQ address to listen on or connect to"
+        help = "ZMQ DEALER address to connect to"
     "--logfile"
         arg_type=String
         metavar="FILE"
@@ -125,9 +124,6 @@ distributed_args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn
         metavar = "LOGLEVEL"
         default ="warn"
         help = "log level (warn,debug,info,error)"
-    "--connect", "-c"
-        action = :store_true
-        help = "connect to addresses instead of bind"
     "--nprocs"
         arg_type = Int
         default = 3
