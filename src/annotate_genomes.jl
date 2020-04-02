@@ -116,6 +116,8 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     sort!(annotations, by = x->x.path)
     strand_annotations = AnnotationArray(target_id, strand, annotations)
 
+    @debug "[$(target_id)]$(strand) thread=$(Threads.threadid())"
+
     t4 = time_ns()
     @info "[$(target_id)]$(strand) overlapping ref annotations ($(length(annotations))): $(ns(t4 - start_ns))"
 
@@ -171,7 +173,8 @@ directory.
 `reference` are the reference annotations (see `readReferences`)
 """
 MayBeIO = Union{String,IOBuffer,IOStream,Nothing}
-function annotate_one(fasta::Union{String,IOBuffer,IOStream}, reference::Reference, output::MayBeIO = nothing)
+function annotate_one(fasta::Union{String,IOBuffer,IOStream}, reference::Reference,
+    output::MayBeIO = nothing)
 
     num_refs = length(ReferenceOrganisms)
     t1 = time_ns()
@@ -195,11 +198,12 @@ function annotate_one(fasta::Union{String,IOBuffer,IOStream}, reference::Referen
     blocks_aligned_to_targetf = Array{AlignedBlocks}(undef, num_refs * 2)
     blocks_aligned_to_targetr = Array{AlignedBlocks}(undef, num_refs * 2)
 
-    function alignit(refcount::Int64)
+    function alignit(refcount::Int)
+        start = time_ns()
         refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
         f_aligned_blocks, r_aligned_blocks = alignLoops(refloop, refSA, refRA, targetloopf, target_saf, target_raf)
         
-        @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount])]: " forward = blockCoverage(f_aligned_blocks)  reverse = blockCoverage(r_aligned_blocks)
+        @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount])] ($(ns(time_ns() - start))): " forward = blockCoverage(f_aligned_blocks)  reverse = blockCoverage(r_aligned_blocks)
 
         blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref forward and target forward strands
 
@@ -209,9 +213,11 @@ function annotate_one(fasta::Union{String,IOBuffer,IOStream}, reference::Referen
             blocks_aligned_to_targetr[refcount - 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref forward and target reverse strands
         end       
     end
-    Threads.@threads for refno in 1:length(reference.refloops) 
+    
+    Threads.@threads for refno in 1:length(reference.refloops)
         alignit(refno)
     end
+
     t3 = time_ns()
     
     @info "[$(target_id)] aligning: ($(length(reference.refloops))) $(ns(t3 - t2))" 
