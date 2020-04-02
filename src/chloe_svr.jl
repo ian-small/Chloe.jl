@@ -48,14 +48,14 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
         Sys.set_process_title("chloe-svr")
         machine = gethostname()
         reference = readReferences(refsdir, template)
-        @info show_reference(reference)
+        @info reference
         @info "chloe version $(VERSION) (git: $(git_version()[1:7])) using $(nconn) threads on machine $(machine)"
         @info "$(conn) $(address)"
 
         function chloe(fasta::String, fname::MayBeString)
             @info "running on thread: $(Threads.threadid())"
             start = now()
-            filename, target_id = annotate_one(fasta, reference, fname)
+            filename, target_id = annotate_one(reference, fasta, fname)
             elapsed = now() - start
             @info "finished $(target_id) on thread: $(Threads.threadid()) after $(elapsed)"
             return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename, "ncid" => string(target_id))
@@ -65,7 +65,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
             @info "running on thread: $(Threads.threadid())"
             start = now()
             input = IOBuffer(fasta)
-            io, target_id = annotate_one(input, reference)
+            io, target_id = annotate_one(reference, input)
             sff = String(take!(io))
             elapsed = now() - start
             @info "finished $(target_id) on thread: $(Threads.threadid()) after $(elapsed)"

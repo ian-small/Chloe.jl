@@ -35,14 +35,14 @@ struct Reference
     gene_exons::Dict{String,Int32}
 end
 
-function show_reference(reference::Reference)
-    return """templates=$(length(reference.feature_templates)), 
-        gene_exons=$(length(reference.gene_exons))[$(sum(values(reference.gene_exons)))],
-        ref seq loops=$(length(reference.refloops))[$(sum(map(x->length(x), reference.refloops)))]
-        """
+function Base.show(io::IO, reference::Reference)
+    t1 = "#templates=$(length(reference.feature_templates))"
+    t2 = "#gene_exons=$(length(reference.gene_exons))[$(sum(values(reference.gene_exons)))]"
+    t3 = "ref #seq=$(length(reference.refloops))[$(sum(map(x->length(x), reference.refloops)))]"
+    print(io, "Reference: $t1, $t2, $t3")
 end
 """
-readReferences(reference_dir, template_tsv)
+    readReferences(reference_dir, template_file_tsv)
 
 creates a Reference object to feed into `annotate_one`
 """
@@ -159,7 +159,7 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
 end
 
 """
-annotate_one(fasta_file, references [,output_sff_file])
+    annotate_one(references, fasta_file [,output_sff_file])
 
 Annotate a single fasta file containting a *single* circular
 DNA entry
@@ -173,7 +173,7 @@ directory.
 `reference` are the reference annotations (see `readReferences`)
 """
 MayBeIO = Union{String,IOBuffer,IOStream,Nothing}
-function annotate_one(fasta::Union{String,IOBuffer,IOStream}, reference::Reference,
+function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStream},
     output::MayBeIO = nothing)
 
     num_refs = length(ReferenceOrganisms)
@@ -205,8 +205,8 @@ function annotate_one(fasta::Union{String,IOBuffer,IOStream}, reference::Referen
         
         @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount])] ($(ns(time_ns() - start))): " forward = blockCoverage(f_aligned_blocks)  reverse = blockCoverage(r_aligned_blocks)
 
-        blocks_aligned_to_targetf[refcount] = f_aligned_blocks # f_aligned_blocks contains matches between ref forward and target forward strands
-
+        # f_aligned_blocks contains matches between ref forward and target forward strands
+        blocks_aligned_to_targetf[refcount] = f_aligned_blocks
         if refcount % 2 == 1 # aligning + strand to + strand
             blocks_aligned_to_targetr[refcount + 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref reverse and target reverse strands
         else    # aligning - strand to + strand
@@ -270,14 +270,14 @@ function annotate_one(fasta::Union{String,IOBuffer,IOStream}, reference::Referen
     return fname, target_id
 
 end
-function annotate_one(fasta::Union{String,IOBuffer,IOStream}, reference::Reference)
-    annotate_one(fasta, reference, IOBuffer())
+function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStream})
+    annotate_one(reference, fasta, IOBuffer())
 end
 function annotate(refsdir::String, templates::String, fa_files::Array{String}, output::MayBeString)
 
     reference = readReferences(refsdir, templates)
 
     for infile in fa_files
-        annotate_one(infile, reference, output)
+        annotate_one(reference, infile, output)
     end
 end

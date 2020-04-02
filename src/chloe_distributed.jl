@@ -45,14 +45,14 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
         reference = readReferences(refsdir, template)
         
         nthreads = Threads.nthreads()
-
-        @info show_reference(reference)
+        @info "processes: $(nprocs())"
+        @info reference
         @info "chloe version $(VERSION) (git: $(git_version()[1:7])) threads=$(nthreads) on machine $(machine)"
         @info "connecting to $(address)"
 
         function chloe(fasta::String, fname::MayBeString)
             start = now()
-            filename, target_id = fetch(@spawnat :any annotate_one(fasta, reference, fname))
+            filename, target_id = fetch(@spawnat :any annotate_one(reference, fasta, fname))
             elapsed = now() - start
             @info "finished $(target_id) after $(elapsed)"
             return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename, "ncid" => string(target_id))
@@ -61,7 +61,7 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
         function annotate(fasta::String)
             start = now()
             input = IOBuffer(fasta)
-            io, target_id = fetch(@spawnat :any annotate_one(input, reference))
+            io, target_id = fetch(@spawnat :any annotate_one(reference, input))
             sff = String(take!(io))
             elapsed = now() - start
             @info "finished $(target_id) after $(elapsed)"
@@ -114,6 +114,7 @@ distributed_args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn
     "--address", "-a"
         arg_type = String
         metavar ="URL"
+        default = ADDRESS
         help = "ZMQ DEALER address to connect to"
     "--logfile"
         arg_type=String
@@ -122,7 +123,7 @@ distributed_args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn
     "--level", "-l"
         arg_type = String
         metavar = "LOGLEVEL"
-        default ="warn"
+        default ="info"
         help = "log level (warn,debug,info,error)"
     "--nprocs"
         arg_type = Int
@@ -139,7 +140,6 @@ distributed_args = parse_args(ARGS, distributed_args; as_symbols = true)
 procs = addprocs(get(distributed_args, :nprocs, 3); topology=:master_worker)
 # delete!(distributed_args,:nprocs)
 
-@info "processes: $(procs)"
 Sys.set_process_title("chloe-distributed")
 
 # sic! src/....
