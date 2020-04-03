@@ -43,7 +43,7 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
         git = git_version()[1:7]
         
         nthreads = Threads.nthreads()
-        @info "processes: $(nprocs())"
+        @info "processes: $nprocs"
         @info reference
         @info "chloe version $(VERSION) (git: $(git)) threads=$(nthreads) on machine $(machine)"
         @info "connecting to $(address)"
@@ -58,7 +58,9 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
 
         function annotate(fasta::String)
             start = now()
+
             input = IOBuffer(fasta)
+
             io, target_id = fetch(@spawnat :any annotate_one(reference, input))
             sff = String(take!(io))
             elapsed = now() - start

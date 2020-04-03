@@ -48,7 +48,7 @@ function readFasta(fasta::String)::Tuple{String,String}
         readFasta(f)
     end
 end
-function readFasta(f::Union{IOStream,IOBuffer})::Tuple{String,String}
+function readFasta(f::Union{IOStream,IOBuffer,GZipStream})::Tuple{String,String}
     seqs = Array{String}(undef, 0)
     header = strip(readline(f))
     if !startswith(header, ">")

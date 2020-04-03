@@ -80,7 +80,6 @@ package prompt:
 pkg> add ArgParse Dates GZip JLD JuliaWebAPI LogRoller Logging Printf StatsBase
 ```
 
-
 ### Notes:
 
 See:
@@ -110,9 +109,7 @@ using Distributed
 refs = readReferences("reference_1116", "optimised_templates.v2.tsv");
 io = IOBuffer(read("testfa/NC_020019.1.fa", String))
 r = @spawnat :any annotate_one(refs, io)
-
 o2, uid = fetch(r)
-# o is empty!
 sff = String(take!(o2))
 ```
 

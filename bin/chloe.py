@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 from io import StringIO
+import gzip
 from concurrent.futures import ThreadPoolExecutor
 import re
+
 import zmq
 import click
 
@@ -40,9 +42,98 @@ def setup_zmq(address):
     return socket, poller
 
 
+# http://api.zeromq.org/2-1:zmq-setsockopt
+def proxy(url_worker, url_client, hwm=1000):
+    """Server routine"""
+    # pylint: disable=no-member
+
+    # Socket to talk to clients
+    clients = context.socket(zmq.ROUTER)
+    # number of *messages* in queue
+    clients.setsockopt(zmq.RCVHWM, hwm)
+    # clients.setsockopt(zmq.ZMQ_SWAP, swap)
+
+    clients.bind(url_client)
+
+    # Socket to talk to workers
+    worker = context.socket(zmq.DEALER)
+    worker.setsockopt(zmq.SNDHWM, hwm)
+    # workers.setsockopt(zmq.ZMQ_SWAP, swap)
+    workers.bind(url_worker)
+
+    zmq.proxy(clients, worker)
+
+    # We never get here but clean up anyhow
+    clients.close()
+    workers.close()
+    context.term()
+
+
 @click.group()
 def cli():
     pass
+
+
+@cli.command()
+@click.option(
+    "-r", "--remote", type=int, help="remote port to connect to (same as local)"
+)
+@click.option(
+    "-l", "--local", default=9999, help="local port to connect to", show_default=True
+)
+@click.option("--router", help=f"run a broker endpoint too (e.g. {ADDRESS})")
+@click.option("-n", "--nprocs", default=8, help="number of processes to use")
+@click.option("--sleep", default=0.0, help="sleep seconds before trying to connect")
+@click.option(
+    "--level",
+    default="info",
+    help="log level for server",
+    show_default=True,
+    type=click.Choice(["info", "warn", "debug", "error"]),
+)
+def stiletto_ssh(remote, local, nprocs, level, sleep, router):
+    """start up a ssh tunnel to stiletto chloe-svr."""
+    from threading import Thread
+    from time import sleep as Sleep
+    from warnings import filterwarnings
+    from fabric import Connection
+    from cryptography.utils import CryptographyDeprecationWarning
+
+    filterwarnings("ignore", category=CryptographyDeprecationWarning)
+
+    if remote is None:
+        remote = local
+
+    remote_dir = "chloe-svr"
+    julia = "/home/ianc/julia-1.4.0/bin/julia"
+
+    if router:
+        address = f"tcp://127.0.0.1:{local}"
+        t = Thread(target=proxy, args=[address, router])
+        t.daemon = True
+        t.start()
+
+    if sleep:
+        Sleep(sleep)
+    c = Connection("chloe-stiletto")  # entry in ~/.ssh/config
+    # bind on remote and connect on local
+    # This means that the broker should be running first
+    def run():
+        with c.forward_remote(local_port=local, remote_port=remote):
+            with c.cd(remote_dir):
+                args = f"""-l {level} --nprocs={nprocs} --address=tcp://127.0.0.1:{remote}"""
+                cmd = (
+                    f"""JULIA_NUM_THREADS=96 {julia} src/chloe_distributed.jl {args}"""
+                )
+                # need a pty to send interrupt
+                c.run(cmd, pty=True)
+                click.secho("stiletto terminated", fg="green", bold=True)
+
+    try:
+        run()
+    except Exception as e:
+        print(type(e), e)
+        raise
 
 
 def addresses(f):
@@ -88,11 +179,7 @@ def annotate(timeout, address, fastas, output, parallel):
         code, data = socket.msg(cmd="chloe", args=[fasta, output])
 
         click.secho(
-            f"{fasta}: {str(data)}"
-            if code == 200
-            else f"{fasta}: No Server at {address}",
-            fg="green" if code == 200 else "red",
-            bold=True,
+            f"{fasta}: {str(data)}", fg="green" if code == 200 else "red", bold=True
         )
 
     if parallel:
@@ -105,6 +192,13 @@ def annotate(timeout, address, fastas, output, parallel):
             do_one(fasta, socket)
 
 
+def maybegz_open(fasta, mode="rt"):
+    if fasta.endswith(".gz"):
+        return gzip.open(fasta, mode)
+    else:
+        return open(fasta, mode)
+
+
 @cli.command()
 @addresses
 @click.argument("fastas", nargs=-1)
@@ -112,12 +206,12 @@ def annotate2(timeout, address, fastas):
     """Annotate fasta files (send and receive file content)."""
     socket = Socket(address, timeout)
     for fasta in fastas:
-        with open(fasta) as fp:
+        with maybegz_open(fasta) as fp:
             fasta = fp.read()
         code, data = socket.msg(cmd="annotate", args=[fasta])
 
         if code != 200:
-            click.secho(data, fg="red", bold=True)
+            click.secho(str(data), fg="red", bold=True)
             return
 
         ncid, sff = data["ncid"], data["sff"]
@@ -156,11 +250,7 @@ def ping(timeout, address):
     """Ping the server."""
     socket = Socket(address, timeout)
     code, data = socket.msg(cmd="ping")
-    click.secho(
-        str(data) if code == 200 else f"No Server at {address}",
-        fg="green" if code == 200 else "red",
-        bold=True,
-    )
+    click.secho(str(data), fg="green" if code == 200 else "red", bold=True)
 
 
 @cli.command()
@@ -169,11 +259,7 @@ def workers(timeout, address):
     """Number of service workers"""
     socket = Socket(address, timeout)
     code, data = socket.msg(cmd="nconn")
-    click.secho(
-        str(data) if code == 200 else f"No Server at {address}",
-        fg="green" if code == 200 else "red",
-        bold=True,
-    )
+    click.secho(str(data), fg="green" if code == 200 else "red", bold=True)
 
 
 if __name__ == "__main__":
