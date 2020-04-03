@@ -193,7 +193,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStrea
     
     t2 = time_ns()
 
-    @info "[$(target_id)] making suffix arrays: $(ns(t2 - t1)))"
+    @info "[$(target_id)] making suffix arrays: $(ns(t2 - t1))"
 
     blocks_aligned_to_targetf = Array{AlignedBlocks}(undef, num_refs * 2)
     blocks_aligned_to_targetr = Array{AlignedBlocks}(undef, num_refs * 2)

@@ -45,7 +45,7 @@ function alignSAs(a::DNAString, saa::SuffixArray, b::DNAString, sab::SuffixArray
     return sort!(lcps)
 end
 
-function probMatch(m::T, n::T, k::Int)::Float64 where {T <: Integer}
+function probMatch(m::T, n::T, k::Integer)::Float64 where {T <: Integer}
     m < k && return 0
     n < k && return 0
     return 1 - (((1 - 1 / 4^k)^(m - k + 1))^(n - k + 1))
