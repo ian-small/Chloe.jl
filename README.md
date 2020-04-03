@@ -80,7 +80,6 @@ package prompt:
 pkg> add ArgParse Dates GZip JLD JuliaWebAPI LogRoller Logging Printf StatsBase
 ```
 
-
 ### Notes:
 
 See:
@@ -93,7 +92,7 @@ Possible useful REPL packages
 * add OhMyREPL: pretty print code
 * `@code_warntype f()` check type system
 * ProfileView https://github.com/timholy/ProfileView.jl
-
+* https://people.smp.uq.edu.au/YoniNazarathy/julia-stats/StatisticsWithJulia.pdf
 
 ## Distributed
 
@@ -101,7 +100,7 @@ Possible useful REPL packages
 
 Start with 3 workers and load code:
 
-`julia -p 3 -L src/chloe_cmds.jl`
+`julia -p 3 -L src/annotate_genomes.jl`
 
 now you can type
 
@@ -109,11 +108,8 @@ now you can type
 using Distributed
 refs = readReferences("reference_1116", "optimised_templates.v2.tsv");
 io = IOBuffer(read("testfa/NC_020019.1.fa", String))
-o = IOBuffer()
-r = @spawnat :any annotate_one(io, refs, o)
-
-o2, id = fetch(r)
-# o is empty!
+r = @spawnat :any annotate_one(refs, io)
+o2, uid = fetch(r)
 sff = String(take!(o2))
 ```
 
@@ -122,10 +118,9 @@ This also works
 ```julia
 using Distrbuted
 addprocs(3)
-@everywhere include("src/chloe_cmd.jl")
+@everywhere include("src/annotate_genomes.jl")
+refs = readReferences("reference_1116", "optimised_templates.v2.tsv");
 io = IOBuffer(read("testfa/NC_020019.1.fa", String))
-o = IOBuffer()
-r = @async fetch(@spawnat :any annotate_one(io, refs, o))
-io, uid = @sync r.result
-
+o2, uid = fetch(@spawnat :any annotate_one(refs, io))
+sff = String(take!(o2))
 ```

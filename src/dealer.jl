@@ -11,25 +11,24 @@ using JuliaWebAPI
 # I need a second process to run the DEALER/ROUTER ... see bin/broker.py
 
 function ping()
-    return "OK $(Threads.threadid())"
+    return "OK $(current_task())"
 end
 function worker()
-    bind = false
     process(
         JuliaWebAPI.create_responder([
                 (ping, false)
 
-            ], "inproc://workers", bind,  "chloe"); async = false
+            ], "inproc://workers", false,  "chloe"); async = false
         )
-    println("end worker")
+    @info "end worker"
 end
 
 
 function start_broker(url::String)
 
-    ctx = Context()
-    router = Socket(ctx, ROUTER)
-    dealer = Socket(ctx, DEALER)
+    # ctx = Context()
+    router = Socket(ROUTER)
+    dealer = Socket(DEALER)
 
     ZMQ.bind(router, url)
     ZMQ.bind(dealer, "inproc://workers")
@@ -42,11 +41,15 @@ function start_broker(url::String)
     # control never comes here... clean up anyway.
     ZMQ.close(router)
     ZMQ.close(dealer)
-    ZMQ.close(ctx)
+    # ZMQ.close(ctx)
 end
 
-funcs = [worker, worker, ()->start_broker("tcp://127.0.0.1:9999") ]
-
-Threads.@threads for f in funcs
-    f()
+funcs = [worker, worker]
+function workers()
+    @sync for f in funcs
+        @async f()
+    end
+end
+Threads.@threads for w in [workers, ()->start_broker("tcp://127.0.0.1:9998")]
+    w()     
 end
