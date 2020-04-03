@@ -9,3 +9,7 @@ run-chloe-9999:
 
 run-broker:
 	python bin/broker.py broker --worker=ipc:///tmp/chloe-worker --client=ipc:///tmp/chloe-client
+
+run-stiletto:
+	JULIA_NUM_THREADS=32 julia src/chloe_svr.jl -l info --nthreads=3 --address=tcp://127.0.0.1:9999 --connect
+@
