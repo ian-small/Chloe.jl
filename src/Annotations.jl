@@ -730,7 +730,8 @@ function getGeneModelByName(gm_name::String, gene_models::AAFeature)::MaybeAFeat
     return nothing
 end
 
-function writeModelToSFF(outfile::Union{IOStream,IOBuffer}, model::AFeature, model_id::String,
+ChloeIO = Union{IOStream,IOBuffer,GZipStream}
+function writeModelToSFF(outfile::ChloeIO, model::AFeature, model_id::String,
                         targetloop::DNAString,
                         gene_exons::Dict{String,Int32},
                         maxlengths::Dict{String,Int32},
@@ -825,7 +826,7 @@ function calc_maxlengths(fstrand_models::AAFeature,
     maxlengths
 end
 
-function writeSFF(outfile::Union{String,IOStream,IOBuffer}, id::String, 
+function writeSFF(outfile::Union{String,ChloeIO}, id::String, 
                 fstrand_models::AAFeature,
                 rstrand_models::AAFeature,
                 gene_exons::Dict{String,Int32},
@@ -838,7 +839,7 @@ function writeSFF(outfile::Union{String,IOStream,IOBuffer}, id::String,
     genome_length = length(fstrand_feature_stacks[1].stack)
 
 
-    function out(outfile::Union{IOStream,IOBuffer})
+    function out(outfile::ChloeIO)
         model_ids = Dict{String,Int32}()
         write(outfile, id, "\t", string(genome_length), "\n")
         for model in fstrand_models
