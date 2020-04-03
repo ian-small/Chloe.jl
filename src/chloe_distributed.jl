@@ -1,6 +1,3 @@
-
-
-
 include("annotate_genomes.jl")
 using JuliaWebAPI
 using ArgParse
@@ -43,11 +40,12 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
 
         machine = gethostname()
         reference = readReferences(refsdir, template)
+        git = git_version()[1:7]
         
         nthreads = Threads.nthreads()
         @info "processes: $(nprocs())"
         @info reference
-        @info "chloe version $(VERSION) (git: $(git_version()[1:7])) threads=$(nthreads) on machine $(machine)"
+        @info "chloe version $(VERSION) (git: $(git)) threads=$(nthreads) on machine $(machine)"
         @info "connecting to $(address)"
 
         function chloe(fasta::String, fname::MayBeString)
@@ -68,14 +66,18 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
 
             return Dict("elapsed" => Dates.toms(elapsed), "sff" => sff, "ncid" => string(target_id))
         end
+
         function ping()
-            return "OK version=$(VERSION) procs=$(nprocs) on $(machine)"
+            return "OK version=$VERSION git=$git threads=$nthreads procs=$nprocs on $machine"
         end
+
         function nconn()
             return nprocs
         end
         # we need to create separate ZMQ sockets to ensure strict
         # request/response (not e.g. request-request response-response)
+        # we expect to *connect* to a ZMQ DEALER/ROUTER (see bin/broker.py)
+        # that forms the actual front end.
         @sync for i in 1:nprocs
             @async process(
                 JuliaWebAPI.create_responder([
@@ -117,7 +119,7 @@ distributed_args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn
         default = ADDRESS
         help = "ZMQ DEALER address to connect to"
     "--logfile"
-        arg_type=String
+        arg_type = String
         metavar="FILE"
         help="log to file"
     "--level", "-l"
@@ -132,7 +134,8 @@ distributed_args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn
 
 end
 distributed_args.epilog = """
-Run Chloe as a background ZMQ service with distributed annotation processes
+Run Chloe as a background ZMQ service with distributed annotation processes.
+Requires a ZMQ DEALER/ROUTER to connect to.
 """
 
 distributed_args = parse_args(ARGS, distributed_args; as_symbols = true)
@@ -146,7 +149,3 @@ Sys.set_process_title("chloe-distributed")
 @everywhere procs include("src/annotate_genomes.jl")
 
 chloe_distributed(;distributed_args...)
-
-
-
-
