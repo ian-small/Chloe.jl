@@ -1,5 +1,5 @@
 SuffixArray = Array{Int32}
-DNAString = AbstractString
+DNAString = String
 
 struct GenomeWithSAs
     id::String

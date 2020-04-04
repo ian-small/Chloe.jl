@@ -4,7 +4,6 @@ include("SuffixArrays.jl")
 include("Alignments3.jl")
 include("Annotations.jl")
 
-
 using Dates
 
 const ReferenceOrganisms = Dict(

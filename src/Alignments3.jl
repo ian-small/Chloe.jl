@@ -2,7 +2,7 @@
 AlignedBlock = Tuple{Int32,Int32,Int32}
 AlignedBlocks = Array{AlignedBlock}
 
-DNAString = AbstractString
+DNAString = String
 
 function compareSubStrings(a::SubString, b::SubString)::Tuple{Int32,Int}
     # a, b = Iterators.Stateful(a), Iterators.Stateful(b)
