@@ -37,12 +37,14 @@ fname, elapsed_ms = data["filename"], data["elapsed"]
 apicall(i, ":terminate")
 ```
 
-The *actual* production configuration runs
+The *actual* production configuration uses `src/chloe_distributed.jl` 
+(for threading issues) and runs
 the server as a client of a DEALER/ROUTER server
-(see `bin/broker.py` and the `Makefile`) and connects to the
+(see `bin/broker.py` and the `Makefile`). It *connects* to the
 DEALER end on `ipc:///tmp/chloe-worker` a unix named socket (so
 the server is not visible on the network). The
-chloe website connects to `ipc:///tmp/chloe-client` which
+[chloe website](https://chloe.plantenergy.edu.au)
+connects to `ipc:///tmp/chloe-client` which
 is the ROUTER end of broker. In this setup
 you can run multiple chloe servers connecting
 to the same DEALER.
@@ -77,7 +79,38 @@ Check the `Project.toml` file first but cut'n'paste the following into the julia
 package prompt:
 
 ```julia
-pkg> add ArgParse Dates GZip JLD JuliaWebAPI LogRoller Logging Printf StatsBase
+pkg> add ArgParse Dates GZip JLD JuliaWebAPI LogRoller Logging Printf StatsBase Crayons
+```
+
+## Distributed
+
+* https://docs.julialang.org/en/v1/stdlib/Distributed/index.html
+
+Start julia with 3 workers and load code:
+
+`JULIA_NUM_THREADS=8 julia -p 3 -L src/annotate_genomes.jl`
+
+Now you can type:
+
+```julia
+using Distributed
+refs = readReferences("reference_1116", "optimised_templates.v2.tsv")
+fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
+r = @spawnat :any annotate_one(refs, fasta)
+io, uid = fetch(r)
+sff = String(take!(io))
+```
+
+This also works:
+
+```julia
+using Distrbuted
+addprocs(3)
+@everywhere include("src/annotate_genomes.jl")
+refs = readReferences("reference_1116", "optimised_templates.v2.tsv")
+fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
+io, uid = fetch(@spawnat :any annotate_one(refs, fasta))
+sff = String(take!(io))
 ```
 
 ### Notes:
@@ -86,41 +119,9 @@ See:
 
 * http://zguide.zeromq.org/py:all#Multithreading-with-ZeroMQ
 
-Possible useful REPL packages
+Possibly useful REPL packages
 
 * add Revise: reload edited files within REPL
 * add OhMyREPL: pretty print code
 * `@code_warntype f()` check type system
-* ProfileView https://github.com/timholy/ProfileView.jl
-* https://people.smp.uq.edu.au/YoniNazarathy/julia-stats/StatisticsWithJulia.pdf
-
-## Distributed
-
-* https://docs.julialang.org/en/v1/stdlib/Distributed/index.html
-
-Start with 3 workers and load code:
-
-`julia -p 3 -L src/annotate_genomes.jl`
-
-now you can type
-
-```julia
-using Distributed
-refs = readReferences("reference_1116", "optimised_templates.v2.tsv");
-io = IOBuffer(read("testfa/NC_020019.1.fa", String))
-r = @spawnat :any annotate_one(refs, io)
-o2, uid = fetch(r)
-sff = String(take!(o2))
-```
-
-This also works
-
-```julia
-using Distrbuted
-addprocs(3)
-@everywhere include("src/annotate_genomes.jl")
-refs = readReferences("reference_1116", "optimised_templates.v2.tsv");
-io = IOBuffer(read("testfa/NC_020019.1.fa", String))
-o2, uid = fetch(@spawnat :any annotate_one(refs, io))
-sff = String(take!(o2))
-```
+* add ProfileView: https://github.com/timholy/ProfileView.jl

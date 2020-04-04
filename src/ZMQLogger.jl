@@ -3,6 +3,7 @@ using ZMQ
 
 struct ZMQLogger <: AbstractLogger
     min_level::Logging.LogLevel
+    lock::ReentrantLock
     topic::String
     message_limits::Dict{Any,Int}
     socket::Socket
@@ -13,7 +14,7 @@ struct ZMQLogger <: AbstractLogger
         end
         socket = ZMQ.Socket(ZMQ.PUB)
         ZMQ.connect(socket, endpoint)
-        new(min_level, topic, message_limits, socket)
+        new(min_level, ReentrantLock(), topic, message_limits, socket)
 
     end
 end
@@ -39,8 +40,10 @@ function Logging.handle_message(logger::ZMQLogger, level, message, _module, grou
     msg = String(take!(buf))
     prefix = (level == Logging.Warn ? "WARNING" : uppercase(string(level))) 
     topic = length(logger.topic) > 0 ? "$(logger.topic).$prefix" : prefix
-    ZMQ.send(logger.socket, Message(topic); more = true)
-    ZMQ.send(logger.socket, Message(msg); more = false)
+    lock(logger.lock) do
+        ZMQ.send(logger.socket, Message(topic); more = true)
+        ZMQ.send(logger.socket, Message(msg); more = false)
+    end
     nothing
 end
 function Logging.shouldlog(logger::ZMQLogger, level, _module, group, id)
