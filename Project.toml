@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+Crayons = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 GZip = "92fee26a-97fe-5a0c-ad85-20a5f3185b63"
 JLD = "4138dd39-2aa7-5051-a626-17a0bb65d9c8"

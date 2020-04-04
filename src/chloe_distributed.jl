@@ -1,13 +1,12 @@
 include("annotate_genomes.jl")
+include("ZMQLogger.jl")
 using JuliaWebAPI
 using ArgParse
-using Logging
-using LogRoller
+# using LogRoller
 using Distributed
+using Crayons
 
-const LEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, 
-                    "warn" => Logging.Warn, "error"=> Logging.Error)
-
+const success = crayon"bold green"
 # const ADDRESS = "tcp://127.0.0.1:9999"
 const ADDRESS = "ipc:///tmp/chloe-worker"
 
@@ -23,111 +22,106 @@ function git_version()
 end
 
 
-MayBeString = Union{Nothing, String}
-function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
-    template = "optimised_templates.v2.tsv", level="warn", nprocs=3,
-    logfile::MayBeString=nothing)
+function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
+    template = "optimised_templates.v2.tsv", level = "warn", nprocs = 3,
+    logendpoint::MayBeString = nothing)
+
+    procs = addprocs(nprocs; topology = :master_worker)
+    # sic! src/....
+    @everywhere procs include("src/annotate_genomes.jl")
+    @everywhere procs include("src/ZMQLogger.jl")
+    # can't use rolling logger for procs because of file contentsion
+    for p in procs
+        @spawnat p set_global_logger(logendpoint, level; topic = "annotator")
+    end
+    set_global_logger(logendpoint, level; topic = "annotator")
     
-    llevel = get(LEVELS, level, Logging.Warn)
+    machine = gethostname()
+    reference = readReferences(refsdir, template)
+    git = git_version()[1:7]
+    
+    nthreads = Threads.nthreads()
+    @info "processes: $nprocs"
+    @info reference
+    @info "chloe version $VERSION (git: $git) threads=$nthreads on machine $machine"
+    @info "connecting to $address"
 
-    if logfile === nothing
-        logger = ConsoleLogger(stderr,llevel)
-    else
-        logger = RollingLogger(logfile::String, 10 * 1000000, 2, llevel);
+
+    function chloe(fasta::String, fname::MayBeString)
+        start = now()
+        filename, target_id = fetch(@spawnat :any annotate_one(reference, fasta, fname))
+        elapsed = now() - start
+        @info success("finished $target_id after $elapsed")
+        return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename, "ncid" => string(target_id))
     end
 
-    with_logger(logger) do
+    function annotate(fasta::String)
+        start = now()
 
-        machine = gethostname()
-        reference = readReferences(refsdir, template)
-        git = git_version()[1:7]
-        
-        nthreads = Threads.nthreads()
-        @info "processes: $nprocs"
-        @info reference
-        @info "chloe version $VERSION (git: $git) threads=$nthreads on machine $machine"
-        @info "connecting to $address"
+        input = IOBuffer(fasta)
 
-        function chloe(fasta::String, fname::MayBeString)
-            start = now()
-            filename, target_id = fetch(@spawnat :any annotate_one(reference, fasta, fname))
-            elapsed = now() - start
-            @info "finished $target_id after $elapsed"
-            return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename, "ncid" => string(target_id))
-        end
+        io, target_id = fetch(@spawnat :any annotate_one(reference, input))
+        sff = String(take!(io))
+        elapsed = now() - start
+        @info success("finished $target_id after $elapsed")
 
-        function annotate(fasta::String)
-            start = now()
+        return Dict("elapsed" => Dates.toms(elapsed), "sff" => sff, "ncid" => string(target_id))
+    end
 
-            input = IOBuffer(fasta)
+    function ping()
+        return "OK version=$VERSION git=$git threads=$nthreads procs=$nprocs on $machine"
+    end
 
-            io, target_id = fetch(@spawnat :any annotate_one(reference, input))
-            sff = String(take!(io))
-            elapsed = now() - start
-            @info "finished $target_id after $elapsed"
+    function nconn()
+        return nprocs
+    end
+    # we need to create separate ZMQ sockets to ensure strict
+    # request/response (not e.g. request-request response-response)
+    # we expect to *connect* to a ZMQ DEALER/ROUTER (see bin/broker.py)
+    # that forms the actual front end.
+    @sync for i in 1:nprocs
+        @async process(
+            JuliaWebAPI.create_responder([
+                    (chloe, false),
+                    (annotate, false),
+                    (ping, false),
+                    (nconn, false)
 
-            return Dict("elapsed" => Dates.toms(elapsed), "sff" => sff, "ncid" => string(target_id))
-        end
-
-        function ping()
-            return "OK version=$VERSION git=$git threads=$nthreads procs=$nprocs on $machine"
-        end
-
-        function nconn()
-            return nprocs
-        end
-        # we need to create separate ZMQ sockets to ensure strict
-        # request/response (not e.g. request-request response-response)
-        # we expect to *connect* to a ZMQ DEALER/ROUTER (see bin/broker.py)
-        # that forms the actual front end.
-        @sync for i in 1:nprocs
-            @async process(
-                JuliaWebAPI.create_responder([
-                        (chloe, false),
-                        (annotate, false),
-                        (ping, false),
-                        (nconn, false)
-
-                    ], address, false, "chloe"); async=false
-                )
-
-        end
-
-        if isa(logger, RollingLogger)
-            close(logger::RollingLogger)
-        end
+                ], address, false, "chloe"); async = false
+            )
 
     end
+
 end
 
-distributed_args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
+distributed_args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
 
 @add_arg_table! distributed_args begin
     "--reference", "-r"
-        arg_type = String
-        default = "reference_1116"
-        dest_name = "refsdir"
-        metavar = "DIRECTORY"
-        help = "reference directory"
+    arg_type = String
+    default = "reference_1116"
+    dest_name = "refsdir"
+    metavar = "DIRECTORY"
+    help = "reference directory"
     "--template", "-t"
-        arg_type = String
-        default = "optimised_templates.v2.tsv"
-        metavar = "TSV"
-        dest_name = "template"
-        help = "template tsv"
+    arg_type = String
+    default = "optimised_templates.v2.tsv"
+    metavar = "TSV"
+    dest_name = "template"
+    help = "template tsv"
     "--address", "-a"
+    arg_type = String
+    metavar = "URL"
+    default = ADDRESS
+    help = "ZMQ DEALER address to connect to"
+    "--logendpoint"
         arg_type = String
-        metavar ="URL"
-        default = ADDRESS
-        help = "ZMQ DEALER address to connect to"
-    "--logfile"
-        arg_type = String
-        metavar="FILE"
-        help="log to file"
+        metavar = "ZMQ"
+        help = "log to zmq endpoint"
     "--level", "-l"
         arg_type = String
         metavar = "LOGLEVEL"
-        default ="info"
+        default = "info"
         help = "log level (warn,debug,info,error)"
     "--nprocs"
         arg_type = Int
@@ -142,12 +136,8 @@ Requires a ZMQ DEALER/ROUTER to connect to.
 
 distributed_args = parse_args(ARGS, distributed_args; as_symbols = true)
 
-procs = addprocs(get(distributed_args, :nprocs, 3); topology=:master_worker)
 # delete!(distributed_args,:nprocs)
 
 Sys.set_process_title("chloe-distributed")
-
-# sic! src/....
-@everywhere procs include("src/annotate_genomes.jl")
 
 chloe_distributed(;distributed_args...)
