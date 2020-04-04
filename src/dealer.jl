@@ -33,7 +33,7 @@ function start_broker(url::String)
     ZMQ.bind(router, url)
     ZMQ.bind(dealer, "inproc://workers")
 
-    @info "listening on $(url)"
+    @info "listening on $url"
     # missing: ZMQ.proxy(router, dealer)
     rc = ccall((:zmq_proxy, libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
     println("done $(rc)")

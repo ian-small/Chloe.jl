@@ -11,7 +11,7 @@ function writesuffixarray(;fasta_files = String[])
 
         gwsas = GenomeWithSAs(seqid, seqf, saf, sar)
         filename = gwsas.id * ".gwsas"
-        @info "writing suffix array: $(filename)"
+        @info "writing suffix array: $filename"
         writeGenomeWithSAs(filename, gwsas)
     end
 end

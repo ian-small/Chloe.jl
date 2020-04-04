@@ -49,15 +49,15 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
         machine = gethostname()
         reference = readReferences(refsdir, template)
         @info reference
-        @info "chloe version $(VERSION) (git: $(git_version()[1:7])) using $(nconn) threads on machine $(machine)"
-        @info "$(conn) $(address)"
+        @info "chloe version $VERSION (git: $(git_version()[1:7])) using $nconn threads on machine $machine"
+        @info "$conn $address"
 
         function chloe(fasta::String, fname::MayBeString)
             @info "running on thread: $(Threads.threadid())"
             start = now()
             filename, target_id = annotate_one(reference, fasta, fname)
             elapsed = now() - start
-            @info "finished $(target_id) on thread: $(Threads.threadid()) after $(elapsed)"
+            @info "finished $target_id on thread: $(Threads.threadid()) after $elapsed"
             return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename, "ncid" => string(target_id))
         end
 
@@ -68,12 +68,12 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
             io, target_id = annotate_one(reference, input)
             sff = String(take!(io))
             elapsed = now() - start
-            @info "finished $(target_id) on thread: $(Threads.threadid()) after $(elapsed)"
+            @info "finished $target_id on thread: $(Threads.threadid()) after $elapsed"
 
             return Dict("elapsed" => Dates.toms(elapsed), "sff" => sff, "ncid" => string(target_id))
         end
         function ping()
-            return "OK version=$(VERSION) on thread=$(Threads.threadid())/$(length(address)) on $(machine)"
+            return "OK version=$VERSION on thread=$(Threads.threadid())/$(length(address)) on $machine"
         end
         function nconn()
             return length(address)

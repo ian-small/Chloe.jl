@@ -26,7 +26,7 @@ const ReferenceOrganisms = Dict(
 struct Reference
     # 2* length(ReferenceOrganisms) from directory reference_1116
     refsrc::Array{String}
-    refloops::Array{String}
+    refloops::Array{DNAString}
     refSAs::Array{SuffixArray}
     refRAs::Array{SuffixArray}
     ref_features::Array{FeatureArray}
@@ -35,11 +35,14 @@ struct Reference
     gene_exons::Dict{String,Int32}
 end
 
+# stops the REPL printing the entire 7MB of sequences!
 function Base.show(io::IO, reference::Reference)
-    t1 = "#templates=$(length(reference.feature_templates))"
-    t2 = "#gene_exons=$(length(reference.gene_exons))[$(sum(values(reference.gene_exons)))]"
-    t3 = "ref #seq=$(length(reference.refloops))[$(sum(map(x->length(x), reference.refloops)))]"
-    print(io, "Reference: $t1, $t2, $t3")
+    sabytes = 2 * sizeof(Int32) * (reference.refSAs .|> length |> sum)
+    bp = reference.refloops .|> length |> sum
+    t1 = "#templates=$(reference.feature_templates |> length)"
+    t2 = "#gene_exons=$(reference.gene_exons |> length)[$(reference.gene_exons |> values |> sum)]"
+    t3 = "#seq=$(reference.refloops |> length)[$bp bp]"
+    print(io, "Reference: $t1, $t2, $t3, suffix=$(sabytes)B, total=$(sabytes + bp)B")
 end
 """
     readReferences(reference_dir, template_file_tsv)
@@ -50,25 +53,26 @@ function readReferences(refsdir::String, templates::String)::Reference
 
     num_refs = length(ReferenceOrganisms)
 
-    refloops = Array{String}(undef, num_refs * 2)
+    refloops = Array{DNAString}(undef, num_refs * 2)
     refSAs = Array{SuffixArray}(undef, num_refs * 2)
     refRAs = Array{SuffixArray}(undef, num_refs * 2)
     ref_features = Array{FeatureArray}(undef, num_refs * 2)
     refsrc = Array{String}(undef, num_refs * 2)
+    
     if !isdir(refsdir)
         error("$(refsdir) is not a directory")
     end
     files = readdir(refsdir)
     idx = findall(x->endswith(x, ".sff"), files)
     if isempty(idx)
-        error("no sff files found!")
+        error("No sff files found!")
     end
     iff_files = files[idx]
 
     for (i, ref) in enumerate(ReferenceOrganisms)
         path = joinpath(refsdir, ref.first * ".gwsas")
         if !isfile(path)
-            error("no gwsas file $(path)")
+            error("no gwsas file $path")
         end
         refgwsas = readGenomeWithSAs(path, ref.first)
         rev = revComp(refgwsas.sequence)
@@ -116,15 +120,15 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     sort!(annotations, by = x->x.path)
     strand_annotations = AnnotationArray(target_id, strand, annotations)
 
-    @debug "[$(target_id)]$(strand) thread=$(Threads.threadid())"
+    @debug "[$target_id]$strand thread=$(Threads.threadid())"
 
     t4 = time_ns()
-    @info "[$(target_id)]$(strand) overlapping ref annotations ($(length(annotations))): $(ns(t4 - start_ns))"
+    @info "[$target_id]$strand overlapping ref annotations ($(length(annotations))): $(ns(t4 - start_ns))"
 
     strand_feature_stacks, shadow = fillFeatureStack(target_length, strand_annotations, reference.feature_templates)
 
     t5 = time_ns()
-    @info "[$(target_id)]$(strand) ref features stacks ($(length(strand_feature_stacks))): $(ns(t5 - t4))"
+    @info "[$target_id]$strand ref features stacks ($(length(strand_feature_stacks))): $(ns(t5 - t4))"
 
     target_strand_features = FeatureArray(target_id, target_length, strand, AFeature(undef, 0))
 
@@ -135,26 +139,26 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
         if ((depth >= stack.template.threshold_counts) && (coverage >= stack.template.threshold_coverage))
             push!(target_strand_features.features, Feature(stack.path, left_border, length, 0))
         else
-            @debug "[$(target_id)]$(strand) Below threshold: $(stack.path)"
+            @debug "[$target_id]$strand Below threshold: $(stack.path)"
         end
     end
 
     t6 = time_ns()
-    @info "[$(target_id)]$(strand) aligning templates ($(length(target_strand_features.features))): $(ns(t6 - t5))"
+    @info "[$target_id]$strand aligning templates ($(length(target_strand_features.features))): $(ns(t6 - t5))"
 
     for feat in target_strand_features.features
         refineMatchBoundariesByOffsets!(feat, strand_annotations, target_length, coverages)
     end
 
     t7 = time_ns()
-    @info "[$(target_id)]$(strand) refining match boundaries: $(ns(t7 - t6))"
+    @info "[$target_id]$strand refining match boundaries: $(ns(t7 - t6))"
 
 
     target_strand_models = groupFeaturesIntoGeneModels(target_strand_features)
     target_strand_models = refineGeneModels!(target_strand_models, target_length, targetloop, strand_annotations, strand_feature_stacks)
 
     t8 = time_ns()
-    @info "[$(target_id)]$(strand) refining gene models: $(ns(t8 - t7))"
+    @info "[$target_id]$strand refining gene models: $(ns(t8 - t7))"
     return target_strand_models, strand_feature_stacks
 end
 
@@ -182,7 +186,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStrea
     target_id, target_seqf = readFasta(fasta)
     target_length = Int32(length(target_seqf))
     
-    @info "[$(target_id)] length: $(target_length)"
+    @info "[$target_id] length: $target_length"
     
     target_seqr = revComp(target_seqf)
     targetloopf = target_seqf * target_seqf[1:end - 1]
@@ -193,7 +197,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStrea
     
     t2 = time_ns()
 
-    @info "[$(target_id)] making suffix arrays: $(ns(t2 - t1))"
+    @info "[$target_id] making suffix arrays: $(ns(t2 - t1))"
 
     blocks_aligned_to_targetf = Array{AlignedBlocks}(undef, num_refs * 2)
     blocks_aligned_to_targetr = Array{AlignedBlocks}(undef, num_refs * 2)
@@ -220,7 +224,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStrea
 
     t3 = time_ns()
     
-    @info "[$(target_id)] aligning: ($(length(reference.refloops))) $(ns(t3 - t2))" 
+    @info "[$target_id] aligning: ($(length(reference.refloops))) $(ns(t3 - t2))" 
 
     coverages = Dict{String,Float32}()
     for (i, ref) in enumerate(ReferenceOrganisms)
@@ -229,7 +233,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStrea
         coverage += blockCoverage(blocks_aligned_to_targetf[i * 2])
         coverages[ref[1]] = coverage /= target_length * 2
     end
-    @debug "[$(target_id)] coverages:" coverages
+    @debug "[$target_id] coverages:" coverages
 
 
     function watson(strands::Array{Strand})
@@ -266,7 +270,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStrea
         reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks,
         targetloopf, targetloopr)
 
-    @info "[$(target_id)] Overall: $(ns(time_ns() - t1))"
+    @info "[$target_id] Overall: $(ns(time_ns() - t1))"
     return fname, target_id
 
 end

@@ -419,24 +419,26 @@ function translateFeature(genome::DNAString, feat::Feature)
     return String(peptide)
 end
 
-function translateModel(genome::DNAString, model::AFeature)
+function translateModel(genome::DNAString, model::AFeature)::DNAString
 
-    DNA = ""
+    DNA = Array{DNAString}(undef, 0)
     for (i, feat) in enumerate(model)
         getFeatureType(feat) ≠ "CDS" && continue
         start = feat.start
         if i == 1
             start += feat.phase
         end
-        DNA = DNA * SubString(genome, start, feat.start + feat.length - 1)
+        push!(DNA, SubString(genome, start, feat.start + feat.length - 1))
     end
+    
+    dna = join(DNA, "")
 
-    peptide = Array{Char}(undef, fld(length(DNA), 3))
+    peptide = Array{Char}(undef, fld(length(dna), 3))
 
     aa = 0
-    for i = 1:3:length(DNA) - 2
+    for i = 1:3:length(dna) - 2
         aa += 1
-        peptide[aa] = get(genetic_code, SubString(DNA, i, i + 2), 'X')
+        peptide[aa] = get(genetic_code, SubString(dna, i, i + 2), 'X')
     end
     return String(peptide)
 end

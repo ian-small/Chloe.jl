@@ -109,7 +109,7 @@ function writeallGFF3(;sff_files = String[])
 
         # write models in GFF3 format
         fname = fstrand_features.genome_id * ".gff3";
-        @info "writing gff3: $(fname)"
+        @info "writing gff3: $fname"
         open(fname, "w") do outfile
             write(outfile, "##gff-version 3.2.1\n")
             for model in models_as_feature_arrays

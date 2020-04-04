@@ -45,14 +45,14 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
         nthreads = Threads.nthreads()
         @info "processes: $nprocs"
         @info reference
-        @info "chloe version $(VERSION) (git: $(git)) threads=$(nthreads) on machine $(machine)"
-        @info "connecting to $(address)"
+        @info "chloe version $VERSION (git: $git) threads=$nthreads on machine $machine"
+        @info "connecting to $address"
 
         function chloe(fasta::String, fname::MayBeString)
             start = now()
             filename, target_id = fetch(@spawnat :any annotate_one(reference, fasta, fname))
             elapsed = now() - start
-            @info "finished $(target_id) after $(elapsed)"
+            @info "finished $target_id after $elapsed"
             return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename, "ncid" => string(target_id))
         end
 
@@ -64,7 +64,7 @@ function chloe_distributed(;refsdir = "reference_1116", address=ADDRESS,
             io, target_id = fetch(@spawnat :any annotate_one(reference, input))
             sff = String(take!(io))
             elapsed = now() - start
-            @info "finished $(target_id) after $(elapsed)"
+            @info "finished $target_id after $elapsed"
 
             return Dict("elapsed" => Dates.toms(elapsed), "sff" => sff, "ncid" => string(target_id))
         end
