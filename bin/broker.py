@@ -2,8 +2,8 @@
 import zmq
 import click
 
-# url_worker = "tcp://127.0.0.1:9999"
-URL_WORKER = "ipc:///tmp/chloe-worker"
+URL_WORKER = "tcp://127.0.0.1:9999"
+# URL_WORKER = "ipc:///tmp/chloe-worker"
 # url_client = "inproc://worker"
 # url_client = "tcp://127.0.0.1:9998"
 URL_CLIENT = "ipc:///tmp/chloe-client"
@@ -33,50 +33,6 @@ def proxy(url_worker, url_client):
 @click.group()
 def cli():
     pass
-
-
-@cli.command()
-@click.option(
-    "-a",
-    "--address",
-    default=URL_WORKER,
-    help="address to connect to",
-    show_default=True,
-)
-@click.option("--router", default=URL_CLIENT, help="run a broker endpoint too")
-@click.option("-n", "--nprocs", default=4, help="number of processes to use")
-@click.option(
-    "-l",
-    "--level",
-    default="info",
-    help="log level for server",
-    show_default=True,
-    type=click.Choice(["info", "warn", "debug", "error"]),
-)
-def distributed(address, nprocs, level, router):
-    """Run the distributed server."""
-    from invoke import Context
-    from multiprocessing import cpu_count
-
-    if router:
-        from threading import Thread
-
-        t = Thread(target=proxy, args=[address, router])
-        t.daemon = True
-        t.start()
-    c = Context()
-
-    def run():
-
-        args = f"""-level={level} --nprocs={nprocs} --address={address}"""
-        cmd = (
-            f"""JULIA_NUM_THREADS={cpu_count()} julia src/chloe_distributed.jl {args}"""
-        )
-        # need a pty to send interrupt
-        c.run(cmd, pty=True)
-        click.secho("chloe terminated", fg="green", bold=True)
-
-    run()
 
 
 @cli.command()
