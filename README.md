@@ -25,7 +25,7 @@ In another terminal start julia:
 ```julia
 using JuliaWebAPI
 
-i = APIInvoker("tcp://127.0.0.1:9999")
+i = APIInvoker("tcp://127.0.0.1:9467")
 # fasta and output should be relative to the server's working directory, or specify absolute path names! yes "chloe" should be "annotate" but...
 ret = apicall(i, "chloe", fastafile, outputfile) # outputfile is optional
 code, data = ret["code"], ret["data"]

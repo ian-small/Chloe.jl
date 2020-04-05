@@ -8,7 +8,7 @@ using Crayons
 import StringEncodings: encode
 
 const success = crayon"bold green"
-const ADDRESS = "tcp://127.0.0.1:9999"
+const ADDRESS = "tcp://127.0.0.1:9467"
 # const ADDRESS = "ipc:///tmp/chloe-worker"
 
 # change this if you change the API!

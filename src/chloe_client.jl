@@ -2,7 +2,7 @@
 using ArgParse
 using JuliaWebAPI
 
-const ADDRESS = "tcp://127.0.0.1:9999"
+const ADDRESS = "tcp://127.0.0.1:9467"
  
 function chloe_client(;fasta = String[], address = ADDRESS, output::String)
     invoker = APIInvoker(address)

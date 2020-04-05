@@ -10,7 +10,7 @@ using Dates
 const LEVELS = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, 
                     "warn" => Logging.Warn, "error"=>Logging.Error)
 
-const ADDRESS = "tcp://127.0.0.1:9999"
+const ADDRESS = "tcp://127.0.0.1:9467"
 
 # change this if you change the API!
 const VERSION = "1.0"

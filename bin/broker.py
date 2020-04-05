@@ -2,7 +2,7 @@
 import zmq
 import click
 
-URL_WORKER = "tcp://127.0.0.1:9999"
+URL_WORKER = "tcp://127.0.0.1:9467"
 # URL_WORKER = "ipc:///tmp/chloe-worker"
 # url_client = "inproc://worker"
 # url_client = "tcp://127.0.0.1:9998"

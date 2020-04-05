@@ -9,7 +9,7 @@ import zmq
 import click
 
 PORT = re.compile("^[0-9]+$")
-# ADDRESS = "tcp://127.0.0.1:9999"
+# ADDRESS = "tcp://127.0.0.1:9467"
 ADDRESS = "ipc:///tmp/chloe-client"
 context = zmq.Context()
 
@@ -80,7 +80,7 @@ def cli():
     "-r", "--remote", type=int, help="remote port to connect to (same as local)"
 )
 @click.option(
-    "-l", "--local", default=9999, help="local port to connect to", show_default=True
+    "-l", "--local", default=9467, help="local port to connect to", show_default=True
 )
 @click.option("--router", help=f"run a broker endpoint too (e.g. {ADDRESS})")
 @click.option("-n", "--nprocs", default=8, help="number of processes to use")
