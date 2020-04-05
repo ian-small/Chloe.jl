@@ -1,5 +1,5 @@
 
-using GZip
+using CodecZlib
 
 function gbff2fasta(infile::String)
     open(infile) do f
@@ -33,22 +33,39 @@ function gbff2fasta(infile::String)
     end
 end
 
-function maybe_gzopen(f::Function, filename::String, args...; kwargs...)
+function maybe_gzread(f::Function, filename::String)
     if endswith(filename, ".gz")
-        GZip.open(f, filename, args...; kwargs...)
+        open(z->z |> GzipDecompressorStream |> f, filename)
     else
-        open(f, filename, args...; kwargs...)
+        open(f, filename)
+    end
+end
+function maybe_gzwrite(f::Function, filename::String)
+    
+    function gzcompress(fp::IO, f::Function)
+        o = GzipCompressorStream(fp)
+        try
+            f(o)
+        finally
+            close(o)
+        end
+    end
+
+    if endswith(filename, ".gz")
+        open(fp->gzcompress(fp, f), filename, "w")
+    else
+        open(f, filename, "w")
     end
 end
 function readFasta(fasta::String)::Tuple{String,String}
     if !isfile(fasta)
         error("$(fasta): not a file!")
     end
-    maybe_gzopen(fasta) do f
+    maybe_gzread(fasta) do f
         readFasta(f)
     end
 end
-function readFasta(f::Union{IOStream,IOBuffer,GZipStream})::Tuple{String,String}
+function readFasta(f::IO)::Tuple{String,String}
     seqs = Array{String}(undef, 0)
     header = strip(readline(f))
     if !startswith(header, ">")
@@ -119,7 +136,7 @@ function range_wrap(genome_length::T, range::UnitRange{T})::UnitRange{T} where {
     @assert range.start <= range.stop
     loop_length = genome_length + genome_length - 1
     # if start of range is negative, move range to end of genome
-    if range.start <= 0
+        if range.start <= 0
         lengthminus1 = range.stop - range.start
         range.start = genome_length + range.start
         range.stop = range.start + lengthminus1

@@ -732,8 +732,8 @@ function getGeneModelByName(gm_name::String, gene_models::AAFeature)::MaybeAFeat
     return nothing
 end
 
-ChloeIO = Union{IOStream,IOBuffer,GZipStream}
-function writeModelToSFF(outfile::ChloeIO, model::AFeature, model_id::String,
+# ChloeIO = Union{IOStream,IOBuffer,GZipStream}
+function writeModelToSFF(outfile::IO, model::AFeature, model_id::String,
                         targetloop::DNAString,
                         gene_exons::Dict{String,Int32},
                         maxlengths::Dict{String,Int32},
@@ -828,7 +828,7 @@ function calc_maxlengths(fstrand_models::AAFeature,
     maxlengths
 end
 
-function writeSFF(outfile::Union{String,ChloeIO}, id::String, 
+function writeSFF(outfile::Union{String,IO}, id::String, 
                 fstrand_models::AAFeature,
                 rstrand_models::AAFeature,
                 gene_exons::Dict{String,Int32},
@@ -841,7 +841,7 @@ function writeSFF(outfile::Union{String,ChloeIO}, id::String,
     genome_length = length(fstrand_feature_stacks[1].stack)
 
 
-    function out(outfile::ChloeIO)
+    function out(outfile::IO)
         model_ids = Dict{String,Int32}()
         write(outfile, id, "\t", string(genome_length), "\n")
         for model in fstrand_models
@@ -856,7 +856,7 @@ function writeSFF(outfile::Union{String,ChloeIO}, id::String,
         end
     end
     if typeof(outfile) == String
-        maybe_gzopen(outfile::String, "w") do io
+        maybe_gzwrite(outfile::String) do io
             out(io)
         end
     else

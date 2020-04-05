@@ -73,13 +73,13 @@ Unfortunately to run Chloe from the command line this doesn't work
 You need to get the dependencies into the main julia "package"
 (in `~/.julia/environments/v1.4/Project.toml`). So you will just have
 to run a julia REPL like above -- but don't "activate" -- just
-`add GZip ArgParse # etc` manually (How annoying is this!).
+`add CodecZlib ArgParse # etc` manually (How annoying is this!).
 
 Check the `Project.toml` file first but cut'n'paste the following into the julia
 package prompt:
 
 ```julia
-pkg> add ArgParse Dates GZip JLD JuliaWebAPI LogRoller Logging Printf StatsBase Crayons
+pkg> add ArgParse Dates CodecZlib JLD JuliaWebAPI LogRoller Logging Printf StatsBase Crayons
 ```
 
 ## Distributed

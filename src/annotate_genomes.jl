@@ -175,8 +175,8 @@ directory.
 
 `reference` are the reference annotations (see `readReferences`)
 """
-MayBeIO = Union{String,IOBuffer,IOStream,Nothing}
-function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStream},
+MayBeIO = Union{String,IO,Nothing}
+function annotate_one(reference::Reference, fasta::Union{String,IO},
     output::MayBeIO = nothing)
 
     num_refs = length(ReferenceOrganisms)
@@ -259,7 +259,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStrea
                 fname = joinpath(fname, "$(target_id).sff")
             end
         else
-            fname = output
+            fname = output # IOBuffer, IOStream
         end
     else
         fname = "$(target_id).sff"
@@ -273,7 +273,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStrea
     return fname, target_id
 
 end
-function annotate_one(reference::Reference, fasta::Union{String,IOBuffer,IOStream})
+function annotate_one(reference::Reference, fasta::Union{String,IO})
     annotate_one(reference, fasta, IOBuffer())
 end
 function annotate(refsdir::String, templates::String, fa_files::Array{String}, output::MayBeString)

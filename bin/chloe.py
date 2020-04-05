@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-from io import StringIO
+from io import StringIO, BytesIO
+import os
 import gzip
 from concurrent.futures import ThreadPoolExecutor
 import re
@@ -199,15 +200,31 @@ def maybegz_open(fasta, mode="rt"):
         return open(fasta, mode)
 
 
+def gzcompress(b):
+    fasta = BytesIO()
+    with gzip.GzipFile(fileobj=fasta, mode="wb") as fp:
+        fp.write(b)
+    return fasta.getvalue()
+
+
 @cli.command()
 @addresses
+@click.option("-o", "--output", help="output .sff filename or directory")
+@click.option("--binary", is_flag=True, help="don't decompress")
 @click.argument("fastas", nargs=-1)
-def annotate2(timeout, address, fastas):
+def annotate2(timeout, address, binary, fastas, output):
     """Annotate fasta files (send and receive file content)."""
     socket = Socket(address, timeout)
     for fasta in fastas:
-        with maybegz_open(fasta) as fp:
-            fasta = fp.read()
+        if binary:
+            with open(fasta, "rb") as fp:
+                b = fp.read()
+            if not fasta.endswith(".gz"):
+                b = gzcompress(b)
+            fasta = b.decode("latin1")
+        else:
+            with maybegz_open(fasta) as fp:
+                fasta = fp.read()
         code, data = socket.msg(cmd="annotate", args=[fasta])
 
         if code != 200:
@@ -216,9 +233,17 @@ def annotate2(timeout, address, fastas):
 
         ncid, sff = data["ncid"], data["sff"]
         click.secho(ncid, fg="green")
-        with StringIO(sff) as fp:
-            for line in fp:
-                print(line, end="")
+        if not output:
+            with StringIO(sff) as fp:
+                for line in fp:
+                    print(line, end="")
+        else:
+            if os.path.isdir(output):
+                tgt = os.path.join(output, f"{ncid}.sff")
+            else:
+                tgt = output
+            with open(tgt, "wt") as fp:
+                fp.write(sff)
 
 
 def num_conn(socket):

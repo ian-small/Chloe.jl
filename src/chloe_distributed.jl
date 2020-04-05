@@ -5,10 +5,11 @@ using ArgParse
 # using LogRoller
 using Distributed
 using Crayons
+import StringEncodings: encode
 
 const success = crayon"bold green"
-# const ADDRESS = "tcp://127.0.0.1:9999"
-const ADDRESS = "ipc:///tmp/chloe-worker"
+const ADDRESS = "tcp://127.0.0.1:9999"
+# const ADDRESS = "ipc:///tmp/chloe-worker"
 
 # change this if you change the API!
 const VERSION = "1.0"
@@ -56,9 +57,15 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
     end
 
     function annotate(fasta::String)
+        if !startswith(fasta, '>')
+            # assume latin1 encoded binary
+            @info "compressed fasta length $(length(fasta))"
+            fasta = read(GzipDecompressorStream(IOBuffer(encode(fasta, "latin1"))), String)
+            @info "decompressed fasta length $(length(fasta))"
+        end
         start = now()
 
-        input = IOBuffer(fasta)
+        input = IOContext(IOBuffer(fasta), stdin)
 
         io, target_id = fetch(@spawnat :any annotate_one(reference, input))
         sff = String(take!(io))
