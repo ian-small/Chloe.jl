@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import zmq
+from zmq.devices import ThreadDevice
 import click
 
 URL_WORKER = "tcp://127.0.0.1:9467"
@@ -28,6 +29,16 @@ def proxy(url_worker, url_client):
     clients.close()
     workers.close()
     context.term()
+
+
+def device(url_worker, url_client):
+    # pylint: disable=no-member
+    td = ThreadDevice(zmq.QUEUE, in_type=zmq.ROUTER, out_type=zmq.DEALER)
+    td.bind_in(url_client)
+    td.bind_out(url_worker)
+    td.setsockopt_in(zmq.IDENTITY, 'ROUTER')
+    td.setsockopt_out(zmq.IDENTITY, 'DEALER')
+    td.start()
 
 
 @click.group()

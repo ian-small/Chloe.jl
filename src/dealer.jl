@@ -13,30 +13,48 @@ using JuliaWebAPI
 function ping()
     return "OK $(current_task())"
 end
-function worker()
+function worker(async)
     process(
         JuliaWebAPI.create_responder([
                 (ping, false)
 
-            ], "inproc://workers", false,  "chloe"); async = false
+            ], "inproc://workers", false,  "chloe"); async = async
         )
     @info "end worker"
 end
 
+function worker2(name)
+    api = APIResponder(InProcTransport(Symbol(name)), DictMsgFormat(), "chloe", false)
+    register(api, ping)
+    process(
+        api;async = true
+    )
+end
+function invoker(name)
+    APIInvoker(InProcTransport(Symbol(name)), DictMsgFormat())
+end
 
-function start_broker(url::String)
+function multi()
+    channels = Array{Tuple{APIInvoker{InProcTransport,DictMsgFormat},APIResponder{InProcTransport,DictMsgFormat}}}(undef, 0)
+    for i in 1:5
+        name = "worker$i"
+        push!(channels, (invoker(name), worker2(name)))
+    end
+
+end
+
+function start_broker(router_url::String, dealer_url::String)
 
     # ctx = Context()
     router = Socket(ROUTER)
     dealer = Socket(DEALER)
 
-    ZMQ.bind(router, url)
-    ZMQ.bind(dealer, "inproc://workers")
+    ZMQ.bind(router, router_url)
+    ZMQ.bind(dealer, dealer_url)
 
-    @info "listening on $url"
     # missing: ZMQ.proxy(router, dealer)
     rc = ccall((:zmq_proxy, libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
-    println("done $(rc)")
+    @info "done proxy $(rc)"
 
     # control never comes here... clean up anyway.
     ZMQ.close(router)
@@ -50,6 +68,7 @@ function workers()
         @async f()
     end
 end
-Threads.@threads for w in [workers, ()->start_broker("tcp://127.0.0.1:9998")]
-    w()     
-end
+
+
+
+start_broker("ipc:///tmp/chloe-client", "tcp://127.0.0.1:9467")

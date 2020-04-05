@@ -15,7 +15,7 @@ julia chloe.jl annotate --help
 Running the chloe server. In a terminal type:
 
 ```bash
-JULIA_NUM_THREADS=4 julia src/chloe_svr.jl --level=info
+JULIA_NUM_THREADS=8 julia src/chloe_distributed.jl --level=info --nprocs=4 --broker=ipc:///tmp/chloe-client
 ```
 (Julia refuses to use more threads that the number of CPUs on your machine:
 `Sys.CPU_THREADS` or `python -c 'import multiprocessing as m; print(m.cpu_count())'`)
@@ -25,7 +25,7 @@ In another terminal start julia:
 ```julia
 using JuliaWebAPI
 
-i = APIInvoker("tcp://127.0.0.1:9467")
+i = APIInvoker("ipc:///tmp/chloe-client")
 # fasta and output should be relative to the server's working directory, or specify absolute path names! yes "chloe" should be "annotate" but...
 ret = apicall(i, "chloe", fastafile, outputfile) # outputfile is optional
 code, data = ret["code"], ret["data"]
@@ -52,6 +52,10 @@ to the same DEALER.
 The use of python to create a broker is
 unfortuate but the julia ZMQ package lacks the `proxy` function 
 (why? See `src/dealer.jl` for my attempt to make this work).
+
+**Update**: you can now run a broker with julia as `julia src/broker.jl`
+*or* specify `--broker=URL` to `src/julia_distrbuted.jl`. No
+python required.
 
 ## Installing dependencies
 

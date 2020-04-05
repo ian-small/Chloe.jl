@@ -1,5 +1,6 @@
 include("annotate_genomes.jl")
 include("ZMQLogger.jl")
+# include("broker.jl")
 using JuliaWebAPI
 using ArgParse
 # using LogRoller
@@ -82,6 +83,7 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
     function nconn()
         return nprocs
     end
+
     # we need to create separate ZMQ sockets to ensure strict
     # request/response (not e.g. request-request response-response)
     # we expect to *connect* to a ZMQ DEALER/ROUTER (see bin/broker.py)
@@ -101,50 +103,80 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
 
 end
 
-distributed_args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
+function args()
+    distributed_args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
 
-@add_arg_table! distributed_args begin
-    "--reference", "-r"
-    arg_type = String
-    default = "reference_1116"
-    dest_name = "refsdir"
-    metavar = "DIRECTORY"
-    help = "reference directory"
-    "--template", "-t"
-    arg_type = String
-    default = "optimised_templates.v2.tsv"
-    metavar = "TSV"
-    dest_name = "template"
-    help = "template tsv"
-    "--address", "-a"
-    arg_type = String
-    metavar = "URL"
-    default = ADDRESS
-    help = "ZMQ DEALER address to connect to"
-    "--logendpoint"
+    @add_arg_table! distributed_args begin
+        "--reference", "-r"
         arg_type = String
-        metavar = "ZMQ"
-        help = "log to zmq endpoint"
-    "--level", "-l"
+        default = "reference_1116"
+        dest_name = "refsdir"
+        metavar = "DIRECTORY"
+        help = "reference directory"
+        "--template", "-t"
         arg_type = String
-        metavar = "LOGLEVEL"
-        default = "info"
-        help = "log level (warn,debug,info,error)"
-    "--nprocs"
-        arg_type = Int
-        default = 3
-        help = "number of distributed processes"
+        default = "optimised_templates.v2.tsv"
+        metavar = "TSV"
+        dest_name = "template"
+        help = "template tsv"
+        "--address", "-a"
+        arg_type = String
+        metavar = "URL"
+        default = ADDRESS
+        help = "ZMQ DEALER address to connect to"
+        "--logendpoint"
+            arg_type = String
+            metavar = "ZMQ"
+            help = "log to zmq endpoint"
+        "--level", "-l"
+            arg_type = String
+            metavar = "LOGLEVEL"
+            default = "info"
+            help = "log level (warn,debug,info,error)"
+        "--nprocs"
+            arg_type = Int
+            default = 3
+            help = "number of distributed processes"
+        "--broker"
+            arg_type = String
+            metavar = "URL"
+            help = "run the broker"
+
+    end
+    distributed_args.epilog = """
+    Run Chloe as a background ZMQ service with distributed annotation processes.
+    Requires a ZMQ DEALER/ROUTER to connect to.
+    """
+    parse_args(ARGS, distributed_args; as_symbols = true)
 
 end
-distributed_args.epilog = """
-Run Chloe as a background ZMQ service with distributed annotation processes.
-Requires a ZMQ DEALER/ROUTER to connect to.
-"""
-
-distributed_args = parse_args(ARGS, distributed_args; as_symbols = true)
 
 # delete!(distributed_args,:nprocs)
 
-Sys.set_process_title("chloe-distributed")
-
-chloe_distributed(;distributed_args...)
+function run_broker(worker, client)
+    d = dirname(@__FILE__)
+    @async run(`$(Sys.which("julia")) $d/broker.jl --worker=$worker --client=$client`)
+end
+    
+function main()
+    Sys.set_process_title("chloe-distributed")
+    distributed_args = args()
+    client_url = pop!(distributed_args, :broker, nothing)
+    # Threads.@spawn start_broker("ipc:///tmp/chloe-client", distributed_args.address)
+    try
+        try
+            if client_url != nothing
+                @info "Starting broker. Connect to: $client_url"
+                run_broker(distributed_args[:address], client_url)
+            end
+            chloe_distributed(;distributed_args...)
+        catch e
+            @error "$(e)"
+        end
+    finally
+        @info "chloe done"
+    end
+end
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end
