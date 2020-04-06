@@ -171,7 +171,7 @@ function fillFeatureStack(target_length::Int32, annotations::AnnotationArray,
         end
         if isempty(stacks) || (index = findfirst(x->x.path == annotation.path, stacks)) === nothing
             if template_index === nothing
-                continue # what to do?
+                error("need template index")
             end
             stack = FeatureStack(annotation.path, zeros(Int32, target_length), templates[template_index])
             push!(stacks, stack)
@@ -222,8 +222,9 @@ function getDepthAndCoverage(feature_stack::FeatureStack, left::Int32, len::Int3
     coverage = 0
     max_count = 0
     sum_count = 0
+    stack_len = length(feature_stack.stack)
     for nt = left:left + len - 1
-        count = feature_stack.stack[genome_wrap(length(feature_stack.stack), nt)]
+        count = feature_stack.stack[genome_wrap(stack_len, nt)]
         if count > 0
             coverage += 1
             sum_count += count

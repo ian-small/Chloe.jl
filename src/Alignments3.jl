@@ -126,6 +126,8 @@ function fillGap(block1::AlignedBlock, block2::AlignedBlock,
     gap_blocks = lcps2AlignmentBlocks(gap_lcps, false, matchLengthThreshold(ref_gap, target_gap))
     return gap_blocks
 end
+
+
 MaybeAlignedBlock = Union{AlignedBlock,Nothing}
 function mergeBlocks(block1::AlignedBlock, block2::AlignedBlock)::Tuple{AlignedBlock,MaybeAlignedBlock}
     gap1 = block2[1] - block1[1] - block1[3]
@@ -184,7 +186,9 @@ function mergeBlockArrays(blocks1::AlignedBlocks, blocks2::AlignedBlocks)::Align
     merged_array = AlignedBlocks(undef, 0)
     blocks1_pointer = 1
     blocks2_pointer = 1
-    while blocks1_pointer <= length(blocks1) && blocks2_pointer <= length(blocks2)
+    blocks1_len = length(blocks1)
+    blocks2_len = length(blocks2)
+    while blocks1_pointer <= blocks1_len && blocks2_pointer <= blocks2_len
         block1 = blocks1[blocks1_pointer]
         block2 = blocks2[blocks2_pointer]
         if block1[1] == block2[2] && block1[2] == block2[1] && block1[3] == block2[3] # both the same, only add one of them
@@ -212,11 +216,11 @@ function mergeBlockArrays(blocks1::AlignedBlocks, blocks2::AlignedBlocks)::Align
             blocks2_pointer += 1
         end
     end
-    while blocks1_pointer <= length(blocks1)
+    while blocks1_pointer <= blocks1_len
         push!(merged_array, blocks1[blocks1_pointer])
         blocks1_pointer += 1
     end
-    while blocks2_pointer <= length(blocks2)
+    while blocks2_pointer <= blocks2_len
         block2 = blocks2[blocks2_pointer]
         push!(merged_array, (block2[2], block2[1], block2[3]))
         blocks2_pointer += 1

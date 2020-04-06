@@ -53,7 +53,7 @@ you can run multiple chloe servers connecting
 to the same DEALER.
 
 **Update**: you can now run a broker with julia as `julia src/broker.jl`
-*or* specify `--broker=URL` to `src/julia_distrbuted.jl`. No
+*or* specify `--broker=URL` to `src/chloe_distrbuted.jl`. No
 python required.
 
 ## Installing dependencies
@@ -127,7 +127,7 @@ sff_filename, uid = fetch(@spawnat :any annotate_one(refs, "testfa/NC_020019.1.f
 The Chloë server can be run remotely through a ssh tunnel.
 
 On the remote server:
-`git clone ...` the chloe github repo and download the julia runtime (natch).
+`git clone ...` the chloe github repo and download the julia runtime (natch!).
 *And* install all chloe package dependencies *globally* (see above).
 
 Then on your puny laptop you can run something like:
@@ -163,7 +163,7 @@ run julia with `--handle-signals=no`. Don't know what it does
 but `src/chloe_distributed.jl` will just exit on Ctrl-C.
 
 But don't send a `kill -INT` this will not clean up the background
-broker (if it running)
+broker (if it's running)
 
 See:
 

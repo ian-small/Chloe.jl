@@ -92,8 +92,15 @@ def cli():
     show_default=True,
     type=click.Choice(["info", "warn", "debug", "error"]),
 )
-def stiletto_ssh(remote, local, nprocs, level, sleep, router):
-    """start up a ssh tunnel to stiletto chloe-svr."""
+@click.option("--julia-dir", help="where julia (directory) is located on server")
+@click.option(
+    "--chloe-repo", default="chloe-svr", help="where chloe git repo is on server"
+)
+@click.argument("ssh_connection")
+def remote_ssh(
+    ssh_connection, remote, local, nprocs, level, sleep, router, julia_dir, chloe_repo
+):
+    """start up a ssh tunnel to a server chloe-distributed using ssh connection."""
     from threading import Thread
     from time import sleep as Sleep
     from warnings import filterwarnings
@@ -105,8 +112,7 @@ def stiletto_ssh(remote, local, nprocs, level, sleep, router):
     if remote is None:
         remote = local
 
-    remote_dir = "chloe-svr"
-    julia = "/home/ianc/julia-1.4.0/bin/julia"
+    remote_dir = chloe_repo
 
     if router:
         address = f"tcp://127.0.0.1:{local}"
@@ -116,12 +122,25 @@ def stiletto_ssh(remote, local, nprocs, level, sleep, router):
 
     if sleep:
         Sleep(sleep)
-    c = Connection("chloe-stiletto")  # entry in ~/.ssh/config
+    c = Connection(ssh_connection)  # entry in ~/.ssh/config
     # bind on remote and connect on local
     # This means that the broker should be running first
     def run():
         with c.forward_remote(local_port=local, remote_port=remote):
+            if julia_dir is not None:
+                julia = os.path.join(julia_dir, "bin", "julia")
+            else:
+                res = c.run("julia -E Sys.BINDIR", warn=True, hide=True)
+                if res.failed:
+                    raise click.BadParameter(
+                        "please specify the location of the julia directory",
+                        param_hint="julia",
+                    )
+                # strip "" quotes
+                julia = os.path.join(res.stdout.strip()[1:-1], "julia")
+
             with c.cd(remote_dir):
+
                 args = f"""-l {level} --nprocs={nprocs} --address=tcp://127.0.0.1:{remote}"""
                 cmd = (
                     f"""JULIA_NUM_THREADS=96 {julia} src/chloe_distributed.jl {args}"""
@@ -130,11 +149,7 @@ def stiletto_ssh(remote, local, nprocs, level, sleep, router):
                 c.run(cmd, pty=True)
                 click.secho("stiletto terminated", fg="green", bold=True)
 
-    try:
-        run()
-    except Exception as e:
-        print(type(e), e)
-        raise
+    run()
 
 
 def addresses(f):
