@@ -108,13 +108,16 @@ function readTemplates(file::String)::Tuple{Array{FeatureTemplate},Dict{String,I
     templates = FeatureTemplate[]
     gene_exons = String[]
     if !isfile(file)
-        error("$(file) is not a file")
+        error("\"$(file)\" is not a file")
+    end
+    if filesize(file) === 0
+        error("no data in \"$(file)!\"")
     end
 
     open(file) do f
         header = readline(f)
-        while !eof(f)
-            fields = split(readline(f), '\t')
+        for line in eachline(f)
+            fields = split(line, '\t')
             path_components = split(fields[1], '/')
             if path_components[3] ≠ "intron"
                 push!(gene_exons, path_components[1])

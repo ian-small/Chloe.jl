@@ -22,7 +22,13 @@ function git_version()
         "unknown"
     end
 end
-
+function create_responder(apispecs::Array{Function}, addr::String, ctx::Context)
+    api = APIResponder(ZMQTransport(addr, REP, false, ctx), JSONMsgFormat(), "chloe", false)
+    for func in apispecs
+        register(api, func)
+    end
+    api
+end
 
 function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
     template = "optimised_templates.v2.tsv", level = "warn", nprocs = 3,
@@ -61,12 +67,13 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
         if !startswith(fasta, '>')
             # assume latin1 encoded binary
             @info "compressed fasta length $(length(fasta))"
-            fasta = read(GzipDecompressorStream(IOBuffer(encode(fasta, "latin1"))), String)
+            fasta = read(encode(fasta, "latin1") |> IOBuffer |> GzipDecompressorStream, String)
+            # fasta = read(GzipDecompressorStream(IOBuffer(encode(fasta, "latin1"))), String)
             @info "decompressed fasta length $(length(fasta))"
         end
         start = now()
 
-        input = IOContext(IOBuffer(fasta), stdin)
+        input = IOContext(IOBuffer(fasta))
 
         io, target_id = fetch(@spawnat :any annotate_one(reference, input))
         sff = String(take!(io))
@@ -80,26 +87,32 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
         return "OK version=$VERSION git=$git threads=$nthreads procs=$nprocs on $machine"
     end
 
+
+    # `bin/chloe.py terminate` uses this to find out how many calls of :terminate
+    # need to be made to stop all responders. It's hard to cleanly
+    # stop process(APIResponder) from the outside since it is block wait on 
+    # the zmq sockets.
     function nconn()
         return nprocs
     end
+
 
     # we need to create separate ZMQ sockets to ensure strict
     # request/response (not e.g. request-request response-response)
     # we expect to *connect* to a ZMQ DEALER/ROUTER (see bin/broker.py)
     # that forms the actual front end.
-    @sync for i in 1:nprocs
-        @async process(
-            JuliaWebAPI.create_responder([
-                    (chloe, false),
-                    (annotate, false),
-                    (ping, false),
-                    (nconn, false)
-
-                ], address, false, "chloe"); async = false
-            )
+    ctx = Context()
+    @sync for p in procs
+        @async JuliaWebAPI.process(
+            create_responder([
+                    chloe,
+                    annotate,
+                    ping,
+                    nconn,
+                ], address, ctx))
 
     end
+    close(ctx)
 
 end
 
@@ -133,36 +146,55 @@ function args()
             metavar = "LOGLEVEL"
             default = "info"
             help = "log level (warn,debug,info,error)"
-        "--nprocs"
+        "--nprocs", "-n"
             arg_type = Int
             default = 3
             help = "number of distributed processes"
         "--broker"
             arg_type = String
             metavar = "URL"
-            help = "run the broker"
+            help = "run the broker in the background"
 
     end
     distributed_args.epilog = """
     Run Chloe as a background ZMQ service with distributed annotation processes.
-    Requires a ZMQ DEALER/ROUTER to connect to.
+    Requires a ZMQ DEALER/ROUTER to connect to unless `--broker`  specifies
+    an endpoint.
     """
     parse_args(ARGS, distributed_args; as_symbols = true)
 
 end
 
-# delete!(distributed_args,:nprocs)
 
 function run_broker(worker, client)
-    d = dirname(@__FILE__)
-    @async run(`$(Sys.which("julia")) $d/broker.jl --worker=$worker --client=$client`)
+    #  see https://discourse.julialang.org/t/how-to-run-a-process-in-background-but-still-close-it-on-exit/27231
+    src = dirname(@__FILE__)
+    julia = joinpath(Sys.BINDIR, "julia")
+    if !Sys.isexecutable(julia)
+        error("Can't find julia executable to run broker, best guess: $julia")
+    end
+    cmd = `$julia -q --startup-file=no "$src/broker.jl" --worker=$worker --client=$client`
+    # wait = false means stdout,stderr are connected to /dev/null
+    task = run(cmd; wait = false)
+    atexit(()->kill(task))
+    task
+    # open(pipeline(cmd))
+
+end
+
+function run_broker2(worker, client)
+    # ugh! @spawnat :any will block on this process... which
+    # will never return.
+    procs = addprocs(1; topology = :master_worker)
+    @everywhere procs include("src/broker.jl")
+    @async fetch(@spawnat procs[1] start_broker(worker, client))
 end
     
 function main()
     Sys.set_process_title("chloe-distributed")
     distributed_args = args()
     client_url = pop!(distributed_args, :broker, nothing)
-    # Threads.@spawn start_broker("ipc:///tmp/chloe-client", distributed_args.address)
+    # broker = nothing
     try
         try
             if client_url != nothing
@@ -170,10 +202,14 @@ function main()
                 run_broker(distributed_args[:address], client_url)
             end
             chloe_distributed(;distributed_args...)
+        # end
         catch e
-            @error "$(e)"
+            @error "$e"
         end
     finally
+        # if broker !== nothing
+        #     kill(broker)
+        # end
         @info "chloe done"
     end
 end
