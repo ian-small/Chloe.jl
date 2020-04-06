@@ -1,3 +1,5 @@
+<img src="chrome/icon.png" style="float:right; height:4em;"/>
+
 # Chloë: Organelle Annotator
 
 To run the annotator or write gff3 or create suffix array files type:
@@ -25,8 +27,12 @@ In another terminal start julia:
 ```julia
 using JuliaWebAPI
 
-i = APIInvoker("ipc:///tmp/chloe-client")
-# fasta and output should be relative to the server's working directory, or specify absolute path names! yes "chloe" should be "annotate" but...
+i = APIInvoker("ipc:///tmp/chloe-client");
+apicall(i, "ping") # ping the server to see if is listening.
+
+# fasta and output should be relative to the server'
+# working directory, or specify absolute path names! yes "chloe" 
+# should be "annotate" but...
 ret = apicall(i, "chloe", fastafile, outputfile) # outputfile is optional
 code, data = ret["code"], ret["data"]
 @assert code === 200
@@ -40,18 +46,13 @@ apicall(i, ":terminate")
 The *actual* production configuration uses `src/chloe_distributed.jl` 
 (for threading issues) and runs
 the server as a client of a DEALER/ROUTER server
-(see `bin/broker.py` and the `Makefile`). It *connects* to the
-DEALER end on `ipc:///tmp/chloe-worker` a unix named socket (so
-the server is not visible on the network). The
+(see `bin/broker.py` or `src/broker.jl` and the `Makefile`). It *connects* to the
+DEALER end on `tcp://127.0.0.1:9467`. The
 [chloe website](https://chloe.plantenergy.edu.au)
 connects to `ipc:///tmp/chloe-client` which
 is the ROUTER end of broker. In this setup
 you can run multiple chloe servers connecting
 to the same DEALER.
-
-The use of python to create a broker is
-unfortuate but the julia ZMQ package lacks the `proxy` function 
-(why? See `src/dealer.jl` for my attempt to make this work).
 
 **Update**: you can now run a broker with julia as `julia src/broker.jl`
 *or* specify `--broker=URL` to `src/julia_distrbuted.jl`. No
@@ -114,7 +115,47 @@ addprocs(3)
 refs = readReferences("reference_1116", "optimised_templates.v2.tsv")
 fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
 io, uid = fetch(@spawnat :any annotate_one(refs, fasta))
+# get chloe sff as a string
 sff = String(take!(io))
+# *OR*
+sff_filename, uid = fetch(@spawnat :any annotate_one(refs, "testfa/NC_020019.1.fa", nothing))
+# sff_filename is where chloe wrote the data:
+# in this case NC_020019.1.sff in the local directory
+# instead of `nothing` specify an actual filename.
+```
+
+## Running Remotely
+
+The Chloë server can be run remotely through a ssh tunnel.
+
+On the remote server:
+`git clone ...` the chloe github repo and download the julia runtime (natch).
+*And* install all chloe package dependencies *globally* (see above).
+
+Then on your puny laptop you can run something like:
+
+```bash
+ssh you@bigserver -f -L 9467:127.0.0.1:9467 \
+    'cd /path/to/chloe-repo; JULIA_NUM_THREADS={BIGNUM} /path/to/julia src/chloe_distributed.jl -l info --nprocs=4 --address=ipc:///tmp/chloe-worker --broker=tcp://127.0.0.1:9467'
+```
+The port `9467` is an entirely random (but hopefully unused both on
+the remote server and locally) port number. The broker port *must* match
+the ssh port specified by `-L`. `{BIGNUM}` is the enormous number
+of CPUs your server has ;).
+
+Since the remote server has no access to the local filesystem you need
+to use `annotate` instead of `chloe` to annotate your your
+fasta files e.g:
+
+```julia
+using JuliaWebAPI
+i = APIInvoker("tcp://127.0.0.1:9467")
+# read in the entire fasta file
+fasta = read("testfa/NC_020019.1.fa", String)
+ret = apicall(i, "annotate", fasta)
+code, data = ret["code"], ret["data"]
+@assert code === 200
+sff = data["sff"] # sff file as a string
 ```
 
 ### Notes:
