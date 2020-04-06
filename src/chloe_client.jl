@@ -2,7 +2,7 @@
 using ArgParse
 using JuliaWebAPI
 
-const ADDRESS = "tcp://127.0.0.1:9467"
+const ADDRESS = "ipc:///tmp/chloe-client"
  
 function chloe_client(;fasta = String[], address = ADDRESS, output::String)
     invoker = APIInvoker(address)
@@ -33,7 +33,7 @@ client_args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-
     "--address", "-a"
         arg_type = String
         default = ADDRESS
-        help = "ZMQ address to listen on"
+        help = "ZMQ address to connect to"
 
 end
 

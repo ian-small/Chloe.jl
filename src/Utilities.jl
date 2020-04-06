@@ -42,7 +42,7 @@ function maybe_gzread(f::Function, filename::String)
 end
 function maybe_gzwrite(f::Function, filename::String)
     
-    function gzcompress(fp::IO, f::Function)
+    function gzcompress(f::Function, fp::IO)
         o = GzipCompressorStream(fp)
         try
             f(o)
@@ -52,7 +52,7 @@ function maybe_gzwrite(f::Function, filename::String)
     end
 
     if endswith(filename, ".gz")
-        open(fp->gzcompress(fp, f), filename, "w")
+        open(fp->gzcompress(f, fp), filename, "w")
     else
         open(f, filename, "w")
     end
@@ -61,8 +61,8 @@ function readFasta(fasta::String)::Tuple{String,String}
     if !isfile(fasta)
         error("$(fasta): not a file!")
     end
-    maybe_gzread(fasta) do f
-        readFasta(f)
+    maybe_gzread(fasta) do io
+        readFasta(io)
     end
 end
 function readFasta(f::IO)::Tuple{String,String}
@@ -175,8 +175,8 @@ function isStopCodon(codon::AbstractString, allow_editing::Bool)::Bool
     return false
 end
 
-const genetic_code = Dict{String,Char}("TTT" => 'F',"TTC" => 'F',
-    "TTA" => 'L',"TTG" => 'L',
+const genetic_code = Dict{String,Char}(
+    "TTT" => 'F',"TTC" => 'F',"TTA" => 'L',"TTG" => 'L',
     "CTT" => 'L',"CTC" => 'L',"CTA" => 'L',"CTG" => 'L',
     "ATT" => 'I',"ATC" => 'I',"ATA" => 'I',"ATG" => 'M',
     "GTT" => 'V',"GTC" => 'V',"GTA" => 'V',"GTG" => 'V',

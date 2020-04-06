@@ -2,7 +2,6 @@ using ZMQ
 using ZeroMQ_jll
 using ArgParse
 
-
 function start_broker(worker_url::String, client_url::String)
 
     # ctx = Context()
@@ -30,10 +29,9 @@ function start_broker(worker_url::String, client_url::String)
 end
 
 function broker_args()
-    broker_args = ArgParseSettings(prog = "broker", autofix_names = true)  # turn "-" into "_" for arg names.
+    args = ArgParseSettings(prog = "broker", autofix_names = true)  # turn "-" into "_" for arg names.
 
-    @add_arg_table! broker_args begin
-        
+    @add_arg_table! args begin
         "--worker"
         arg_type = String
         metavar = "URL"
@@ -47,8 +45,8 @@ function broker_args()
         help = "ZMQ ROUTER address to connect to"
     end
 
-broker_args = parse_args(ARGS, broker_args; as_symbols = true)
-    broker_args
+    parse_args(ARGS, args; as_symbols = true)
+
 end
 function broker_main()
     args = broker_args()
