@@ -1,5 +1,3 @@
-<img src="chrome/icon.png" style="float:right; height:4em;"/>
-
 # Chloë: Organelle Annotator
 
 To run the annotator or write gff3 or create suffix array files type:
