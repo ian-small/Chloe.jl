@@ -158,6 +158,13 @@ sff = data["sff"] # sff file as a string
 
 ### Notes:
 
+To stop julia vomiting unhelpful stacktraces when `^Ctrl-C`ing 
+run julia with `--handle-signals=no`. Don't know what it does
+but `src/chloe_distributed.jl` will just exit on Ctrl-C.
+
+But don't send a `kill -INT` this will not clean up the background
+broker (if it running)
+
 See:
 
 * http://zguide.zeromq.org/py:all#Multithreading-with-ZeroMQ
