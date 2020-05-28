@@ -2,10 +2,10 @@
 
 include("annotate_genomes.jl")
 using JuliaWebAPI
-using ArgParse
-using Logging
-using LogRoller
-using Dates
+import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
+import Logging
+import LogRoller
+import Dates: now, toms
 
 const LEVELS = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, 
                     "warn" => Logging.Warn, "error"=>Logging.Error)
@@ -37,14 +37,14 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
     address = repeat(address, nconn)
 
     if logfile === nothing
-        logger = ConsoleLogger(stderr,llevel)
+        logger = Logging.ConsoleLogger(stderr,llevel)
     else
-        logger = RollingLogger(logfile::String, 10 * 1000000, 2, llevel);
+        logger = LogRoller.RollingLogger(logfile::String, 10 * 1000000, 2, llevel);
     end
 
     conn = connect ? "connecting to" : "listening on"
 
-    with_logger(logger) do
+    Logging.with_logger(logger) do
         Sys.set_process_title("chloe-svr")
         machine = gethostname()
         reference = readReferences(refsdir, template)
@@ -58,7 +58,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
             filename, target_id = annotate_one(reference, fasta, fname)
             elapsed = now() - start
             @info "finished $target_id on thread: $(Threads.threadid()) after $elapsed"
-            return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename, "ncid" => string(target_id))
+            return Dict("elapsed" => toms(elapsed), "filename" => filename, "ncid" => string(target_id))
         end
 
         function annotate(fasta::String)
@@ -70,7 +70,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
             elapsed = now() - start
             @info "finished $target_id on thread: $(Threads.threadid()) after $elapsed"
 
-            return Dict("elapsed" => Dates.toms(elapsed), "sff" => sff, "ncid" => string(target_id))
+            return Dict("elapsed" => toms(elapsed), "sff" => sff, "ncid" => string(target_id))
         end
         function ping()
             return "OK version=$VERSION on thread=$(Threads.threadid())/$(length(address)) on $machine"
@@ -101,8 +101,8 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
                 )
             end
         end
-        if isa(logger, RollingLogger)
-            close(logger::RollingLogger)
+        if isa(logger, LogRoller.RollingLogger)
+            close(logger::LogRoller.RollingLogger)
         end
 
     end
@@ -130,12 +130,12 @@ svr_args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" int
         action = :append_arg
     "--logfile"
         arg_type=String
-        metavar="FILE"
-        help="log to file"
+        metavar = "FILE"
+        help = "log to file"
     "--level", "-l"
         arg_type = String
         metavar = "LOGLEVEL"
-        default ="warn"
+        default = "warn"
         help = "log level (warn,debug,info,error)"
     "--connect", "-c"
         action = :store_true

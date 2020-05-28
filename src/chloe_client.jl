@@ -1,5 +1,5 @@
 
-using ArgParse
+import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 using JuliaWebAPI
 
 const ADDRESS = "ipc:///tmp/chloe-client"

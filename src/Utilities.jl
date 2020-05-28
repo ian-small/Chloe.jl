@@ -1,5 +1,5 @@
 
-using CodecZlib
+import CodecZlib: GzipDecompressorStream, GzipCompressorStream
 
 function gbff2fasta(infile::String)
     open(infile) do f
@@ -89,7 +89,7 @@ end
 const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 
                   'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
     
-function revComp(dna::T)::T where {T <: AbstractString}
+function revComp(dna::AbstractString)::AbstractString # where {T <: AbstractString}
     reverse(map(x->get(COMP, x, 'N'), dna))
 end
 

@@ -1,15 +1,15 @@
-using Logging
-using ZMQ
+import Logging
+import ZMQ
 
-struct ZMQLogger <: AbstractLogger
+struct ZMQLogger <: Logging.AbstractLogger
     min_level::Logging.LogLevel
     lock::ReentrantLock
     topic::String
     message_limits::Dict{Any,Int}
-    socket::Socket
+    socket::ZMQ.Socket
 
     function ZMQLogger(endpoint::String, min_level::Logging.LogLevel = Logging.Warn;topic::String = "", message_limits = nothing)
-        if message_limits == nothing
+        if message_limits === nothing
             message_limits = Dict{Any,Int}()
         end
         socket = ZMQ.Socket(ZMQ.PUB)
@@ -41,8 +41,8 @@ function Logging.handle_message(logger::ZMQLogger, level, message, _module, grou
     prefix = (level == Logging.Warn ? "WARNING" : uppercase(string(level))) 
     topic = length(logger.topic) > 0 ? "$(logger.topic).$prefix" : prefix
     lock(logger.lock) do
-        ZMQ.send(logger.socket, Message(topic); more = true)
-        ZMQ.send(logger.socket, Message(msg); more = false)
+        ZMQ.send(logger.socket, ZMQ.Message(topic); more = true)
+        ZMQ.send(logger.socket, ZMQ.Message(msg); more = false)
     end
     nothing
 end
@@ -74,9 +74,9 @@ function set_global_logger(logfile::MayBeString, level::String = "warn"; quiet::
     llevel = get(LEVELS, level, Logging.Warn)
 
     if logfile === nothing
-        logger = ConsoleLogger(stderr, llevel, meta_formatter = quiet ? quiet_metafmt : Logging.default_metafmt)
+        logger = Logging.ConsoleLogger(stderr, llevel, meta_formatter = quiet ? quiet_metafmt : Logging.default_metafmt)
     else
         logger = ZMQLogger(logfile::String, llevel; topic = topic)
     end
-    global_logger(logger) 
+    Logging.global_logger(logger) 
 end

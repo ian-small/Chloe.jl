@@ -1,5 +1,5 @@
-using ZMQ
-using ZeroMQ_jll
+import ZMQ
+import ZeroMQ_jll
 using JuliaWebAPI
 
 # doesn't seem to work!
@@ -46,14 +46,14 @@ end
 function start_broker(router_url::String, dealer_url::String)
 
     # ctx = Context()
-    router = Socket(ROUTER)
-    dealer = Socket(DEALER)
+    router = ZMQ.Socket(ZMQ.ROUTER)
+    dealer = ZMQ.Socket(ZMQ.DEALER)
 
     ZMQ.bind(router, router_url)
     ZMQ.bind(dealer, dealer_url)
 
     # missing: ZMQ.proxy(router, dealer)
-    rc = ccall((:zmq_proxy, libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
+    rc = ccall((:zmq_proxy, ZeroMQ_jll.libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
     @info "done proxy $(rc)"
 
     # control never comes here... clean up anyway.

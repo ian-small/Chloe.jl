@@ -2,7 +2,8 @@ include("annotate_genomes.jl")
 include("ZMQLogger.jl")
 # include("broker.jl")
 using JuliaWebAPI
-using ArgParse
+import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
+import Dates: now, toms
 # using LogRoller
 using Distributed
 using Crayons
@@ -30,8 +31,8 @@ function exit_on_sigint(on::Bool)
     ccall(:jl_exit_on_sigint, Cvoid, (Cint,), on)
 end
 
-function create_responder(apispecs::Array{Function}, addr::String, ctx::Context)
-    api = APIResponder(ZMQTransport(addr, REP, false, ctx), JSONMsgFormat(), "chloe", false)
+function create_responder(apispecs::Array{Function}, addr::String, ctx::ZMQ.Context)
+    api = APIResponder(ZMQTransport(addr, ZMQ.REP, false, ctx), JSONMsgFormat(), "chloe", false)
     for func in apispecs
         register(api, func)
     end
@@ -67,7 +68,7 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
         filename, target_id = fetch(@spawnat :any annotate_one(reference, fasta, fname))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
-        return Dict("elapsed" => Dates.toms(elapsed), "filename" => filename, "ncid" => string(target_id))
+        return Dict("elapsed" => toms(elapsed), "filename" => filename, "ncid" => string(target_id))
     end
 
     function annotate(fasta::String)
@@ -77,7 +78,6 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
             # assume latin1 encoded binary
             @info "compressed fasta length $(length(fasta))"
             fasta = read(encode(fasta, "latin1") |> IOBuffer |> GzipDecompressorStream, String)
-            # fasta = read(GzipDecompressorStream(IOBuffer(encode(fasta, "latin1"))), String)
             @info "decompressed fasta length $(length(fasta))"
         end
 
@@ -88,7 +88,7 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
 
-        return Dict("elapsed" => Dates.toms(elapsed), "sff" => sff, "ncid" => string(target_id))
+        return Dict("elapsed" => toms(elapsed), "sff" => sff, "ncid" => string(target_id))
     end
 
     function ping()
@@ -107,7 +107,7 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
     # request/response (not e.g. request-request response-response)
     # we expect to *connect* to a ZMQ DEALER/ROUTER (see bin/broker.py)
     # that forms the actual front end.
-    ctx = Context()
+    ctx = ZMQ.Context()
 
     function cleanup()
         close(ctx)

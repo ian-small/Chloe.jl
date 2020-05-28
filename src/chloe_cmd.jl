@@ -3,8 +3,8 @@
 include("annotate_genomes.jl")
 include("sff2GFF3.jl")
 include("make_suffix_array.jl")
-using ArgParse
-using Logging
+import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
+import Logging
 
 const levels = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => Logging.Warn, 
 "error" => Logging.Error)
@@ -87,7 +87,7 @@ end
 function cmd_main() 
     parsed_args = parse_args(ARGS, cmd_args; as_symbols = true)
     level = parsed_args[:level]
-    with_logger(ConsoleLogger(stderr, get(levels, level, Logging.Warn))) do 
+    Logging.with_logger(Logging.ConsoleLogger(stderr, get(levels, level, Logging.Warn))) do 
         cmd = parsed_args[:_COMMAND_]
         a = parsed_args[cmd]
         if cmd == :gff3

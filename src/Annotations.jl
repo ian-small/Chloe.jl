@@ -1,4 +1,4 @@
-using Printf
+import Printf: @sprintf
 
 mutable struct Feature
     path::String

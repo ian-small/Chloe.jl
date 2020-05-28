@@ -1,12 +1,12 @@
-using ZMQ
-using ZeroMQ_jll
-using ArgParse
+import ZMQ
+import ZeroMQ_jll
+import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 
 function start_broker(worker_url::String, client_url::String)
 
     # ctx = Context()
-    router = Socket(ROUTER)
-    dealer = Socket(DEALER)
+    router = ZMQ.Socket(ZMQ.ROUTER)
+    dealer = ZMQ.Socket(ZMQ.DEALER)
 
     ZMQ.bind(router, client_url)
     ZMQ.bind(dealer, worker_url)
@@ -15,7 +15,7 @@ function start_broker(worker_url::String, client_url::String)
     try
         try
             @info "worker=$worker_url client=$client_url"
-            rc = ccall((:zmq_proxy, libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
+            rc = ccall((:zmq_proxy, ZeroMQ_jll.libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
             @info "done zmq_proxy $(rc)"
         catch
             @info "exception!"
