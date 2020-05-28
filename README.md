@@ -82,7 +82,7 @@ Check the `Project.toml` file first but cut'n'paste the following into the julia
 package prompt:
 
 ```julia
-pkg> add ArgParse Dates CodecZlib JLD JuliaWebAPI LogRoller Logging Printf StatsBase Crayons
+pkg> add ArgParse Dates CodecZlib JLD JuliaWebAPI LogRoller Logging Printf StatsBase Crayons JSON
 ```
 
 ## Distributed
