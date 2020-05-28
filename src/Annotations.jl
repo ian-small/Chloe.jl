@@ -832,13 +832,15 @@ function calc_maxlengths(fstrand_models::AAFeature,
     maxlengths
 end
 
+MaybeIR = Union{AlignedBlock,Nothing}
+
 function writeSFF(outfile::Union{String,IO}, id::String, 
                 fstrand_models::AAFeature,
                 rstrand_models::AAFeature,
                 gene_exons::Dict{String,Int32},
                 fstrand_feature_stacks::AFeatureStack, 
                 rstrand_feature_stacks::AFeatureStack, 
-                targetloopf::DNAString, targetloopr::DNAString)
+                targetloopf::DNAString, targetloopr::DNAString, ir::MaybeIR = nothing)
 
     maxlengths = calc_maxlengths(fstrand_models, rstrand_models)
 
@@ -857,6 +859,10 @@ function writeSFF(outfile::Union{String,IO}, id::String,
             isempty(model) && continue
             model_id = getModelID!(model_ids, model)
             writeModelToSFF(outfile, model, model_id, targetloopr, gene_exons, maxlengths, rstrand_feature_stacks, '-')
+        end
+        if ir !== nothing
+            println(outfile, "IR/1/repeat_region/1\t+\t" * string(ir[1]) * "\t" * string(ir[3]) * "\t0\t0\t0\t0\t")
+            println(outfile, "IR/2/repeat_region/1\t-\t" * string(ir[2]) * "\t" * string(ir[3]) * "\t0\t0\t0\t0\t")
         end
     end
     if typeof(outfile) == String

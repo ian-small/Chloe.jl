@@ -4,7 +4,7 @@ include("SuffixArrays.jl")
 include("Alignments3.jl")
 include("Annotations.jl")
 
-using Dates
+import Dates: Time, Nanosecond
 import JSON
 
 # const ReferenceOrganisms = Dict(
@@ -43,8 +43,13 @@ end
 
 # stops the REPL printing the entire 7MB of sequences!
 function Base.show(io::IO, reference::Reference)
-    sabytes = 4 * sizeof(Int32) * (reference.refSAs .|> length |> sum)
-    bp = 2 * (reference.refloops .|> length |> sum)
+    function fr_length(fr)
+        return length(fr.forward) + length(fr.reverse)
+    end
+
+    sabytes = 2 * sizeof(Int32) * (reference.refSAs .|> fr_length |> sum)
+    bp = reference.refloops .|> fr_length |> sum
+    
     t1 = "#templates=$(reference.feature_templates |> length)"
     t2 = "#gene_exons=$(reference.gene_exons |> length)[$(reference.gene_exons |> values |> sum)]"
     t3 = "#seq=$(2 * (reference.refloops |> length))[$bp bp]"
@@ -78,6 +83,7 @@ function readReferences(refsdir::String, templates::String)::Reference
     if isempty(idx)
         error("No sff files found!")
     end
+    
     iff_files = files[idx]
 
     for (i, ref) in enumerate(ReferenceOrganisms)
@@ -87,6 +93,7 @@ function readReferences(refsdir::String, templates::String)::Reference
         end
         refgwsas = readGenomeWithSAs(path, ref.first)
         rev = revComp(refgwsas.sequence)
+        
         refloops[i] = FwdRev(refgwsas.sequence * refgwsas.sequence[1:end - 1], rev * rev[1:end - 1])
         refSAs[i] = FwdRev(refgwsas.forwardSA, refgwsas.reverseSA)
         refRAs[i] = FwdRev(makeSuffixArrayRanksArray(refgwsas.forwardSA), makeSuffixArrayRanksArray(refgwsas.reverseSA))
@@ -195,11 +202,14 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     @info "[$target_id] length: $target_length"
     
     target_seqr = revComp(target_seqf)
-    targetloopf = target_seqf * target_seqf[1:end - 1]
-    targetloopr = target_seqr * target_seqr[1:end - 1]
     
+    targetloopf = target_seqf * target_seqf[1:end - 1]
     target_saf = makeSuffixArray(targetloopf, true)
     target_raf = makeSuffixArrayRanksArray(target_saf)
+
+    targetloopr = target_seqr * target_seqr[1:end - 1]
+    target_sar = makeSuffixArray(targetloopr, true)
+    target_rar = makeSuffixArrayRanksArray(target_sar)
     
     t2 = time_ns()
 
@@ -217,8 +227,10 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
         # f_aligned_blocks contains matches between ref forward and target forward strands
 
         start = time_ns()
-        rf_aligned_blocks, rr_aligned_blocks = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
-        
+        # rf_aligned_blocks, rr_aligned_blocks = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
+        rr_aligned_blocks, rf_aligned_blocks = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
+        # rf_aligned_blocks, rr_aligned_blocks = alignLoops(targetloopr, target_sar, target_rar, refloop.forward, refSA.forward, refRA.forward)
+
         @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount].reverse)] ($(ns(time_ns() - start))): " forward = blockCoverage(rf_aligned_blocks)  reverse = blockCoverage(rr_aligned_blocks)
         # note cross ...
         blocks_aligned_to_targetf[refcount] = FwdRev(ff_aligned_blocks, rf_aligned_blocks)
@@ -273,9 +285,23 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
         fname = "$(target_id).sff"
     end
 
+    # find inverted repeat if any
+
+    f_aligned_blocks, r_aligned_blocks = alignLoops(targetloopf, target_saf, target_raf,
+                                                    targetloopr, target_sar, target_rar)
+
+    # sort blocks by length
+    f_aligned_blocks = sort(f_aligned_blocks, by = last, rev = true)
+    
+    ir = if length(f_aligned_blocks) > 0 && f_aligned_blocks[1][3] >= 1000
+        f_aligned_blocks[1]
+    else
+        nothing
+    end
+    
     writeSFF(fname, target_id, target_fstrand_models, target_rstrand_models,
         reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks,
-        targetloopf, targetloopr)
+        targetloopf, targetloopr, ir)
 
     @info "[$target_id] Overall: $(ns(time_ns() - t1))"
     return fname, target_id
