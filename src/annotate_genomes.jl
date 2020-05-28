@@ -23,13 +23,18 @@ import JSON
 #     "NC_026040" => "Zamia"
 # )
 
+struct FwdRev{T}
+    forward::T
+    reverse::T
+end
+
 struct Reference
-    # 2* length(ReferenceOrganisms) from directory reference_1116
-    refsrc::Array{String}
-    refloops::Array{DNAString}
-    refSAs::Array{SuffixArray}
-    refRAs::Array{SuffixArray}
-    ref_features::Array{FeatureArray}
+    # length(ReferenceOrganisms) from directory reference_1116
+    refsrc::Array{FwdRev{String}}
+    refloops::Array{FwdRev{DNAString}}
+    refSAs::Array{FwdRev{SuffixArray}}
+    refRAs::Array{FwdRev{SuffixArray}}
+    ref_features::Array{FwdRev{FeatureArray}}
     # from .tsv file
     feature_templates::Array{FeatureTemplate}
     gene_exons::Dict{String,Int32}
@@ -38,11 +43,11 @@ end
 
 # stops the REPL printing the entire 7MB of sequences!
 function Base.show(io::IO, reference::Reference)
-    sabytes = 2 * sizeof(Int32) * (reference.refSAs .|> length |> sum)
-    bp = reference.refloops .|> length |> sum
+    sabytes = 4 * sizeof(Int32) * (reference.refSAs .|> length |> sum)
+    bp = 2 * (reference.refloops .|> length |> sum)
     t1 = "#templates=$(reference.feature_templates |> length)"
     t2 = "#gene_exons=$(reference.gene_exons |> length)[$(reference.gene_exons |> values |> sum)]"
-    t3 = "#seq=$(reference.refloops |> length)[$bp bp]"
+    t3 = "#seq=$(2 * (reference.refloops |> length))[$bp bp]"
     print(io, "Reference: $t1, $t2, $t3, suffix=$(sabytes)B, total=$(sabytes + bp)B")
 end
 """
@@ -61,11 +66,11 @@ function readReferences(refsdir::String, templates::String)::Reference
 
     num_refs = length(ReferenceOrganisms)
 
-    refloops = Array{DNAString}(undef, num_refs * 2)
-    refSAs = Array{SuffixArray}(undef, num_refs * 2)
-    refRAs = Array{SuffixArray}(undef, num_refs * 2)
-    ref_features = Array{FeatureArray}(undef, num_refs * 2)
-    refsrc = Array{String}(undef, num_refs * 2)
+    refloops = Array{FwdRev{DNAString}}(undef, num_refs)
+    refSAs = Array{FwdRev{SuffixArray}}(undef, num_refs)
+    refRAs = Array{FwdRev{SuffixArray}}(undef, num_refs)
+    ref_features = Array{FwdRev{FeatureArray}}(undef, num_refs)
+    refsrc = Array{FwdRev{String}}(undef, num_refs)
     
 
     files = readdir(refsdir)
@@ -82,15 +87,9 @@ function readReferences(refsdir::String, templates::String)::Reference
         end
         refgwsas = readGenomeWithSAs(path, ref.first)
         rev = revComp(refgwsas.sequence)
-        
-        refloops[i * 2 - 1] = refgwsas.sequence * refgwsas.sequence[1:end - 1]
-        refloops[i * 2] = rev * rev[1:end - 1]
-        
-        refSAs[i * 2 - 1] = refgwsas.forwardSA
-        refSAs[i * 2] = refgwsas.reverseSA
-
-        refRAs[i * 2 - 1] = makeSuffixArrayRanksArray(refgwsas.forwardSA)
-        refRAs[i * 2] = makeSuffixArrayRanksArray(refgwsas.reverseSA)
+        refloops[i] = FwdRev(refgwsas.sequence * refgwsas.sequence[1:end - 1], rev * rev[1:end - 1])
+        refSAs[i] = FwdRev(refgwsas.forwardSA, refgwsas.reverseSA)
+        refRAs[i] = FwdRev(makeSuffixArrayRanksArray(refgwsas.forwardSA), makeSuffixArrayRanksArray(refgwsas.reverseSA))
         
         idx = findfirst(x->startswith(x, ref.second), iff_files)
         if idx === nothing
@@ -98,12 +97,10 @@ function readReferences(refsdir::String, templates::String)::Reference
         end
         feature_file = iff_files[idx]
         f_strand_features, r_strand_features = readFeatures(joinpath(refsdir, feature_file))
-        
-        ref_features[i * 2 - 1] = f_strand_features
-        ref_features[i * 2] = r_strand_features
 
-        refsrc[i * 2 - 1] = ref.first *  ":fwd"
-        refsrc[i * 2] = ref.first * ":rev"
+        ref_features[i] = FwdRev(f_strand_features, r_strand_features)
+        refsrc[i] = FwdRev(ref.first *  ":fwd", ref.first *  ":rev")
+
 
     end
     feature_templates, gene_exons = readTemplates(templates)
@@ -114,15 +111,17 @@ const ns(td) = Time(Nanosecond(td))
 
 MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,AFeatureStack}
+AAlignedBlocks = Array{FwdRev{AlignedBlocks},1}
 
 function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     reference::Reference, coverages::Dict{String,Float32},
-    strand::Char, blocks_aligned_to_target::Array{AlignedBlocks},
+    strand::Char, blocks_aligned_to_target::AAlignedBlocks,
     targetloop::DNAString)::Strand
 
     annotations = Array{Annotation}(undef, 0)
     for (ref_feature_array, blocks) in zip(reference.ref_features, blocks_aligned_to_target)
-        annotations = cat(annotations, findOverlaps(ref_feature_array, blocks), dims = 1)
+        annotations = cat(annotations, findOverlaps(ref_feature_array.forward, blocks.forward), dims = 1)
+        annotations = cat(annotations, findOverlaps(ref_feature_array.reverse, blocks.reverse), dims = 1)
     end
     sort!(annotations, by = x->x.path)
     strand_annotations = AnnotationArray(target_id, strand, annotations)
@@ -206,22 +205,24 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
 
     @info "[$target_id] making suffix arrays: $(ns(t2 - t1))"
 
-    blocks_aligned_to_targetf = Array{AlignedBlocks}(undef, num_refs * 2)
-    blocks_aligned_to_targetr = Array{AlignedBlocks}(undef, num_refs * 2)
+    blocks_aligned_to_targetf = AAlignedBlocks(undef, num_refs)
+    blocks_aligned_to_targetr = AAlignedBlocks(undef, num_refs)
 
     function alignit(refcount::Int)
         start = time_ns()
         refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
-        f_aligned_blocks, r_aligned_blocks = alignLoops(refloop, refSA, refRA, targetloopf, target_saf, target_raf)
+        ff_aligned_blocks, fr_aligned_blocks = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopf, target_saf, target_raf)
         
-        @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount])] ($(ns(time_ns() - start))): " forward = blockCoverage(f_aligned_blocks)  reverse = blockCoverage(r_aligned_blocks)
+        @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount].forward)] ($(ns(time_ns() - start))): " forward = blockCoverage(ff_aligned_blocks)  reverse = blockCoverage(fr_aligned_blocks)
         # f_aligned_blocks contains matches between ref forward and target forward strands
-        blocks_aligned_to_targetf[refcount] = f_aligned_blocks
-        if refcount % 2 == 1 # aligning + strand of ref
-            blocks_aligned_to_targetr[refcount + 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref reverse and target reverse strands
-        else    # aligning - strand of ref
-            blocks_aligned_to_targetr[refcount - 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref forward and target reverse strands
-        end       
+
+        start = time_ns()
+        rf_aligned_blocks, rr_aligned_blocks = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
+        
+        @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount].reverse)] ($(ns(time_ns() - start))): " forward = blockCoverage(rf_aligned_blocks)  reverse = blockCoverage(rr_aligned_blocks)
+        # note cross ...
+        blocks_aligned_to_targetf[refcount] = FwdRev(ff_aligned_blocks, rf_aligned_blocks)
+        blocks_aligned_to_targetr[refcount] = FwdRev(rr_aligned_blocks, fr_aligned_blocks)
     end
     
     Threads.@threads for refno in 1:length(reference.refloops)
@@ -235,8 +236,8 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     coverages = Dict{String,Float32}()
     for (i, ref) in enumerate(reference.referenceOrganisms)
         coverage = 0
-        coverage += blockCoverage(blocks_aligned_to_targetf[i * 2 - 1])
-        coverage += blockCoverage(blocks_aligned_to_targetf[i * 2])
+        coverage += blockCoverage(blocks_aligned_to_targetf[i].forward)
+        coverage += blockCoverage(blocks_aligned_to_targetf[i].reverse)
         coverages[ref[1]] = coverage /= target_length * 2
     end
     @debug "[$target_id] coverages:" coverages
