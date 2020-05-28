@@ -5,22 +5,23 @@ include("Alignments3.jl")
 include("Annotations.jl")
 
 using Dates
+import JSON
 
-const ReferenceOrganisms = Dict(
-    "AP000423"  => "Arabidopsis",
-    "JX512022"  => "Medicago",
-    "Z00044"    => "Nicotiana",
-    "KT634228"  => "Picea",
-    "NC_002202" => "Spinacia",
-    "NC_001666" => "Zea",
-    "NC_005086" => "Amborella",
-    "NC_016986" => "Ginkgo",
-    "NC_021438" => "Gnetum",
-    "NC_030504" => "Liriodendron",
-    "NC_024542" => "Nymphaea",
-    "NC_031333" => "Oryza",
-    "NC_026040" => "Zamia"
-)
+# const ReferenceOrganisms = Dict(
+#     "AP000423"  => "Arabidopsis",
+#     "JX512022"  => "Medicago",
+#     "Z00044"    => "Nicotiana",
+#     "KT634228"  => "Picea",
+#     "NC_002202" => "Spinacia",
+#     "NC_001666" => "Zea",
+#     "NC_005086" => "Amborella",
+#     "NC_016986" => "Ginkgo",
+#     "NC_021438" => "Gnetum",
+#     "NC_030504" => "Liriodendron",
+#     "NC_024542" => "Nymphaea",
+#     "NC_031333" => "Oryza",
+#     "NC_026040" => "Zamia"
+# )
 
 struct Reference
     # 2* length(ReferenceOrganisms) from directory reference_1116
@@ -32,6 +33,7 @@ struct Reference
     # from .tsv file
     feature_templates::Array{FeatureTemplate}
     gene_exons::Dict{String,Int32}
+    referenceOrganisms::Dict{String,String}
 end
 
 # stops the REPL printing the entire 7MB of sequences!
@@ -50,6 +52,13 @@ creates a Reference object to feed into `annotate_one`
 """
 function readReferences(refsdir::String, templates::String)::Reference
 
+    if !isdir(refsdir)
+        error("$(refsdir) is not a directory")
+    end
+    ReferenceOrganisms = open(joinpath(refsdir, "ReferenceOrganisms.json")) do f
+        JSON.parse(f, dicttype = Dict{String,String})
+    end
+
     num_refs = length(ReferenceOrganisms)
 
     refloops = Array{DNAString}(undef, num_refs * 2)
@@ -58,9 +67,7 @@ function readReferences(refsdir::String, templates::String)::Reference
     ref_features = Array{FeatureArray}(undef, num_refs * 2)
     refsrc = Array{String}(undef, num_refs * 2)
     
-    if !isdir(refsdir)
-        error("$(refsdir) is not a directory")
-    end
+
     files = readdir(refsdir)
     idx = findall(x->endswith(x, ".sff"), files)
     if isempty(idx)
@@ -84,6 +91,7 @@ function readReferences(refsdir::String, templates::String)::Reference
 
         refRAs[i * 2 - 1] = makeSuffixArrayRanksArray(refgwsas.forwardSA)
         refRAs[i * 2] = makeSuffixArrayRanksArray(refgwsas.reverseSA)
+        
         idx = findfirst(x->startswith(x, ref.second), iff_files)
         if idx === nothing
             error("no sff file for $(ref.second)")
@@ -99,7 +107,7 @@ function readReferences(refsdir::String, templates::String)::Reference
 
     end
     feature_templates, gene_exons = readTemplates(templates)
-    return Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons)
+    return Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons, ReferenceOrganisms)
 end
 
 const ns(td) = Time(Nanosecond(td))
@@ -179,7 +187,7 @@ MayBeIO = Union{String,IO,Nothing}
 function annotate_one(reference::Reference, fasta::Union{String,IO},
     output::MayBeIO = nothing)
 
-    num_refs = length(ReferenceOrganisms)
+    num_refs = length(reference.referenceOrganisms)
     t1 = time_ns()
 
     target_id, target_seqf = readFasta(fasta)
@@ -207,12 +215,11 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
         f_aligned_blocks, r_aligned_blocks = alignLoops(refloop, refSA, refRA, targetloopf, target_saf, target_raf)
         
         @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount])] ($(ns(time_ns() - start))): " forward = blockCoverage(f_aligned_blocks)  reverse = blockCoverage(r_aligned_blocks)
-
         # f_aligned_blocks contains matches between ref forward and target forward strands
         blocks_aligned_to_targetf[refcount] = f_aligned_blocks
-        if refcount % 2 == 1 # aligning + strand to + strand
+        if refcount % 2 == 1 # aligning + strand of ref
             blocks_aligned_to_targetr[refcount + 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref reverse and target reverse strands
-        else    # aligning - strand to + strand
+        else    # aligning - strand of ref
             blocks_aligned_to_targetr[refcount - 1] = r_aligned_blocks # r_aligned_blocks contains calculated matches between ref forward and target reverse strands
         end       
     end
@@ -226,7 +233,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     @info "[$target_id] aligning: ($(length(reference.refloops))) $(ns(t3 - t2))" 
 
     coverages = Dict{String,Float32}()
-    for (i, ref) in enumerate(ReferenceOrganisms)
+    for (i, ref) in enumerate(reference.referenceOrganisms)
         coverage = 0
         coverage += blockCoverage(blocks_aligned_to_targetf[i * 2 - 1])
         coverage += blockCoverage(blocks_aligned_to_targetf[i * 2])
@@ -252,7 +259,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     target_fstrand_models, fstrand_feature_stacks = strands[1]
     target_rstrand_models, rstrand_feature_stacks = strands[2]
 
-    if output != nothing
+    if output !== nothing
         if typeof(output) == String
             fname = output::String
             if isdir(fname)

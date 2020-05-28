@@ -200,7 +200,7 @@ function run_broker2(worker, client)
     # will never return.
     procs = addprocs(1; topology = :master_worker)
     @everywhere procs include("src/broker.jl")
-    @async fetch(@spawnat procs[1] start_broker(worker, client))
+    @async fetch(@spawnat procs[1] run_broker(worker, client))
 end
     
 function main()
@@ -210,7 +210,7 @@ function main()
     client_url = pop!(distributed_args, :broker, nothing)
 
 
-    if client_url != nothing
+    if client_url !== nothing
         @info "Starting broker. Connect to: $client_url"
         run_broker(distributed_args[:address], client_url)
     end
