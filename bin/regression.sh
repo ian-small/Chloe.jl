@@ -2,6 +2,7 @@
 if [ ! -d testo ]; then
     mkdir testo
 fi
+rm -rf testo/*
 echo "start annotations..."
 JULIA_NUM_THREADS=8 time -p julia chloe.jl -l info annotate -o testo testfa/*.fa
 for f in $(ls testo)
@@ -14,4 +15,4 @@ do
         echo -e "\e[31m******** test FAILED *******\e[0m"
     fi
 done
-rm -rf testo
+# rm -rf testo

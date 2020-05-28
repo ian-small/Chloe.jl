@@ -4,7 +4,7 @@ if [ ! -d testo ]; then
 fi
 rm -rf testo/*
 # A=tcp://127.0.0.1:9467
-#JULIA_NUM_THREADS=8 julia src/chloe_distributed.jl -a $A --level=warn &
+# JULIA_NUM_THREADS=8 julia src/chloe_distributed.jl -a $A --level=warn &
 for f in $(ls testfa/*.fa)
 do
     echo "annotating $f"
