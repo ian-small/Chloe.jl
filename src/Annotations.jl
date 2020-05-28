@@ -25,8 +25,8 @@ function isFeatureName(feature::Feature, name::String)
     name == getFeatureName(feature)
 end
 
-AFeature = Array{Feature}
-AAFeature = Array{AFeature}
+AFeature = Array{Feature,1}
+AAFeature = Array{AFeature,1}
 # entire set of Features for one strand of one genome
 struct FeatureArray
     genome_id::String
@@ -104,7 +104,7 @@ end
 
 using StatsBase
 
-function readTemplates(file::String)::Tuple{Array{FeatureTemplate},Dict{String,Int32}}
+function readTemplates(file::String)::Tuple{Array{FeatureTemplate,1},Dict{String,Int32}}
     templates = FeatureTemplate[]
     gene_exons = String[]
     if !isfile(file)

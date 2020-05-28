@@ -1,4 +1,4 @@
-SuffixArray = Array{Int32}
+SuffixArray = Array{Int32,1}
 DNAString = String
 
 struct GenomeWithSAs
