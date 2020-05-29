@@ -227,9 +227,9 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
         # f_aligned_blocks contains matches between ref forward and target forward strands
 
         start = time_ns()
-        # rf_aligned_blocks, rr_aligned_blocks = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
-        rr_aligned_blocks, rf_aligned_blocks = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
-        # rf_aligned_blocks, rr_aligned_blocks = alignLoops(targetloopr, target_sar, target_rar, refloop.forward, refSA.forward, refRA.forward)
+        rf_aligned_blocks, rr_aligned_blocks = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
+        # use only forward
+        # rr_aligned_blocks, rf_aligned_blocks = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
 
         @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount].reverse)] ($(ns(time_ns() - start))): " forward = blockCoverage(rf_aligned_blocks)  reverse = blockCoverage(rr_aligned_blocks)
         # note cross ...
@@ -286,7 +286,6 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     end
 
     # find inverted repeat if any
-
     f_aligned_blocks, r_aligned_blocks = alignLoops(targetloopf, target_saf, target_raf,
                                                     targetloopr, target_sar, target_rar)
 
