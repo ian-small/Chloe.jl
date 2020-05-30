@@ -1,7 +1,7 @@
 
 
 include("annotate_genomes.jl")
-using JuliaWebAPI
+import JuliaWebAPI: process, create_responder
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 import Logging
 import LogRoller
@@ -80,7 +80,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
         end
         if length(address) == 1
             process(
-                    JuliaWebAPI.create_responder([
+                    create_responder([
                             (chloe, false),
                             (annotate, false),
                             (ping, false),
@@ -91,7 +91,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
         else
             Threads.@threads for addr in address
                 process(
-                    JuliaWebAPI.create_responder([
+                    create_responder([
                         (chloe, false),
                         (annotate, false),
                         (ping, false),

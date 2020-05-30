@@ -1,12 +1,12 @@
 include("annotate_genomes.jl")
 include("ZMQLogger.jl")
 # include("broker.jl")
-using JuliaWebAPI
+import JuliaWebAPI: APIResponder, ZMQTransport, JSONMsgFormat, register, process
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 import Dates: now, toms
 # using LogRoller
-using Distributed
-using Crayons
+import Distributed: addprocs, rmprocs, @spawnat, @everywhere
+import Crayons: @crayon_str
 import StringEncodings: encode
 
 const success = crayon"bold green"
@@ -120,7 +120,7 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
     atexit(cleanup)
 
     @sync for p in procs
-        @async JuliaWebAPI.process(
+        @async process(
             create_responder([
                     chloe,
                     annotate,

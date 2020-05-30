@@ -1,6 +1,6 @@
 
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
-using JuliaWebAPI
+import JuliaWebAPI: APIInvoker, apicall
 
 const ADDRESS = "ipc:///tmp/chloe-client"
  

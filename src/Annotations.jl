@@ -1,4 +1,5 @@
 import Printf: @sprintf
+import StatsBase
 
 mutable struct Feature
     path::String
@@ -102,7 +103,6 @@ struct FeatureTemplate
     median_length::Int32
 end
 
-using StatsBase
 
 function readTemplates(file::String)::Tuple{Array{FeatureTemplate,1},Dict{String,Int32}}
     templates = FeatureTemplate[]
@@ -129,7 +129,7 @@ function readTemplates(file::String)::Tuple{Array{FeatureTemplate,1},Dict{String
             push!(templates, template)
         end
     end
-    return sort!(templates, by = x->x.path), countmap(gene_exons)
+    return sort!(templates, by = x->x.path), StatsBase.countmap(gene_exons)
 end
 
 struct AnnotationArray
@@ -491,7 +491,7 @@ function findStartCodon2!(cds::Feature, genome_length::Integer, genomeloop::DNAS
     shadow_coverage = 0
     for nt in search_range
         codon = SubString(genomeloop, nt, nt + 2)
-        codons[i] = startScore(codon)
+        codons[i] = startScore(cds, codon)
         if i % 3 == 1; phase[i] = 1.0; end
         if feature_stack[nt] > 0
             stack_coverage += 1
