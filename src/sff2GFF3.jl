@@ -41,15 +41,16 @@ function writeGFF3(outfile, genemodel::FeatureArray)
     write(outfile, join([genemodel.genome_id,"Chloe","gene",start,finish], "\t"))
     write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", id, ";Name=", split(first(features).path, '/')[1], "\n")
     # RNA product
-    if getFeatureType(first(features)) == "CDS"
+    ft = getFeatureType(first(features))
+    if ft == "CDS"
         write(outfile, join([genemodel.genome_id,"Chloe","mRNA",start,finish], "\t"))
         parent = id * ".mRNA"
         write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", parent, ";Parent=", id, "\n")
-    elseif getFeatureType(first(features)) == "rRNA"
+    elseif ft == "rRNA"
         write(outfile, join([genemodel.genome_id,"Chloe","rRNA",start,finish], "\t"))
         parent = id * ".rRNA"
         write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", id, parent, ";Parent=", id, "\n")
-    elseif getFeatureType(first(features)) == "tRNA"
+    elseif ft == "tRNA"
         write(outfile, join([genemodel.genome_id,"Chloe","tRNA",start,finish], "\t"))
         parent = id * ".tRNA"
         write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", parent, ";Parent=", id, "\n")
