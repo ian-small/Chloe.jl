@@ -1,0 +1,5 @@
+#!/bin/bash
+d="$(dirname $0)"
+proj=$(realpath $d/../)
+export JULIA_NUM_THREADS=15 
+exec julia --color=yes $proj/src/chloe_distributed.jl -l info --nprocs=4 --address=tcp://127.0.0.1:9467 --broker=ipc:///tmp/chloe-client
