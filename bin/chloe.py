@@ -1,16 +1,18 @@
 #!/usr/bin/env python
-from io import StringIO, BytesIO
-import os
 import gzip
-from concurrent.futures import ThreadPoolExecutor
+import os
 import re
+from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO, StringIO
 
-import zmq
 import click
+import zmq
 
 PORT = re.compile("^[0-9]+$")
+
 # ADDRESS = "tcp://127.0.0.1:9467"
 ADDRESS = "ipc:///tmp/chloe-client"
+
 context = zmq.Context()
 
 
@@ -123,6 +125,7 @@ def remote_ssh(
     if sleep:
         Sleep(sleep)
     c = Connection(ssh_connection)  # entry in ~/.ssh/config
+
     # bind on remote and connect on local
     # This means that the broker should be running first
     def run():

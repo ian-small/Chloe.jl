@@ -19,6 +19,12 @@ def diff(fa1, fa2, depth, coverage):
             comment=com,
         )
 
+    def ss(s):
+        return ', '.join(sorted(s))
+
+    def ps(*s):
+        return prefix+ ' '.join(str(v) for v in s)
+
     lines1 = open(fa1).readlines()
     lines2 = open(fa2).readlines()
     if lines1 == lines2:
@@ -30,30 +36,31 @@ def diff(fa1, fa2, depth, coverage):
     d2 = {d["name"]: d for l in lines2[1:] for d in [todict(l)]}
     if d1 == d2:
         return
+    prefix = '\t'
     if d1.keys() != d2.keys():
         s = set(d1) - set(d2)
         if s:
-            click.secho(f"new > old {s}", fg="red")
+            click.secho(f"{prefix}new: {ss(s)}", fg="red")
         s = set(d2) - set(d1)
         if s:
-            click.secho(f"old > new {s}", fg="red")
+            click.secho(f"{prefix}old: {ss(s)}", fg="red")
 
     for k in set(d1) & set(d2):
         dd1 = d1[k]
         dd2 = d2[k]
         for n in ["name", "strand", "pos", "length", "phase", "comment"]:
             if not dd1[n] == dd2[n]:
-                print(k, n, dd1[n], dd2[n])
+                click.secho(ps(k, n, dd1[n], dd2[n]))
 
         for n in ["avg", "coverage"]:
             f1, f2 = dd1[n], dd2[n]
             if abs(f1 - f2) > coverage:
-                print(k, n, f1, f2)
+                click.secho(ps(k, n, f1, f2))
 
         for n in ["depth"]:
             f1, f2 = dd1[n], dd2[n]
             if abs(f1 - f2) > depth:
-                print(k, n, f1, f2)
+                click.secho(ps(k, n, f1, f2))
 
 
 @click.command()
