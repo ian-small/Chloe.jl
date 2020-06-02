@@ -1,5 +1,40 @@
 #!/bin/bash
+nprocs=4
+threads=15
+level=info
+
 d="$(dirname $0)"
 proj=$(realpath $d/../)
-export JULIA_NUM_THREADS=15 
-exec julia --color=yes $proj/src/chloe_distributed.jl -l info --nprocs=4 --address=tcp://127.0.0.1:9467 --broker=ipc:///tmp/chloe-client
+
+while getopts ":hp:t:l:" opt; do
+  case ${opt} in
+    h )
+        echo "usage: $0 [-h] [-p{n}] [-t{t}] [-l{l}]"
+        echo "{n} is the number of process to start (default: $nprocs)"
+        echo "{t} is the number of threads (default: $threads)"
+        echo "{l} is the log level (default: $level)"
+        exit 0
+        ;;
+    w )
+      nprocs=$OPTARG
+      ;;
+    l )
+      level=$OPTARG
+      ;;
+    t )
+      threads=$OPTARG
+      ;;
+    \? )
+      echo "Invalid option: $OPTARG" 1>&2
+      exit 1
+      ;;
+    : )
+      echo "Invalid option: $OPTARG requires an argument" 1>&2
+      exit 1
+      ;;
+  esac
+done
+shift $((OPTIND -1))
+
+export JULIA_NUM_THREADS=$threads
+exec julia --color=yes $proj/src/chloe_distributed.jl -l $level --nprocs=$nprocs --address=tcp://127.0.0.1:9467 --broker=ipc:///tmp/chloe-client

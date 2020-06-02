@@ -180,7 +180,11 @@ def addresses(f):
 
 @cli.command()
 @addresses
-@click.option("--parallel", is_flag=True, help="send annotation requests in parallel")
+@click.option(
+    "--workers",
+    default=0,
+    help="send annotation requests in parallel using this many workers",
+)
 @click.option(
     "-o",
     "--output",
@@ -188,8 +192,11 @@ def addresses(f):
     help="output .sff filename or directory (relative to the server)",
 )
 @click.argument("fastas", nargs=-1)
-def annotate(timeout, address, fastas, output, parallel):
-    """Annotate fasta files."""
+def annotate(timeout, address, fastas, output, workers):
+    """Annotate fasta files using a distributed chloe server."""
+
+    def dt(d):
+        return ", ".join(f"{k}: {v}" for k, v in sorted(d.items()))
 
     def do_one(fasta, socket=None):
         if socket is None:
@@ -198,11 +205,11 @@ def annotate(timeout, address, fastas, output, parallel):
         code, data = socket.msg(cmd="chloe", args=[fasta, output])
 
         click.secho(
-            f"{fasta}: {str(data)}", fg="green" if code == 200 else "red", bold=True
+            f"{fasta}: [{dt(data)}]", fg="green" if code == 200 else "red", bold=True
         )
 
-    if parallel:
-        with ThreadPoolExecutor(max_workers=len(fastas)) as pool:
+    if workers > 1:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
             for fasta in fastas:
                 pool.submit(do_one, fasta)
     else:
