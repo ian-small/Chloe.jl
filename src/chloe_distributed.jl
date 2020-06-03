@@ -40,10 +40,10 @@ function create_responder(apispecs::Array{Function}, addr::String, ctx::ZMQ.Cont
 end
 
 function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
-    template = "optimised_templates.v2.tsv", level = "warn", nprocs = 3,
+    template = "optimised_templates.v2.tsv", level = "warn", workers = 3,
     logendpoint::MayBeString = nothing)
 
-    procs = addprocs(nprocs; topology = :master_worker)
+    procs = addprocs(workers; topology = :master_worker)
     # sic! src/....
     @everywhere procs include("src/annotate_genomes.jl")
     @everywhere procs include("src/ZMQLogger.jl")
@@ -58,7 +58,7 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
     git = git_version()[1:7]
     
     nthreads = Threads.nthreads()
-    @info "processes: $nprocs"
+    @info "processes: $workers"
     @info reference
     @info "chloe version $VERSION (git: $git) threads=$nthreads on machine $machine"
     @info "connecting to $address"
@@ -92,7 +92,7 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
     end
 
     function ping()
-        return "OK version=$VERSION git=$git threads=$nthreads procs=$nprocs on $machine"
+        return "OK version=$VERSION git=$git threads=$nthreads procs=$workers on $machine"
     end
 
     # `bin/chloe.py terminate` uses this to find out how many calls of :terminate
@@ -100,7 +100,7 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
     # stop process(APIResponder) from the outside since it is block wait on 
     # the zmq sockets.
     function nconn()
-        return nprocs
+        return workers
     end
 
     # we need to create separate ZMQ sockets to ensure strict
@@ -158,7 +158,7 @@ function args()
         metavar = "LOGLEVEL"
         default = "info"
         help = "log level (warn,debug,info,error)"
-        "--nprocs", "-n"
+        "--workers", "-w"
         arg_type = Int
         default = 3
         help = "number of distributed processes"

@@ -85,7 +85,7 @@ def cli():
     "-l", "--local", default=9467, help="local port to connect to", show_default=True
 )
 @click.option("--router", help=f"run a broker endpoint too (e.g. {ADDRESS})")
-@click.option("-n", "--nprocs", default=8, help="number of processes to use")
+@click.option("-w", "--workers", default=8, help="number of processes to use")
 @click.option("--sleep", default=0.0, help="sleep seconds before trying to connect")
 @click.option(
     "--level",
@@ -95,12 +95,10 @@ def cli():
     type=click.Choice(["info", "warn", "debug", "error"]),
 )
 @click.option("--julia-dir", help="where julia (directory) is located on server")
-@click.option(
-    "--chloe-repo", default="chloe-svr", help="where chloe git repo is on server"
-)
+@click.option("--chloe-repo", default="chloe", help="where chloe git repo is on server")
 @click.argument("ssh_connection")
 def remote_ssh(
-    ssh_connection, remote, local, nprocs, level, sleep, router, julia_dir, chloe_repo
+    ssh_connection, remote, local, workers, level, sleep, router, julia_dir, chloe_repo
 ):
     """start up a ssh tunnel to a server chloe-distributed using ssh connection."""
     from threading import Thread
@@ -144,7 +142,7 @@ def remote_ssh(
 
             with c.cd(remote_dir):
 
-                args = f"""-l {level} --nprocs={nprocs} --address=tcp://127.0.0.1:{remote}"""
+                args = f"""-l {level} --workers={workers} --address=tcp://127.0.0.1:{remote}"""
                 cmd = (
                     f"""JULIA_NUM_THREADS=96 {julia} src/chloe_distributed.jl {args}"""
                 )
