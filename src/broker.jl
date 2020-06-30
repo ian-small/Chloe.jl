@@ -29,7 +29,7 @@ function start_broker(worker_url::String, client_url::String)
 end
 
 function broker_args()
-    args = ArgParseSettings(prog = "broker", autofix_names = true)  # turn "-" into "_" for arg names.
+    args = ArgParseSettings(prog="broker", autofix_names=true)  # turn "-" into "_" for arg names.
 
     @add_arg_table! args begin
         "--worker"
@@ -45,7 +45,7 @@ function broker_args()
         help = "ZMQ ROUTER address to connect to"
     end
 
-    parse_args(ARGS, args; as_symbols = true)
+    parse_args(ARGS, args; as_symbols=true)
 
 end
 function broker_main()

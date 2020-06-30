@@ -9,8 +9,8 @@ import Logging
 const levels = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => Logging.Warn, 
 "error" => Logging.Error)
  
-function chloe(;refsdir = "reference_1116", fasta_files = String[],
-    template = "optimised_templates.v2.tsv", output::MayBeString = nothing)
+function chloe(;refsdir="reference_1116", fasta_files=String[],
+    template="optimised_templates.v2.tsv", output::MayBeString=nothing)
 
     annotate(refsdir, template, fasta_files, output)
 
@@ -19,7 +19,7 @@ end
 
 # const julia_v07 = VERSION > v"0.7-"
 
-cmd_args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
+cmd_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
 
 @add_arg_table! cmd_args begin
     "annotate"
@@ -85,7 +85,7 @@ end
 #     """
 
 function cmd_main() 
-    parsed_args = parse_args(ARGS, cmd_args; as_symbols = true)
+    parsed_args = parse_args(ARGS, cmd_args; as_symbols=true)
     level = parsed_args[:level]
     Logging.with_logger(Logging.ConsoleLogger(stderr, get(levels, level, Logging.Warn))) do 
         cmd = parsed_args[:_COMMAND_]

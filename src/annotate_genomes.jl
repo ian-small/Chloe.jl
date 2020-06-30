@@ -66,7 +66,7 @@ function readReferences(refsdir::String, templates::String)::Reference
         error("$(refsdir) is not a directory")
     end
     ReferenceOrganisms = open(joinpath(refsdir, "ReferenceOrganisms.json")) do f
-        JSON.parse(f, dicttype = Dict{String,String})
+        JSON.parse(f, dicttype=Dict{String,String})
     end
 
     num_refs = length(ReferenceOrganisms)
@@ -79,7 +79,7 @@ function readReferences(refsdir::String, templates::String)::Reference
     
 
     files = readdir(refsdir)
-    idx = findall(x->endswith(x, ".sff"), files)
+    idx = findall(x -> endswith(x, ".sff"), files)
     if isempty(idx)
         error("No sff files found!")
     end
@@ -98,7 +98,7 @@ function readReferences(refsdir::String, templates::String)::Reference
         refSAs[i] = FwdRev(refgwsas.forwardSA, refgwsas.reverseSA)
         refRAs[i] = FwdRev(makeSuffixArrayRanksArray(refgwsas.forwardSA), makeSuffixArrayRanksArray(refgwsas.reverseSA))
         
-        idx = findfirst(x->startswith(x, ref.second), iff_files)
+        idx = findfirst(x -> startswith(x, ref.second), iff_files)
         if idx === nothing
             error("no sff file for $(ref.second)")
         end
@@ -127,10 +127,10 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
 
     annotations = Array{Annotation}(undef, 0)
     for (ref_feature_array, blocks) in zip(reference.ref_features, blocks_aligned_to_target)
-        annotations = cat(annotations, findOverlaps(ref_feature_array.forward, blocks.forward), dims = 1)
-        annotations = cat(annotations, findOverlaps(ref_feature_array.reverse, blocks.reverse), dims = 1)
+        annotations = cat(annotations, findOverlaps(ref_feature_array.forward, blocks.forward), dims=1)
+        annotations = cat(annotations, findOverlaps(ref_feature_array.reverse, blocks.reverse), dims=1)
     end
-    sort!(annotations, by = x->x.path)
+    sort!(annotations, by=x -> x.path)
     strand_annotations = AnnotationArray(target_id, strand, annotations)
 
     @debug "[$target_id]$strand thread=$(Threads.threadid())"
@@ -191,7 +191,7 @@ directory.
 """
 MayBeIO = Union{String,IO,Nothing}
 function annotate_one(reference::Reference, fasta::Union{String,IO},
-    output::MayBeIO = nothing)
+    output::MayBeIO=nothing)
 
     num_refs = length(reference.referenceOrganisms)
     t1 = time_ns()
@@ -290,7 +290,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
                                                     targetloopr, target_sar, target_rar)
 
     # sort blocks by length
-    f_aligned_blocks = sort(f_aligned_blocks, by = last, rev = true)
+    f_aligned_blocks = sort(f_aligned_blocks, by=last, rev=true)
     
     ir = if length(f_aligned_blocks) > 0 && f_aligned_blocks[1][3] >= 1000
         f_aligned_blocks[1]

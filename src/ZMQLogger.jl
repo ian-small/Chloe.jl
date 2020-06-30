@@ -8,7 +8,7 @@ struct ZMQLogger <: Logging.AbstractLogger
     message_limits::Dict{Any,Int}
     socket::ZMQ.Socket
 
-    function ZMQLogger(endpoint::String, min_level::Logging.LogLevel = Logging.Warn;topic::String = "", message_limits = nothing)
+    function ZMQLogger(endpoint::String, min_level::Logging.LogLevel=Logging.Warn;topic::String="", message_limits=nothing)
         if message_limits === nothing
             message_limits = Dict{Any,Int}()
         end
@@ -20,7 +20,7 @@ struct ZMQLogger <: Logging.AbstractLogger
 end
 
 function Logging.handle_message(logger::ZMQLogger, level, message, _module, group, id,
-    filepath, line; maxlog = nothing, kwargs...)
+    filepath, line; maxlog=nothing, kwargs...)
     
     if maxlog !== nothing && maxlog isa Integer
         remaining = get!(logger.message_limits, id, maxlog)
@@ -41,8 +41,8 @@ function Logging.handle_message(logger::ZMQLogger, level, message, _module, grou
     prefix = (level == Logging.Warn ? "WARNING" : uppercase(string(level))) 
     topic = length(logger.topic) > 0 ? "$(logger.topic).$prefix" : prefix
     lock(logger.lock) do
-        ZMQ.send(logger.socket, ZMQ.Message(topic); more = true)
-        ZMQ.send(logger.socket, ZMQ.Message(msg); more = false)
+        ZMQ.send(logger.socket, ZMQ.Message(topic); more=true)
+        ZMQ.send(logger.socket, ZMQ.Message(msg); more=false)
     end
     nothing
 end
@@ -62,7 +62,7 @@ const LEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug,
                     "warn" => Logging.Warn, "error" => Logging.Error)
 MayBeString = Union{Nothing,String}
 
-function set_global_logger(logfile::MayBeString, level::String = "warn"; quiet::Bool = true, topic = "")
+function set_global_logger(logfile::MayBeString, level::String="warn"; quiet::Bool=true, topic="")
     
     # don't add any line number guff even for debugging
     function quiet_metafmt(level, _module, group, id, file, line)
@@ -74,9 +74,9 @@ function set_global_logger(logfile::MayBeString, level::String = "warn"; quiet::
     llevel = get(LEVELS, level, Logging.Warn)
 
     if logfile === nothing
-        logger = Logging.ConsoleLogger(stderr, llevel, meta_formatter = quiet ? quiet_metafmt : Logging.default_metafmt)
+        logger = Logging.ConsoleLogger(stderr, llevel, meta_formatter=quiet ? quiet_metafmt : Logging.default_metafmt)
     else
-        logger = ZMQLogger(logfile::String, llevel; topic = topic)
+        logger = ZMQLogger(logfile::String, llevel; topic=topic)
     end
     Logging.global_logger(logger) 
 end

@@ -1,7 +1,7 @@
 # include("Utilities.jl")
 # include("SuffixArrays.jl")
 
-function writesuffixarray(;fasta_files = String[])
+function writesuffixarray(;fasta_files=String[])
     for infile in fasta_files
         seqid, seqf = readFasta(infile)
         seqr = revComp(seqf)

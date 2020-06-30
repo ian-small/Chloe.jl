@@ -91,7 +91,7 @@ function lcps2AlignmentBlocks(lcps::AlignedBlocks, circular::Bool, min_run_lengt
 end
 
 function blockCoverage(blocks::AlignedBlocks)
-    sum(map(b->b[3], blocks))
+    sum(map(b -> b[3], blocks))
 end
 
 

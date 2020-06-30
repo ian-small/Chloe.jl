@@ -89,7 +89,7 @@ function writeGFF3(outfile, genemodel::FeatureArray)
     end
     write(outfile, "###\n")
 end
-function writeallGFF3(;sff_files = String[])
+function writeallGFF3(;sff_files=String[])
     for infile in sff_files
         fstrand_features, rstrand_features = readFeatures(infile)
         # for each strand
@@ -106,7 +106,7 @@ function writeallGFF3(;sff_files = String[])
         end
 
         # interleave gene models from both strands
-        sort!(models_as_feature_arrays, by = m->m.features[1].start)
+        sort!(models_as_feature_arrays, by=m -> m.features[1].start)
 
         # write models in GFF3 format
         fname = fstrand_features.genome_id * ".gff3";

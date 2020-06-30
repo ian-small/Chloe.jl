@@ -7,8 +7,8 @@ import Logging
 import LogRoller
 import Dates: now, toms
 
-const LEVELS = Dict("info"=>Logging.Info, "debug"=> Logging.Debug, 
-                    "warn" => Logging.Warn, "error"=>Logging.Error)
+const LEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, 
+                    "warn" => Logging.Warn, "error" => Logging.Error)
 
 const ADDRESS = "tcp://127.0.0.1:9467"
 
@@ -23,8 +23,8 @@ function git_version()
     end
 end
 
-function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
-    template = "optimised_templates.v2.tsv", level="warn",
+function chloe_svr(;refsdir="reference_1116", address=[ADDRESS],
+    template="optimised_templates.v2.tsv", level="warn",
     logfile::MayBeString=nothing, connect=false, nconn=1)
     async = false
     
@@ -37,7 +37,7 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
     address = repeat(address, nconn)
 
     if logfile === nothing
-        logger = Logging.ConsoleLogger(stderr,llevel)
+        logger = Logging.ConsoleLogger(stderr, llevel)
     else
         logger = LogRoller.RollingLogger(logfile::String, 10 * 1000000, 2, llevel);
     end
@@ -108,28 +108,28 @@ function chloe_svr(;refsdir = "reference_1116", address=[ADDRESS],
     end
 end
 
-svr_args = ArgParseSettings(prog="Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
+svr_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
 
 @add_arg_table! svr_args begin
     "--reference", "-r"
-        arg_type = String
-        default = "reference_1116"
-        dest_name = "refsdir"
-        metavar = "DIRECTORY"
-        help = "reference directory"
+    arg_type = String
+    default = "reference_1116"
+    dest_name = "refsdir"
+    metavar = "DIRECTORY"
+    help = "reference directory"
     "--template", "-t"
-        arg_type = String
-        default = "optimised_templates.v2.tsv"
-        metavar = "TSV"
-        dest_name = "template"
-        help = "template tsv"
+    arg_type = String
+    default = "optimised_templates.v2.tsv"
+    metavar = "TSV"
+    dest_name = "template"
+    help = "template tsv"
     "--address", "-a"
-        arg_type = String
-        default = []
-        help = "ZMQ address(es) to listen on or connect to"
-        action = :append_arg
+    arg_type = String
+    default = []
+    help = "ZMQ address(es) to listen on or connect to"
+    action = :append_arg
     "--logfile"
-        arg_type=String
+        arg_type = String
         metavar = "FILE"
         help = "log to file"
     "--level", "-l"
@@ -151,7 +151,7 @@ Run Chloe as a background ZMQ service
 """
 
 function svr_main() 
-    parsed_args = parse_args(ARGS, svr_args; as_symbols = true)
+    parsed_args = parse_args(ARGS, svr_args; as_symbols=true)
     # filter!(kv->kv.second ∉ (nothing, false), parsed_args)
     chloe_svr(;parsed_args...)
 end

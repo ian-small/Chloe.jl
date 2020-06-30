@@ -129,7 +129,7 @@ function readTemplates(file::String)::Tuple{Array{FeatureTemplate,1},Dict{String
             push!(templates, template)
         end
     end
-    return sort!(templates, by = x->x.path), StatsBase.countmap(gene_exons)
+    return sort!(templates, by=x -> x.path), StatsBase.countmap(gene_exons)
 end
 
 struct AnnotationArray
@@ -144,7 +144,7 @@ function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlo
         new_annotations = addOverlapBlocks(ref_featurearray.genome_id, feature, aligned_blocks)
         if !isempty(new_annotations)
             # pushed_features.annotations = cat(pushed_features.annotations, new_features, dims = 1)
-            annotations = cat(annotations, new_annotations, dims = 1)
+            annotations = cat(annotations, new_annotations, dims=1)
         end
     end
     return annotations
@@ -165,11 +165,11 @@ function fillFeatureStack(target_length::Int32, annotations::AnnotationArray,
     shadowstack::ShadowStack = fill(Int32(-1), target_length) # will be negative image of all stacks combined,
     # initialised to small negative number; acts as prior expectation for feature-finding
     for annotation in annotations.annotations
-        template_index = findfirst(x->x.path == annotation.path, templates)
+        template_index = findfirst(x -> x.path == annotation.path, templates)
         if template_index === nothing
             @error "Can't find template for $(annotation.path)"
         end
-        if isempty(stacks) || (index = findfirst(x->x.path == annotation.path, stacks)) === nothing
+        if isempty(stacks) || (index = findfirst(x -> x.path == annotation.path, stacks)) === nothing
             if template_index === nothing
                 error("need template index")
             end
@@ -305,7 +305,7 @@ function writeSFF(outfile::String, fstrand_features::FeatureArray, rstrand_featu
 end
 
 function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::AnnotationArray)::Int8
-    matching_annotations = findall(x->x.path == feat.path, annotations.annotations)
+    matching_annotations = findall(x -> x.path == feat.path, annotations.annotations)
     phases = Int8[]
     for annotation in annotations.annotations[matching_annotations]
         if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
@@ -339,7 +339,7 @@ end
 function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationArray, 
             target_length::Integer, coverages::Dict{String,Float32})::Tuple{Feature,Array{Int32},Array{Float32}}
     # grab all the matching features
-    matching_annotations = findall(x->x.path == feat.path, annotations.annotations)
+    matching_annotations = findall(x -> x.path == feat.path, annotations.annotations)
     isempty(matching_annotations) && return feat, [], []
     overlapping_annotations = []
     minstart = target_length
@@ -397,13 +397,13 @@ function groupFeaturesIntoGeneModels(features::FeatureArray)::AAFeature
         elseif getFeatureName(current_model[1]) == getFeatureName(feature)
             push!(current_model, feature)
         else
-            sort!(current_model, by = x->x.start)
+            sort!(current_model, by=x -> x.start)
             push!(gene_models, current_model)
             current_model = []
             push!(current_model, feature)
         end
     end
-    sort!(current_model, by = x->x.start)
+    sort!(current_model, by=x -> x.start)
     push!(gene_models, current_model)
     return gene_models
 end
@@ -635,8 +635,8 @@ function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, stacks::Array{
     # feat1 shoud be before feat2
     range_to_test = min(feat1.start + feat1.length - 1, feat2.start):max(feat1.start + feat1.length - 1, feat2.start)
 
-    feat1_stack = stacks[findfirst(x->x.path == feat1.path, stacks)]
-    feat2_stack = stacks[findfirst(x->x.path == feat2.path, stacks)]
+    feat1_stack = stacks[findfirst(x -> x.path == feat1.path, stacks)]
+    feat2_stack = stacks[findfirst(x -> x.path == feat2.path, stacks)]
     score = sum(feat2_stack.stack[range_to_test]) - sum(feat1_stack.stack[range_to_test])
     maxscore = score
     fulcrum = first(range_to_test) - 1
@@ -661,7 +661,7 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
     for model in gene_models
         isempty(model) && continue
         # sort features in model by mid-point to avoid cases where long intron overlaps short exon
-        sort!(model, by = f->f.start + f.length / 2)
+        sort!(model, by=f -> f.start + f.length / 2)
         # @debug "model"  model
         last_exon = last(model)
         # if CDS, find phase, stop codon and set feature.length
@@ -770,7 +770,7 @@ function writeModelToSFF(outfile::IO, model::AFeature, model_id::String,
     gene_length = last(model).start + last(model).length - first(model).start
     gene_length <= 0 && return
     for f in model
-        stack = feature_stacks[findfirst(x->x.path == f.path, feature_stacks)]
+        stack = feature_stacks[findfirst(x -> x.path == f.path, feature_stacks)]
         depth, coverage = getDepthAndCoverage(stack, f.start, f.length)
         depth == 0 && continue
         coverage == 0 && continue
@@ -840,7 +840,7 @@ function writeSFF(outfile::Union{String,IO}, id::String,
                 gene_exons::Dict{String,Int32},
                 fstrand_feature_stacks::AFeatureStack, 
                 rstrand_feature_stacks::AFeatureStack, 
-                targetloopf::DNAString, targetloopr::DNAString, ir::MaybeIR = nothing)
+                targetloopf::DNAString, targetloopr::DNAString, ir::MaybeIR=nothing)
 
     maxlengths = calc_maxlengths(fstrand_models, rstrand_models)
 

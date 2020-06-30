@@ -39,19 +39,19 @@ function create_responder(apispecs::Array{Function}, addr::String, ctx::ZMQ.Cont
     api
 end
 
-function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
-    template = "optimised_templates.v2.tsv", level = "warn", workers = 3,
-    logendpoint::MayBeString = nothing)
+function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
+    template="optimised_templates.v2.tsv", level="warn", workers=3,
+    logendpoint::MayBeString=nothing)
 
-    procs = addprocs(workers; topology = :master_worker)
+    procs = addprocs(workers; topology=:master_worker)
     # sic! src/....
     @everywhere procs include("src/annotate_genomes.jl")
     @everywhere procs include("src/ZMQLogger.jl")
     # can't use rolling logger for procs because of file contentsion
     for p in procs
-        @spawnat p set_global_logger(logendpoint, level; topic = "annotator")
+        @spawnat p set_global_logger(logendpoint, level; topic="annotator")
     end
-    set_global_logger(logendpoint, level; topic = "annotator")
+    set_global_logger(logendpoint, level; topic="annotator")
     
     machine = gethostname()
     reference = readReferences(refsdir, template)
@@ -112,7 +112,7 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
     function cleanup()
         close(ctx)
         try
-            rmprocs(procs, waitfor = 20)
+            rmprocs(procs, waitfor=20)
         catch
         end
     end
@@ -133,7 +133,7 @@ function chloe_distributed(;refsdir = "reference_1116", address = ADDRESS,
 end
 
 function args()
-    distributed_args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
+    distributed_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
 
     @add_arg_table! distributed_args begin
         "--reference", "-r"
@@ -176,7 +176,7 @@ function args()
     Requires a ZMQ DEALER/ROUTER to connect to unless `--broker` specifies
     an endpoint in which case it runs its own broker.
     """
-    parse_args(ARGS, distributed_args; as_symbols = true)
+    parse_args(ARGS, distributed_args; as_symbols=true)
 
 end
 
@@ -189,8 +189,8 @@ function run_broker(worker, client)
     end
     cmd = `$julia -q --startup-file=no "$src/broker.jl" --worker=$worker --client=$client`
     # wait = false means stdout,stderr are connected to /dev/null
-    task = run(cmd; wait = false)
-    atexit(()->kill(task))
+    task = run(cmd; wait=false)
+    atexit(() -> kill(task))
     task
     # open(pipeline(cmd))
 end
@@ -198,7 +198,7 @@ end
 function run_broker2(worker, client)
     # ugh! `@spawnat :any annotate...` will block on this process... which
     # will never return.
-    procs = addprocs(1; topology = :master_worker)
+    procs = addprocs(1; topology=:master_worker)
     @everywhere procs include("src/broker.jl")
     @async fetch(@spawnat procs[1] run_broker(worker, client))
 end

@@ -18,7 +18,7 @@ function worker(async)
         JuliaWebAPI.create_responder([
                 (ping, false)
 
-            ], "inproc://workers", false,  "chloe"); async = async
+            ], "inproc://workers", false,  "chloe"); async=async
         )
     @info "end worker"
 end
@@ -27,7 +27,7 @@ function worker2(name)
     api = APIResponder(InProcTransport(Symbol(name)), DictMsgFormat(), "chloe", false)
     register(api, ping)
     process(
-        api;async = true
+        api;async=true
     )
 end
 function invoker(name)
