@@ -121,6 +121,7 @@ def remote_ssh(
         t.start()
 
     if sleep:
+        # maybe need router to startup...
         Sleep(sleep)
     c = Connection(ssh_connection)  # entry in ~/.ssh/config
 
