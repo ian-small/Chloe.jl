@@ -89,7 +89,7 @@ function writeGFF3(outfile, genemodel::FeatureArray)
     end
     write(outfile, "###\n")
 end
-function writeallGFF3(;sff_files=String[])
+function writeallGFF3(;sff_files=String[], directory=Nothing)
     for infile in sff_files
         fstrand_features, rstrand_features = readFeatures(infile)
         # for each strand
@@ -110,6 +110,9 @@ function writeallGFF3(;sff_files=String[])
 
         # write models in GFF3 format
         fname = fstrand_features.genome_id * ".gff3";
+        if directory !== Nothing
+            fname = joinpath(directory, fname)
+        end
         @info "writing gff3: $fname"
         open(fname, "w") do outfile
             write(outfile, "##gff-version 3.2.1\n")

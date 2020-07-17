@@ -43,7 +43,10 @@ end
         nargs = '+'
         required = true
         action = :store_arg
-        help = "sff files to process"   
+        help = "sff files to process" 
+        "--directory", "-d"
+        arg_type = String
+        help = "output directory" 
 end
 
 @add_arg_table! cmd_args["suffix"]  begin
