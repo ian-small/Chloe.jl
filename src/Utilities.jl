@@ -35,7 +35,7 @@ end
 
 function maybe_gzread(f::Function, filename::String)
     if endswith(filename, ".gz")
-        open(z->z |> GzipDecompressorStream |> f, filename)
+        open(z -> z |> GzipDecompressorStream |> f, filename)
     else
         open(f, filename)
     end
@@ -52,7 +52,7 @@ function maybe_gzwrite(f::Function, filename::String)
     end
 
     if endswith(filename, ".gz")
-        open(fp->gzcompress(f, fp), filename, "w")
+        open(fp -> gzcompress(f, fp), filename, "w")
     else
         open(f, filename, "w")
     end
@@ -90,7 +90,7 @@ const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G',
                   'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
     
 function revComp(dna::AbstractString)::AbstractString # where {T <: AbstractString}
-    reverse(map(x->get(COMP, x, 'N'), dna))
+    reverse(map(x -> get(COMP, x, 'N'), dna))
 end
 
 function frameCounter(base::T, addition::T) where {T <: Integer}
@@ -118,25 +118,36 @@ function rangesOverlap(start1::T, length1::T, start2::T, length2::T)::Bool where
 end
 
 # wraps to genome length
+# function genome_wrap(genome_length::T, position::T)::T where {T <: Integer}
+#     0 < position <= genome_length && return position
+#     position <= 0 && return genome_length + position
+#     position > genome_length && return position - genome_length
+# end
+
 function genome_wrap(genome_length::T, position::T)::T where {T <: Integer}
     0 < position <= genome_length && return position
-    position <= 0 && return genome_length + position
-    position > genome_length && return position - genome_length
+    while position <= 0
+        position = position + genome_length
+    end
+    while position > genome_length
+        position = position - genome_length
+    end
+    position
 end
 
 # wraps to loop length, i.e. allows position to exceed genome length
-function loop_wrap(genome_length::T, position::T)::T where {T <: Integer}
-    0 < position <= genome_length + genome_length - 1 && return position
-    position <= 0 && return genome_length + position
-    return position - genome_length
-end
+# function loop_wrap(genome_length::T, position::T)::T where {T <: Integer}
+#     0 < position <= genome_length + genome_length - 1 && return position
+#     position <= 0 && return genome_length + position
+#     return position - genome_length
+# end
 
 # wraps range within genome loop
 function range_wrap(genome_length::T, range::UnitRange{T})::UnitRange{T} where {T <: Integer}
     @assert range.start <= range.stop
     loop_length = genome_length + genome_length - 1
     # if start of range is negative, move range to end of genome
-        if range.start <= 0
+    if range.start <= 0
         lengthminus1 = range.stop - range.start
         range.start = genome_length + range.start
         range.stop = range.start + lengthminus1

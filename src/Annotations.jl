@@ -278,31 +278,31 @@ function getModelID!(model_ids::Dict{String,Int32}, model::AFeature)
     return model_id
 end
 
-function writeSFF(outfile::String, fstrand_features::FeatureArray, rstrand_features::FeatureArray)
-    open(outfile, "w") do outfile
-        write(outfile, fstrand_features.genome_id, "\t", string(fstrand_features.genome_length), "\n")
-        for f in fstrand_features.features
-            write(outfile, f.path)
-            write(outfile, "\t")
-            write(outfile, fstrand_features.strand)
-            write(outfile, "\t")
-            write(outfile, string(f.start))
-            write(outfile, "\t")
-            write(outfile, string(f.length))
-            write(outfile, "\n")
-        end
-        for f in rstrand_features.features
-            write(outfile, f.path)
-            write(outfile, "\t")
-            write(outfile, rstrand_features.strand)
-            write(outfile, "\t")
-            write(outfile, string(f.start))
-            write(outfile, "\t")
-            write(outfile, string(f.length))
-            write(outfile, "\n")
-        end
-    end
-end
+# function writeSFF(outfile::String, fstrand_features::FeatureArray, rstrand_features::FeatureArray)
+#     open(outfile, "w") do outfile
+#         write(outfile, fstrand_features.genome_id, "\t", string(fstrand_features.genome_length), "\n")
+#         for f in fstrand_features.features
+#             write(outfile, f.path)
+#             write(outfile, "\t")
+#             write(outfile, fstrand_features.strand)
+#             write(outfile, "\t")
+#             write(outfile, string(f.start))
+#             write(outfile, "\t")
+#             write(outfile, string(f.length))
+#             write(outfile, "\n")
+#         end
+#         for f in rstrand_features.features
+#             write(outfile, f.path)
+#             write(outfile, "\t")
+#             write(outfile, rstrand_features.strand)
+#             write(outfile, "\t")
+#             write(outfile, string(f.start))
+#             write(outfile, "\t")
+#             write(outfile, string(f.length))
+#             write(outfile, "\n")
+#         end
+#     end
+# end
 
 function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::AnnotationArray)::Int8
     matching_annotations = findall(x -> x.path == feat.path, annotations.annotations)
@@ -841,6 +841,12 @@ function writeSFF(outfile::Union{String,IO}, id::String,
                 fstrand_feature_stacks::AFeatureStack, 
                 rstrand_feature_stacks::AFeatureStack, 
                 targetloopf::DNAString, targetloopr::DNAString, ir::MaybeIR=nothing)
+
+    n = length(fstrand_feature_stacks)
+    if n == 0
+        @warn "$(id): zero length feature stack!"
+        return
+    end
 
     maxlengths = calc_maxlengths(fstrand_models, rstrand_models)
 
