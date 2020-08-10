@@ -415,8 +415,13 @@ function translateFeature(genome::DNAString, feat::Feature)
     peptide = Array{Char}(undef, fld(feat.length, 3))
 
     aa = 0
+    fend = feat.start + feat.length - 3
+    if fend > length(genome) - 3
+        fend = length(genome) - 3
+        @warn "translateFeature: feature points past genome"
+    end
 
-    for i = (feat.start + feat.phase):3:feat.start + feat.length - 3
+    for i = (feat.start + feat.phase):3:fend
         aa += 1
         peptide[aa] = get(genetic_code, SubString(genome, i, i + 2), 'X')
     end
@@ -589,7 +594,12 @@ function setLongestORF!(feat::Feature, genome_length::Int32, targetloop::DNAStri
     zero, one, two, three = Int32(0), Int32(1), Int32(2), Int32(3)
     translation_start = feat.start
     translation_stop = translation_start + two
-    for nt = translation_start + feat.phase:three:feat.start + feat.length - three
+    fend = feat.start + feat.length - three
+    if  fend > genome_length - three
+        fend = genome_length - three
+        @warn "setLongestORF: feature points past genome"
+    end
+    for nt = translation_start + feat.phase:three:fend
         translation_stop = nt + two
         codon = SubString(targetloop, nt, translation_stop)
         if isStopCodon(codon, false)
