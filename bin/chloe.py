@@ -95,7 +95,7 @@ def cli():
     type=click.Choice(["info", "warn", "debug", "error"]),
 )
 @click.option("--julia-dir", help="where julia (directory) is located on server")
-@click.option("--chloe-repo", default="chloe", help="where chloe git repo is on server")
+@click.option("--chloe-repo", default="annotator", help="where chloe git repo is on server")
 @click.argument("ssh_connection")
 def remote_ssh(
     ssh_connection, remote, local, workers, level, sleep, router, julia_dir, chloe_repo
