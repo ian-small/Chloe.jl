@@ -92,7 +92,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     end
 
     function ping()
-        return "OK version=$VERSION git=$git threads=$nthreads procs=$workers on $machine"
+        return "OK version=$VERSION git=$git threads=$nthreads workers=$workers on $machine"
     end
 
     # `bin/chloe.py terminate` uses this to find out how many calls of :terminate
