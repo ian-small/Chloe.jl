@@ -22,6 +22,8 @@ julia chloe.jl annotate testfa/*.fa
 
 Will create `.sff` files in the testfa directory.
 
+This annotator is available online at: https://chloe.plantenergy.edu.au
+
 ## Installing dependencies
 
 There is a `Project.toml` file that contains all the project
