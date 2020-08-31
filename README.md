@@ -10,12 +10,51 @@ julia chloe.jl annotate --help
 
 (See installing dependencies below)
 
+For example:
+
+```bash
+julia chloe.jl annotate testfa/*.fa
+```
+
+Will create `.sff` files in the testfa directory.
+
+## Installing dependencies
+
+There is a `Project.toml` file that contains all the project
+dependencies... here I think is what you are supposed to do:
+
+
+Start julia -- in this directory -- and type `]` then type:
+
+```
+pkg> activate .
+pkg> instantiate
+pkg> status
+```
+
+Unfortunately to run Chloe from the command line this doesn't work
+(or it does "work" but won't help you to run Chloe from the command line).
+
+You need to get the dependencies into the main julia "package"
+(in `~/.julia/environments/v1.4/Project.toml`). So you will just have
+to run a julia REPL like above -- but don't "activate" -- just
+`add CodecZlib ArgParse # etc` manually (How annoying is this!).
+
+Check the `Project.toml` file first but cut'n'paste the following into the julia
+package prompt:
+
+```julia
+pkg> add ArgParse Dates CodecZlib JLD JuliaWebAPI LogRoller Printf
+pkg> add Logging Printf StatsBase Crayons JSON ZeroMQ_jll ZMQ UUIDs
+```
+
 ## Chloë Server
 
 Running the chloe server. In a terminal type:
 
 ```bash
-JULIA_NUM_THREADS=8 julia src/chloe_distributed.jl --level=info --workers=4 --broker=ipc:///tmp/chloe-client
+JULIA_NUM_THREADS=8 julia src/chloe_distributed.jl --level=info --workers=4 \
+     --broker=ipc:///tmp/chloe-client
 ```
 (Julia refuses to use more threads that the number of CPUs on your machine:
 `Sys.CPU_THREADS` or `python -c 'import multiprocessing as m; print(m.cpu_count())'`)
@@ -56,34 +95,6 @@ to the same DEALER.
 *or* specify `--broker=URL` to `src/chloe_distrbuted.jl`. No
 python required.
 
-## Installing dependencies
-
-There is a `Project.toml` file that contains all the project
-dependencies... here I think is what you are supposed to do:
-
-
-Start julia -- in this directory -- and type `]` then type:
-
-```
-pkg> activate .
-pkg> instantiate
-pkg> status
-```
-
-Unfortunately to run Chloe from the command line this doesn't work
-(or it does "work" but won't help you to run Chloe from the command line).
-
-You need to get the dependencies into the main julia "package"
-(in `~/.julia/environments/v1.4/Project.toml`). So you will just have
-to run a julia REPL like above -- but don't "activate" -- just
-`add CodecZlib ArgParse # etc` manually (How annoying is this!).
-
-Check the `Project.toml` file first but cut'n'paste the following into the julia
-package prompt:
-
-```julia
-pkg> add ArgParse Dates CodecZlib JLD JuliaWebAPI LogRoller Logging Printf StatsBase Crayons JSON ZeroMQ_jll Printf ZMQ UUIDs
-```
 
 ## Distributed
 
@@ -175,3 +186,9 @@ Possibly useful REPL packages
 * add OhMyREPL: pretty print code
 * `@code_warntype f()` check type system
 * add ProfileView: https://github.com/timholy/ProfileView.jl
+
+
+### Authors
+
+* Ian Small: ian.small@uwa.edu.au
+* Ian Castleden: ian.castleden@uwa.edu.au
