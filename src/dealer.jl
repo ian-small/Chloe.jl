@@ -1,5 +1,5 @@
-using ZMQ
-using ZeroMQ_jll
+import ZMQ
+import ZeroMQ_jll
 using JuliaWebAPI
 
 # doesn't seem to work!
@@ -11,42 +11,64 @@ using JuliaWebAPI
 # I need a second process to run the DEALER/ROUTER ... see bin/broker.py
 
 function ping()
-    return "OK $(Threads.threadid())"
+    return "OK $(current_task())"
 end
-function worker()
-    bind = false
+function worker(async)
     process(
         JuliaWebAPI.create_responder([
                 (ping, false)
 
-            ], "inproc://workers", bind,  "chloe"); async = false
+            ], "inproc://workers", false,  "chloe"); async=async
         )
-    println("end worker")
+    @info "end worker"
 end
 
+function worker2(name)
+    api = APIResponder(InProcTransport(Symbol(name)), DictMsgFormat(), "chloe", false)
+    register(api, ping)
+    process(
+        api;async=true
+    )
+end
+function invoker(name)
+    APIInvoker(InProcTransport(Symbol(name)), DictMsgFormat())
+end
 
-function start_broker(url::String)
+function multi()
+    channels = Array{Tuple{APIInvoker{InProcTransport,DictMsgFormat},APIResponder{InProcTransport,DictMsgFormat}}}(undef, 0)
+    for i in 1:5
+        name = "worker$i"
+        push!(channels, (invoker(name), worker2(name)))
+    end
 
-    ctx = Context()
-    router = Socket(ctx, ROUTER)
-    dealer = Socket(ctx, DEALER)
+end
 
-    ZMQ.bind(router, url)
-    ZMQ.bind(dealer, "inproc://workers")
+function start_broker(router_url::String, dealer_url::String)
 
-    @info "listening on $(url)"
+    # ctx = Context()
+    router = ZMQ.Socket(ZMQ.ROUTER)
+    dealer = ZMQ.Socket(ZMQ.DEALER)
+
+    ZMQ.bind(router, router_url)
+    ZMQ.bind(dealer, dealer_url)
+
     # missing: ZMQ.proxy(router, dealer)
-    rc = ccall((:zmq_proxy, libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
-    println("done $(rc)")
+    rc = ccall((:zmq_proxy, ZeroMQ_jll.libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
+    @info "done proxy $(rc)"
 
     # control never comes here... clean up anyway.
     ZMQ.close(router)
     ZMQ.close(dealer)
-    ZMQ.close(ctx)
+    # ZMQ.close(ctx)
 end
 
-funcs = [worker, worker, ()->start_broker("tcp://127.0.0.1:9999") ]
-
-Threads.@threads for f in funcs
-    f()
+funcs = [worker, worker]
+function workers()
+    @sync for f in funcs
+        @async f()
+    end
 end
+
+
+
+start_broker("ipc:///tmp/chloe-client", "tcp://127.0.0.1:9467")

@@ -1,16 +1,16 @@
 
-using ArgParse
-using JuliaWebAPI
+import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
+import JuliaWebAPI: APIInvoker, apicall
 
-const ADDRESS = "tcp://127.0.0.1:9999"
+const ADDRESS = "ipc:///tmp/chloe-client"
  
-function chloe_client(;fasta = String[], address = ADDRESS, output::String)
+function chloe_client(;fasta=String[], address=ADDRESS, output::String)
     invoker = APIInvoker(address)
     res = apicall(invoker, "chloe", fasta[1], output)
     if res["code"] !== 200
         println("failed")
     else
-        println(".sff file: $(res["data"])")
+        println("result: $(res["data"])")
     end
 
 end
@@ -18,9 +18,9 @@ end
 
 # const julia_v07 = VERSION > v"0.7-"
 
-args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
+client_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
 
-@add_arg_table! args begin
+@add_arg_table! client_args begin
     "fasta"
         arg_type = String
         nargs = 1
@@ -33,21 +33,21 @@ args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into 
     "--address", "-a"
         arg_type = String
         default = ADDRESS
-        help = "ZMQ address to listen on"
+        help = "ZMQ address to connect to"
 
 end
 
-args.epilog = """
+client_args.epilog = """
 Annotate a fasta file unsing Chloe server
 """
 
-function real_main() 
-    parsed_args = parse_args(ARGS, args; as_symbols = true)
+function client_main() 
+    parsed_args = parse_args(ARGS, client_args; as_symbols=true)
     # filter!(kv->kv.second ∉ (nothing, false), parsed_args)
     chloe_client(;parsed_args...)
 end
 
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    real_main()
+    client_main()
 end

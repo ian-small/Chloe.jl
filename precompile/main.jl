@@ -6,7 +6,6 @@ const DEBUG = get(ENV, "DEBUG", "false") == "true"
  
 function main(;refsdir = "reference_1116", fasta_files = String[], verbose = false,
     template = "optimised_templates.v2.tsv")
-    # println("refs: " * refsdir)
     for f in fasta_files
         println("fasta: " * f)
     end

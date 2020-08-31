@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 import zmq
+from zmq.devices import ThreadDevice
 import click
 
-# url_worker = "tcp://127.0.0.1:9999"
-URL_WORKER = "ipc:///tmp/chloe-worker"
+URL_WORKER = "tcp://127.0.0.1:9467"
+# URL_WORKER = "ipc:///tmp/chloe-worker"
 # url_client = "inproc://worker"
 # url_client = "tcp://127.0.0.1:9998"
 URL_CLIENT = "ipc:///tmp/chloe-client"
@@ -28,6 +29,16 @@ def proxy(url_worker, url_client):
     clients.close()
     workers.close()
     context.term()
+
+
+def device(url_worker, url_client):
+    # pylint: disable=no-member
+    td = ThreadDevice(zmq.QUEUE, in_type=zmq.ROUTER, out_type=zmq.DEALER)
+    td.bind_in(url_client)
+    td.bind_out(url_worker)
+    td.setsockopt_in(zmq.IDENTITY, 'ROUTER')
+    td.setsockopt_out(zmq.IDENTITY, 'DEALER')
+    td.start()
 
 
 @click.group()

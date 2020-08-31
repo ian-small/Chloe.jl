@@ -1,7 +1,7 @@
-include("Utilities.jl")
-include("Annotations.jl")
+# include("Utilities.jl")
+# include("Annotations.jl")
 
-function mergeAdjacentFeaturesinModel!(genome_id, genome_length, strand, model::Array{Feature,1})
+function mergeAdjacentFeaturesinModel!(genome_id, genome_length, strand, model::AFeature)
     f1_pointer = 1
     f2_pointer = 2
     while f2_pointer <= length(model)
@@ -38,19 +38,20 @@ function writeGFF3(outfile, genemodel::FeatureArray)
         finish = start + length - 1
     end
     # gene
-    write(outfile, join([genemodel.genome,"Chloe","gene",start,finish], "\t"))
+    write(outfile, join([genemodel.genome_id,"Chloe","gene",start,finish], "\t"))
     write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", id, ";Name=", split(first(features).path, '/')[1], "\n")
     # RNA product
-    if getFeatureType(first(features)) == "CDS"
-        write(outfile, join([genemodel.genome,"Chloe","mRNA",start,finish], "\t"))
+    ft = getFeatureType(first(features))
+    if ft == "CDS"
+        write(outfile, join([genemodel.genome_id,"Chloe","mRNA",start,finish], "\t"))
         parent = id * ".mRNA"
         write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", parent, ";Parent=", id, "\n")
-    elseif getFeatureType(first(features)) == "rRNA"
-        write(outfile, join([genemodel.genome,"Chloe","rRNA",start,finish], "\t"))
+    elseif ft == "rRNA"
+        write(outfile, join([genemodel.genome_id,"Chloe","rRNA",start,finish], "\t"))
         parent = id * ".rRNA"
         write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", id, parent, ";Parent=", id, "\n")
-    elseif getFeatureType(first(features)) == "tRNA"
-        write(outfile, join([genemodel.genome,"Chloe","tRNA",start,finish], "\t"))
+    elseif ft == "tRNA"
+        write(outfile, join([genemodel.genome_id,"Chloe","tRNA",start,finish], "\t"))
         parent = id * ".tRNA"
         write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", parent, ";Parent=", id, "\n")
     end
@@ -64,7 +65,7 @@ function writeGFF3(outfile, genemodel::FeatureArray)
             finish = feature.start + feature.length - 1
             length = finish - start + 1
             phase = ifelse(type == "CDS", string(feature.phase), ".")
-            write(outfile, join([genemodel.genome,"Chloe",type,start,finish], "\t"))
+            write(outfile, join([genemodel.genome_id,"Chloe",type,start,finish], "\t"))
             write(outfile, "\t", ".", "\t", genemodel.strand, "\t", phase, "\t", "ID=", feature.path, ";Parent=", parent, "\n")
         end
     else
@@ -82,36 +83,42 @@ function writeGFF3(outfile, genemodel::FeatureArray)
             end
             finish = start + length - 1
             phase = ifelse(type == "CDS", string(feature.phase), ".")
-            write(outfile, join([genemodel.genome,"Chloe",type,start,finish], "\t"))
+            write(outfile, join([genemodel.genome_id,"Chloe",type,start,finish], "\t"))
             write(outfile, "\t", ".", "\t", genemodel.strand, "\t", phase, "\t", "ID=", feature.path, ";Parent=", parent, "\n")
         end
     end
     write(outfile, "###\n")
 end
+function writeallGFF3(;sff_files=String[], directory=Nothing)
+    for infile in sff_files
+        fstrand_features, rstrand_features = readFeatures(infile)
+        # for each strand
+        # group into gene models
+        fstrand_models = groupFeaturesIntoGeneModels(fstrand_features)
+        models_as_feature_arrays = Array{FeatureArray}(undef, 0)
+        for model in fstrand_models
+            push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome_id, fstrand_features.genome_length, '+', model))
+        end
 
-for infile in ARGS
-    fstrand_features, rstrand_features = readFeatures(infile)
-    # for each strand
-    # group into gene models
-    fstrand_models = groupFeaturesIntoGeneModels(fstrand_features)
-    models_as_feature_arrays = Array{FeatureArray}(undef, 0)
-    for model in fstrand_models
-        push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome, fstrand_features.genome_length, '+', model))
-    end
+        rstrand_models = groupFeaturesIntoGeneModels(rstrand_features)
+        for model in rstrand_models
+            push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome_id, fstrand_features.genome_length, '-', model))
+        end
 
-    rstrand_models = groupFeaturesIntoGeneModels(rstrand_features)
-    for model in rstrand_models
-        push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome, fstrand_features.genome_length, '-', model))
-    end
+        # interleave gene models from both strands
+        sort!(models_as_feature_arrays, by=m -> m.features[1].start)
 
-    # interleave gene models from both strands
-    sort!(models_as_feature_arrays, by = m->m.features[1].start)
-
-    # write models in GFF3 format
-    open(fstrand_features.genome * ".gff3", "w") do outfile
-        write(outfile, "##gff-version 3.2.1\n")
-        for model in models_as_feature_arrays
-            writeGFF3(outfile, model)
+        # write models in GFF3 format
+        fname = fstrand_features.genome_id * ".gff3";
+        if directory !== Nothing
+            fname = joinpath(directory, fname)
+        end
+        @info "writing gff3: $fname"
+        open(fname, "w") do outfile
+            write(outfile, "##gff-version 3.2.1\n")
+            for model in models_as_feature_arrays
+                writeGFF3(outfile, model)
+            end
         end
     end
 end

@@ -1,11 +1,14 @@
+SuffixArray = Array{Int32,1}
+DNAString = String
+
 struct GenomeWithSAs
     id::String
     sequence::String
-    forwardSA::Vector{Int32}
-    reverseSA::Vector{Int32}
+    forwardSA::SuffixArray
+    reverseSA::SuffixArray
 end
 
-function makeSuffixArray(source, circular)
+function makeSuffixArray(source::DNAString, circular::Bool)::SuffixArray
 
     if circular
 		last = Int((length(source) + 1) / 2)
@@ -18,17 +21,17 @@ function makeSuffixArray(source, circular)
         suffixes[offset] = SubString(source, offset)
     end
 
-	suffixArray = Array{Int32}(undef, last)
+	suffixArray = SuffixArray(undef, last)
     suffixArray = sortperm!(suffixArray, suffixes)
 
     return suffixArray
 
 end
 
-function makeSuffixArrayT(seqloop) # assumes seqloop is circular
+function makeSuffixArrayT(seqloop::DNAString)::SuffixArray # assumes seqloop is circular
 
-	last::Int = trunc(Int32, cld((length(seqloop) + 1) / 2, 3))
-	suffixes = Vector{SubString}(undef, last * 3)
+	last::Int32 = trunc(Int32, cld((length(seqloop) + 1) / 2, 3))
+	suffixes = Array{SubString}(undef, last * 3)
 
 	frame = translateDNA(seqloop)
 	for offset = 1:last
@@ -47,25 +50,25 @@ function makeSuffixArrayT(seqloop) # assumes seqloop is circular
 	return makeSuffixArray(suffixes)
 end
 
-function makeSuffixArray(suffixes::Vector{SubString})
+function makeSuffixArray(suffixes::Array{SubString})::SuffixArray
 
-	suffixArray = Array{Int32}(undef, length(suffixes))
+    suffixArray = SuffixArray(undef, length(suffixes))
     suffixArray = sortperm!(suffixArray, suffixes)
 
     return suffixArray
 
 end
 
-function makeSuffixArrayRanksArray(SA)
+function makeSuffixArrayRanksArray(SA::SuffixArray)::SuffixArray
     len = length(SA)
-    RA = Array{Int32}(undef, len)
+    RA = SuffixArray(undef, len)
     for i = 1:len
         RA[SA[i]] = i
     end
     return RA
 end
 
-using JLD
+import JLD: jldopen
 
 function writeGenomeWithSAs(filename::String, genome::GenomeWithSAs)
     jldopen(filename, "w") do file
@@ -73,7 +76,7 @@ function writeGenomeWithSAs(filename::String, genome::GenomeWithSAs)
     end
 end
 
-function readGenomeWithSAs(filename::String, id::String)
+function readGenomeWithSAs(filename::String, id::String)::GenomeWithSAs
     jldopen(filename, "r") do file
         return read(file, id)
     end

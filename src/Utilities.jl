@@ -1,7 +1,7 @@
 
-using GZip
+import CodecZlib: GzipDecompressorStream, GzipCompressorStream
 
-function gbff2fasta(infile)
+function gbff2fasta(infile::String)
     open(infile) do f
         while !eof(f)
             line = readline(f)
@@ -31,48 +31,69 @@ function gbff2fasta(infile)
             end
         end
     end
-    return
 end
 
-function maybe_gzopen(f::Function, filename, args...; kwargs...)
+function maybe_gzread(f::Function, filename::String)
     if endswith(filename, ".gz")
-        GZip.open(f, filename, args...; kwargs...)
+        open(z -> z |> GzipDecompressorStream |> f, filename)
     else
-        open(f, filename, args...; kwargs...)
+        open(f, filename)
     end
 end
-function readFasta(file)
-    id = ""
-    seqs = Array{String}(undef, 0)
+function maybe_gzwrite(f::Function, filename::String)
+    
+    function gzcompress(f::Function, fp::IO)
+        o = GzipCompressorStream(fp)
+        try
+            f(o)
+        finally
+            close(o)
+        end
+    end
 
-    maybe_gzopen(file) do f
-        header = strip(readline(f))
-        if !startswith(header, ">")
-            error("expecting '>' as start of fasta header found: \"$(header)\"")
-        end
-        id = split(header, " ")[1][2:end]
-        for (idx, line) in enumerate(eachline(f))
-            line = uppercase(strip(line))
-            if length(line) === 0
-                continue
-            end
-            # see https://www.bioinformatics.org/sms/iupac.html
-            if match(r"^[ACTGRYNXSWKMBDHV.-]+$", line) === nothing
-                error("expecting nucleotide sequence found[$(idx + 1)]: \"$(line)\"")
-            end
-            push!(seqs, line)
-        end
-        return id, join(seqs, "")
+    if endswith(filename, ".gz")
+        open(fp -> gzcompress(f, fp), filename, "w")
+    else
+        open(f, filename, "w")
     end
 end
+function readFasta(fasta::String)::Tuple{String,String}
+    if !isfile(fasta)
+        error("$(fasta): not a file!")
+    end
+    maybe_gzread(fasta) do io
+        readFasta(io)
+    end
+end
+function readFasta(f::IO)::Tuple{String,String}
+    seqs = Array{String}(undef, 0)
+    header = strip(readline(f))
+    if !startswith(header, ">")
+        error("expecting '>' as start of fasta header found: \"$(header)\"")
+    end
+    nc_id = split(header, " ")[1][2:end]
+    for (idx, line) in enumerate(eachline(f))
+        line = uppercase(strip(line))
+        if length(line) === 0
+            continue
+        end
+        # see https://www.bioinformatics.org/sms/iupac.html
+        if match(r"^[ACTGRYNXSWKMBDHV.-]+$", line) === nothing
+            error("expecting nucleotide sequence found[$(idx + 1)]: \"$(line)\"")
+        end
+        push!(seqs, line)
+    end
+    return string(nc_id), join(seqs, "")
+end
+
 const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 
                   'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
     
-function revComp(dna)
-    reverse(map(x->get(COMP, x, 'N'), dna))
+function revComp(dna::AbstractString)::AbstractString # where {T <: AbstractString}
+    reverse(map(x -> get(COMP, x, 'N'), dna))
 end
 
-function frameCounter(base::Integer, addition::Integer)
+function frameCounter(base::T, addition::T) where {T <: Integer}
     result = (base - addition) % 3
     if result <= 0
         result = 3 + result
@@ -80,7 +101,7 @@ function frameCounter(base::Integer, addition::Integer)
     return result
 end
 
-function phaseCounter(base::Integer, addition::Integer)
+function phaseCounter(base::Int8, addition::Int32)::Int8
     result = (base - addition) % 3
     if result < 0
         result = 3 + result
@@ -88,7 +109,7 @@ function phaseCounter(base::Integer, addition::Integer)
     return result
 end
 
-function rangesOverlap(start1::Integer, length1::Integer, start2::Integer, length2::Integer)
+function rangesOverlap(start1::T, length1::T, start2::T, length2::T)::Bool where {T <: Integer}
     if start1 >= start2 + length2 || start2 >= start1 + length1
         return false
     else
@@ -97,21 +118,32 @@ function rangesOverlap(start1::Integer, length1::Integer, start2::Integer, lengt
 end
 
 # wraps to genome length
-function genome_wrap(genome_length::Integer, position::Integer)
+# function genome_wrap(genome_length::T, position::T)::T where {T <: Integer}
+#     0 < position <= genome_length && return position
+#     position <= 0 && return genome_length + position
+#     position > genome_length && return position - genome_length
+# end
+
+function genome_wrap(genome_length::T, position::T)::T where {T <: Integer}
     0 < position <= genome_length && return position
-    position <= 0 && return genome_length + position
-    position > genome_length && return position - genome_length
+    while position <= 0
+        position = position + genome_length
+    end
+    while position > genome_length
+        position = position - genome_length
+    end
+    position
 end
 
 # wraps to loop length, i.e. allows position to exceed genome length
-function loop_wrap(genome_length::Integer, position::Integer)
-    0 < position <= genome_length + genome_length - 1 && return position
-    position <= 0 && return genome_length + position
-    return position - genome_length
-end
+# function loop_wrap(genome_length::T, position::T)::T where {T <: Integer}
+#     0 < position <= genome_length + genome_length - 1 && return position
+#     position <= 0 && return genome_length + position
+#     return position - genome_length
+# end
 
 # wraps range within genome loop
-function range_wrap(genome_length::Integer, range::UnitRange{Integer})
+function range_wrap(genome_length::T, range::UnitRange{T})::UnitRange{T} where {T <: Integer}
     @assert range.start <= range.stop
     loop_length = genome_length + genome_length - 1
     # if start of range is negative, move range to end of genome
@@ -135,7 +167,7 @@ function range_wrap(genome_length::Integer, range::UnitRange{Integer})
     return range::UnitRange{Integer}
 end
 
-function isStartCodon(codon::AbstractString, allow_editing::Bool, allow_GTG::Bool)
+function isStartCodon(codon::AbstractString, allow_editing::Bool, allow_GTG::Bool)::Bool
     codon == "ATG" && return true
     if allow_editing && codon == "ACG"
         return true
@@ -145,7 +177,7 @@ function isStartCodon(codon::AbstractString, allow_editing::Bool, allow_GTG::Boo
     return false
 end
 
-function isStopCodon(codon::AbstractString, allow_editing::Bool)
+function isStopCodon(codon::AbstractString, allow_editing::Bool)::Bool
     if codon in ["TAA","TAG","TGA"]
         return true
     elseif allow_editing && codon in ["CAA","CAG","CGA"]
@@ -154,8 +186,8 @@ function isStopCodon(codon::AbstractString, allow_editing::Bool)
     return false
 end
 
-const genetic_code = Dict{String,Char}("TTT" => 'F',"TTC" => 'F',
-    "TTA" => 'L',"TTG" => 'L',
+const genetic_code = Dict{String,Char}(
+    "TTT" => 'F',"TTC" => 'F',"TTA" => 'L',"TTG" => 'L',
     "CTT" => 'L',"CTC" => 'L',"CTA" => 'L',"CTG" => 'L',
     "ATT" => 'I',"ATC" => 'I',"ATA" => 'I',"ATG" => 'M',
     "GTT" => 'V',"GTC" => 'V',"GTA" => 'V',"GTG" => 'V',
@@ -172,7 +204,7 @@ const genetic_code = Dict{String,Char}("TTT" => 'F',"TTC" => 'F',
     "AGT" => 'S',"AGC" => 'S',"AGA" => 'R',"AGG" => 'R',
     "GGT" => 'G',"GGC" => 'G',"GGA" => 'G',"GGG" => 'G')
 
-function translateDNA(dna::AbstractString)
+function translateDNA(dna::AbstractString)::String
     peptide_length = fld(length(dna), 3)
     peptide = Array{Char}(undef, peptide_length)
     aa = 0
