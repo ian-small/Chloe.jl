@@ -36,7 +36,7 @@ code, data = ret["code"], ret["data"]
 @assert code === 200
 # actual filename written and total elapsed
 # time in ms to annotate
-fname, elapsed_ms = data["filename"], data["elapsed"]
+sff_fname, elapsed_ms = data["filename"], data["elapsed"]
 # to terminate the server
 apicall(i, ":terminate")
 ```
@@ -82,7 +82,7 @@ Check the `Project.toml` file first but cut'n'paste the following into the julia
 package prompt:
 
 ```julia
-pkg> add ArgParse Dates CodecZlib JLD JuliaWebAPI LogRoller Logging Printf StatsBase Crayons JSON ZeroMQ_jll Printf ZMQ
+pkg> add ArgParse Dates CodecZlib JLD JuliaWebAPI LogRoller Logging Printf StatsBase Crayons JSON ZeroMQ_jll Printf ZMQ UUIDs
 ```
 
 ## Distributed
@@ -156,7 +156,7 @@ code, data = ret["code"], ret["data"]
 sff = data["sff"] # sff file as a string
 ```
 
-### Notes:
+### Developer Notes:
 
 To stop julia vomiting unhelpful stacktraces when `^Ctrl-C`ing 
 run julia with `--handle-signals=no`. Don't know what it does

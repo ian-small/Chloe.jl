@@ -41,17 +41,17 @@ end
 
 function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     template="optimised_templates.v2.tsv", level="warn", workers=3,
-    logendpoint::MayBeString=nothing)
+    backend::MayBeString=nothing)
 
-    procs = addprocs(workers; topology=:master_worker)
+    procs = addprocs(workers) # ; topology=:master_worker)
     # sic! src/....
     @everywhere procs include("src/annotate_genomes.jl")
     @everywhere procs include("src/ZMQLogger.jl")
     # can't use rolling logger for procs because of file contentsion
     for p in procs
-        @spawnat p set_global_logger(logendpoint, level; topic="annotator")
+        @spawnat p set_global_logger(backend, level; topic="annotator")
     end
-    set_global_logger(logendpoint, level; topic="annotator")
+    set_global_logger(backend, level; topic="annotator")
     
     machine = gethostname()
     reference = readReferences(refsdir, template)
@@ -63,15 +63,15 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     @info "chloe version $VERSION (git: $git) threads=$nthreads on machine $machine"
     @info "connecting to $address"
 
-    function chloe(fasta::String, fname::MayBeString)
+    function chloe(fasta::String, fname::MayBeString, task_id::MayBeString=nothing)
         start = now()
-        filename, target_id = fetch(@spawnat :any annotate_one(reference, fasta, fname))
+        filename, target_id = fetch(@spawnat :any annotate_one_task(reference, fasta, fname, task_id))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
         return Dict("elapsed" => toms(elapsed), "filename" => filename, "ncid" => string(target_id))
     end
 
-    function annotate(fasta::String)
+    function annotate(fasta::String, task_id::MayBeString=nothing)
         start = now()
 
         if !startswith(fasta, '>')
@@ -83,7 +83,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
 
         input = IOContext(IOBuffer(fasta))
 
-        io, target_id = fetch(@spawnat :any annotate_one(reference, input))
+        io, target_id = fetch(@spawnat :any annotate_one_task(reference, input, task_id))
         sff = String(take!(io))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
@@ -116,7 +116,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
         catch
         end
     end
-    
+   
     atexit(cleanup)
 
     @sync for p in procs
@@ -128,8 +128,9 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
                     nconn,
                 ], address, ctx)
             )
-
     end
+    @info "done: annotator exiting....."
+
 end
 
 function args()
@@ -166,9 +167,9 @@ function args()
             arg_type = String
             metavar = "URL"
             help = "run the broker in the background"
-        "--logendpoint"
+        "--backend"
             arg_type = String
-            metavar = "ZMQ"
+            metavar = "URL"
             help = "log to zmq endpoint"
     end
     distributed_args.epilog = """

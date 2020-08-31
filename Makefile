@@ -9,3 +9,10 @@ run-chloe-broker:
 
 run-broker:
 	julia -q --startup-file=no src/broker.jl --worker=tcp://127.0.0.1:9467 --client=ipc:///tmp/chloe-client
+
+run-chloe-logger:
+	JULIA_NUM_THREADS=8 julia --color=yes src/chloe_distributed.jl -l info --workers=4 --address=tcp://127.0.0.1:9467 --broker=ipc:///tmp/chloe-client --backend=ipc:///tmp/chloe-logger
+
+run-chloe-backend:
+	JULIA_NUM_THREADS=8 julia --color=yes src/chloe_distributed.jl -l info --workers=4 --address=tcp://127.0.0.1:9467 --backend=ipc:///tmp/chloe-backend
+

@@ -4,7 +4,8 @@ include("SuffixArrays.jl")
 include("Alignments3.jl")
 include("Annotations.jl")
 
-import Dates: Time, Nanosecond
+# import Dates: Time, Nanosecond
+import Printf: @sprintf
 import JSON
 
 # const ReferenceOrganisms = Dict(
@@ -106,7 +107,7 @@ function readReferences(refsdir::String, templates::String)::Reference
         f_strand_features, r_strand_features = readFeatures(joinpath(refsdir, feature_file))
 
         ref_features[i] = FwdRev(f_strand_features, r_strand_features)
-        refsrc[i] = FwdRev(ref.first *  ":fwd", ref.first *  ":rev")
+        refsrc[i] = FwdRev(ref.first, ref.first)
 
 
     end
@@ -114,7 +115,8 @@ function readReferences(refsdir::String, templates::String)::Reference
     return Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons, ReferenceOrganisms)
 end
 
-const ns(td) = Time(Nanosecond(td))
+# const ns(td) = Time(Nanosecond(td))
+const ns(td) = @sprintf("%.3fs", td / 1e9)
 
 MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,AFeatureStack}
@@ -213,7 +215,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     
     t2 = time_ns()
 
-    @info "[$target_id] making suffix arrays: $(ns(t2 - t1))"
+    @info "[$target_id] made suffix arrays: $(ns(t2 - t1))"
 
     blocks_aligned_to_targetf = AAlignedBlocks(undef, num_refs)
     blocks_aligned_to_targetr = AAlignedBlocks(undef, num_refs)
@@ -223,7 +225,8 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
         refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
         ff_aligned_blocks, fr_aligned_blocks = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopf, target_saf, target_raf)
         
-        @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount].forward)] ($(ns(time_ns() - start))): " forward = blockCoverage(ff_aligned_blocks)  reverse = blockCoverage(fr_aligned_blocks)
+        # @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount].forward)] ($(ns(time_ns() - start))): " forward = blockCoverage(ff_aligned_blocks)  reverse = blockCoverage(fr_aligned_blocks)
+        @debug "[$target_id]+ aligned $(reference.refsrc[refcount].forward) $(ns(time_ns() - start))"
         # f_aligned_blocks contains matches between ref forward and target forward strands
 
         start = time_ns()
@@ -231,7 +234,9 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
         # use only forward
         # rr_aligned_blocks, rf_aligned_blocks = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
 
-        @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount].reverse)] ($(ns(time_ns() - start))): " forward = blockCoverage(rf_aligned_blocks)  reverse = blockCoverage(rr_aligned_blocks)
+        # @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount].reverse)] ($(ns(time_ns() - start))): " forward = blockCoverage(rf_aligned_blocks)  reverse = blockCoverage(rr_aligned_blocks)
+        @debug "[$target_id]- aligned $(reference.refsrc[refcount].reverse) $(ns(time_ns() - start))"
+
         # note cross ...
         blocks_aligned_to_targetf[refcount] = FwdRev(ff_aligned_blocks, rf_aligned_blocks)
         blocks_aligned_to_targetr[refcount] = FwdRev(rr_aligned_blocks, fr_aligned_blocks)
@@ -243,7 +248,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
 
     t3 = time_ns()
     
-    @info "[$target_id] aligning: ($(length(reference.refloops))) $(ns(t3 - t2))" 
+    @info "[$target_id] aligned: ($(length(reference.refloops))) $(ns(t3 - t2))" 
 
     coverages = Dict{String,Float32}()
     for (i, ref) in enumerate(reference.referenceOrganisms)
@@ -306,9 +311,29 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     return fname, target_id
 
 end
+
 function annotate_one(reference::Reference, fasta::Union{String,IO})
     annotate_one(reference, fasta, IOBuffer())
 end
+
+function annotate_one_task(reference::Reference, fasta::Union{String,IO}, task_id::MayBeString)
+    annotation_local_storage(TASK_KEY, task_id)
+    try
+        annotate_one(reference, fasta, IOBuffer())
+    finally
+        annotation_local_storage(TASK_KEY, nothing)
+    end
+end
+
+function annotate_one_task(reference::Reference, fasta::MayBeString, output::MayBeIO, task_id::MayBeString)
+    annotation_local_storage(TASK_KEY, task_id)
+    try
+        annotate_one(reference, fasta, output)
+    finally
+        annotation_local_storage(TASK_KEY, nothing)
+    end
+end
+
 function annotate(refsdir::String, templates::String, fa_files::Array{String}, output::MayBeString)
 
     reference = readReferences(refsdir, templates)

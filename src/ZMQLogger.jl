@@ -1,6 +1,23 @@
 import Logging
 import ZMQ
+using UUIDs: UUID
 
+const TASK_KEY = UUID("30c48ab6-eb66-4e00-8274-c879a8246cdb")
+
+ANNO_TASK = Dict{UUID,String}()
+
+function annotation_local_storage(key::UUID, value::MayBeString)
+    if value === nothing
+        delete!(ANNO_TASK, key)
+    else
+        ANNO_TASK[key] = value
+    end
+    nothing
+end
+
+function annotation_local_storage(key::UUID)::MayBeString
+    get(ANNO_TASK, key, nothing)
+end
 struct ZMQLogger <: Logging.AbstractLogger
     min_level::Logging.LogLevel
     lock::ReentrantLock
@@ -38,9 +55,16 @@ function Logging.handle_message(logger::ZMQLogger, level, message, _module, grou
         println(io, "\t> ", key, " = ", val)
     end
     msg = String(take!(buf))
-    prefix = (level == Logging.Warn ? "WARNING" : uppercase(string(level))) 
+    # prefix = (level == Logging.Warn ? "WARNING" : uppercase(string(level)))
+    prefix = uppercase(string(level))
     topic = length(logger.topic) > 0 ? "$(logger.topic).$prefix" : prefix
     lock(logger.lock) do
+
+        task_id = annotation_local_storage(TASK_KEY)
+        if task_id !== nothing
+            topic = "$(topic).$(task_id)"
+        end
+
         ZMQ.send(logger.socket, ZMQ.Message(topic); more=true)
         ZMQ.send(logger.socket, ZMQ.Message(msg); more=false)
     end
