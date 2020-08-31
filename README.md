@@ -1,6 +1,7 @@
-<img style="float:right; height:60px" 
-alt="Chloe"
-src="assets/logo-chloe-black.svg">
+
+<p align="right">
+    <img alt="Chloe" src="assets/logo-chloe-black.png">
+</p>
 
 # Chloë: Organelle Annotator
 
