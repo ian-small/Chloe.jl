@@ -145,7 +145,11 @@ Then on your puny laptop you can run something like:
 
 ```bash
 ssh you@bigserver -f -L 9467:127.0.0.1:9467 \
-    'cd /path/to/chloe-repo; JULIA_NUM_THREADS={BIGNUM} /path/to/julia src/chloe_distributed.jl -l info --workers=4 --address=ipc:///tmp/chloe-worker --broker=tcp://127.0.0.1:9467'
+    'cd /path/to/chloe-repo; 
+        JULIA_NUM_THREADS={BIGNUM} /path/to/julia src/chloe_distributed.jl 
+        -l info --workers=4 
+        --address=ipc:///tmp/chloe-worker 
+        --broker=tcp://127.0.0.1:9467'
 ```
 The port `9467` is an entirely random (but hopefully unused both on
 the remote server and locally) port number. The broker port *must* match
