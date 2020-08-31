@@ -1,5 +1,4 @@
 # import sys
-import os
 from warnings import filterwarnings
 from fabric import task
 from click import style as color, echo, secho
@@ -8,7 +7,6 @@ from cryptography.utils import CryptographyDeprecationWarning
 filterwarnings("ignore", category=CryptographyDeprecationWarning)
 
 
-local_dir = os.path.dirname(__file__) or "."
 remote_dir = "/var/www/websites3/annotator"
 
 HOSTS = ["ianc@croppal"]
