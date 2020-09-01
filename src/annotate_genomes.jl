@@ -223,19 +223,14 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     function alignit(refcount::Int)
         start = time_ns()
         refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
+        
         ff_aligned_blocks, fr_aligned_blocks = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopf, target_saf, target_raf)
         
-        # @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount].forward)] ($(ns(time_ns() - start))): " forward = blockCoverage(ff_aligned_blocks)  reverse = blockCoverage(fr_aligned_blocks)
-        @debug "[$target_id]+ aligned $(reference.refsrc[refcount].forward) $(ns(time_ns() - start))"
-        # f_aligned_blocks contains matches between ref forward and target forward strands
-
-        start = time_ns()
         rf_aligned_blocks, rr_aligned_blocks = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
-        # use only forward
+        # *OR* use only forward
         # rr_aligned_blocks, rf_aligned_blocks = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
 
-        # @debug "Coverage[$(Threads.threadid())][$(reference.refsrc[refcount].reverse)] ($(ns(time_ns() - start))): " forward = blockCoverage(rf_aligned_blocks)  reverse = blockCoverage(rr_aligned_blocks)
-        @debug "[$target_id]- aligned $(reference.refsrc[refcount].reverse) $(ns(time_ns() - start))"
+        @info "[$target_id]± aligned $(reference.refsrc[refcount].reverse) $(ns(time_ns() - start))"
 
         # note cross ...
         blocks_aligned_to_targetf[refcount] = FwdRev(ff_aligned_blocks, rf_aligned_blocks)
