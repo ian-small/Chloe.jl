@@ -50,7 +50,7 @@ Check the `Project.toml` file first but cut'n'paste the following into the julia
 package prompt:
 
 ```julia
-pkg> add ArgParse Dates CodecZlib JLD JuliaWebAPI LogRoller Printf
+pkg> add ArgParse Dates CodecZlib JLD JuliaWebAPI LogRoller StringEncodings
 pkg> add Logging Printf StatsBase Crayons JSON ZeroMQ_jll ZMQ UUIDs
 ```
 

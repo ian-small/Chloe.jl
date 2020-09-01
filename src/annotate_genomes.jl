@@ -224,17 +224,16 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
         start = time_ns()
         refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
         
-        ff_aligned_blocks, fr_aligned_blocks = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopf, target_saf, target_raf)
-        
-        rf_aligned_blocks, rr_aligned_blocks = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
+        ff, fr = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopf, target_saf, target_raf) 
+        rf, rr = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
         # *OR* use only forward
         # rr_aligned_blocks, rf_aligned_blocks = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
-
-        @info "[$target_id]± aligned $(reference.refsrc[refcount].reverse) $(ns(time_ns() - start))"
-
         # note cross ...
-        blocks_aligned_to_targetf[refcount] = FwdRev(ff_aligned_blocks, rf_aligned_blocks)
-        blocks_aligned_to_targetr[refcount] = FwdRev(rr_aligned_blocks, fr_aligned_blocks)
+        blocks_aligned_to_targetf[refcount] = FwdRev(ff, rf)
+        blocks_aligned_to_targetr[refcount] = FwdRev(rr, fr)
+        
+        @info "[$target_id]± aligned $(reference.refsrc[refcount].reverse) ($(length(ff)),$(length(rf))) $(ns(time_ns() - start))"
+
     end
     
     Threads.@threads for refno in 1:length(reference.refloops)

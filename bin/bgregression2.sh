@@ -3,8 +3,7 @@ if [ ! -d testo ]; then
     mkdir testo
 fi
 rm -rf testo/*
-# A=tcp://127.0.0.1:9467
-# JULIA_NUM_THREADS=8 julia src/chloe_distributed.jl -a $A --level=warn &
+echo "ensure: make run-chloe-broker"
 for f in $(ls testfa/*.fa)
 do
     echo "annotating $f"
