@@ -1,17 +1,15 @@
 include("annotate_genomes.jl")
 include("ZMQLogger.jl")
-# include("broker.jl")
+
 import JuliaWebAPI: APIResponder, ZMQTransport, JSONMsgFormat, register, process
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 import Dates: now, toms
-# using LogRoller
 import Distributed: addprocs, rmprocs, @spawnat, @everywhere
 import Crayons: @crayon_str
 import StringEncodings: encode
 
 const success = crayon"bold green"
 const ADDRESS = "tcp://127.0.0.1:9467"
-# const ADDRESS = "ipc:///tmp/chloe-worker"
 
 # change this if you change the API!
 const VERSION = "1.0"
@@ -43,7 +41,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     template="optimised_templates.v2.tsv", level="warn", workers=3,
     backend::MayBeString=nothing)
 
-    procs = addprocs(workers) # ; topology=:master_worker)
+    procs = addprocs(workers; topology=:master_worker)
     # sic! src/....
     @everywhere procs include("src/annotate_genomes.jl")
     @everywhere procs include("src/ZMQLogger.jl")
@@ -71,14 +69,18 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
         return Dict("elapsed" => toms(elapsed), "filename" => filename, "ncid" => string(target_id))
     end
 
+    function decompress(fasta::String)
+        # decode a latin1 encoded binary string
+        read(encode(fasta, "latin1") |> IOBuffer |> GzipDecompressorStream, String)
+    end
+
     function annotate(fasta::String, task_id::MayBeString=nothing)
         start = now()
-
-        if !startswith(fasta, '>')
-            # assume latin1 encoded binary
-            @info "compressed fasta length $(length(fasta))"
-            fasta = read(encode(fasta, "latin1") |> IOBuffer |> GzipDecompressorStream, String)
-            @info "decompressed fasta length $(length(fasta))"
+        if startswith(fasta, "\x1f\x8b")
+            # assume latin1 encoded binary gzip file
+            n = length(fasta)
+            fasta = decompress(fasta)
+            @info "decompressed fasta length $(n) -> $(length(fasta))"
         end
 
         input = IOContext(IOBuffer(fasta))
@@ -119,8 +121,10 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
    
     atexit(cleanup)
 
-    @sync for p in procs
-        @async process(
+    done = Channel{Int}()
+
+    function bg(workno::Int)
+        process(
             create_responder([
                     chloe,
                     annotate,
@@ -128,8 +132,31 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
                     nconn,
                 ], address, ctx)
             )
+        # :termiate called so process loop is finished
+        put!(done, workno)
     end
-    @info "done: annotator exiting....."
+
+    for workno in 1:workers
+        @async bg(workno)
+    end
+
+    while workers > 0
+        take!(done) # block here until listeners exit
+        workers -= 1
+    end
+    # this creates #procs connections to the broker (in *this* process) each
+    # handling a req/resp cycle and spawning jobs to complete them
+    # @sync for p in procs
+    #     @async process(
+    #         create_responder([
+    #                 chloe,
+    #                 annotate,
+    #                 ping,
+    #                 nconn,
+    #             ], address, ctx)
+    #         )
+    # end
+    @info success("done: annotator exiting.....")
 
 end
 
