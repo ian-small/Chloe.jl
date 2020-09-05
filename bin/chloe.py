@@ -278,21 +278,23 @@ def num_conn(socket):
 
 
 @cli.command()
-@click.option("-n", "--nconn", default=0)
 @addresses
-def terminate(timeout, address, nconn):
+def terminate(timeout, address):
     """Shutdown the server."""
     socket = Socket(address, timeout)
     # terminate each thread.
-    nconn = nconn or num_conn(socket)
-    click.secho(f"terminating {nconn} server(s) @ {address}", fg="magenta")
-    for _ in range(nconn):
+    nconn = num_conn(socket)
+    # click.secho(f"terminating {nconn} server(s) @ {address}", fg="magenta")
+    while True:
+        nconn = num_conn(socket)
         code, _ = socket.msg(cmd=":terminate")
         click.secho(
-            "OK" if code == 200 else f"No Server at {address}",
+            f"OK {nconn}" if code == 200 else f"No Server at {address}",
             fg="green" if code == 200 else "red",
             bold=True,
         )
+        if nconn <= 1:
+            break
 
 
 @cli.command()
