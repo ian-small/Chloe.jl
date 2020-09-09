@@ -233,6 +233,14 @@ function run_broker2(worker, client)
     @everywhere procs include("src/broker.jl")
     @async fetch(@spawnat procs[1] run_broker(worker, client))
 end
+
+function find_endpoint()
+    endpoint = tmplt = "/tmp/chloe-worker"
+    n = 0
+    while isfile(endpoint)
+        n += 1
+        endpoint = "$(tmplt)$(n)"
+    "ipc://$(endpoint)"
     
 function main()
     # exit_on_sigint(false)
@@ -242,6 +250,10 @@ function main()
 
 
     if client_url !== nothing
+        if distributed_args[:address] === client_url
+            distributed_args[:address] = find_endpoint()
+            @warn "broker and worker endpoints clash: redirecting worker to $(distributed_args[:address])"
+        end
         @info "Starting broker. Connect to: $client_url"
         run_broker(distributed_args[:address], client_url)
     end
