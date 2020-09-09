@@ -12,6 +12,7 @@ import zmq
 
 PORT = re.compile("^[0-9]+$")
 
+JEXC = re.compile(r'ErrorException\("(.+)"\)')
 
 context = zmq.Context.instance()
 
@@ -35,10 +36,13 @@ class Socket:
                 raise TimeoutError(f"no response after {self.timeout} milliseconds")
 
     def msg(self, **kwargs):
-        self.socket.send_json(kwargs)
-        self.poll()
-        resp = self.socket.recv_json()
-        return resp["code"], resp["data"]
+        try:
+            self.socket.send_json(kwargs)
+            self.poll()
+            resp = self.socket.recv_json()
+            return resp["code"], resp["data"]
+        except TimeoutError as e:
+            return 501, (e.args and e.args[0]) or str(e)
 
     def setup_zmq(self, address):
         #  Socket to talk to server
@@ -47,6 +51,13 @@ class Socket:
         poller = zmq.Poller()
         poller.register(socket, zmq.POLLIN)
         return socket, poller
+
+
+def extract_exc(s):
+    m = JEXC.search(s)
+    if m:
+        return m.group(1)
+    return str(s)
 
 
 # http://api.zeromq.org/2-1:zmq-setsockopt
@@ -243,8 +254,10 @@ def addresses(f):
 def annotate(timeout, address, fastas, output, workers):
     """Annotate fasta files using a distributed chloe server."""
 
-    def dt(d):
-        return ", ".join(f"{k}: {v}" for k, v in sorted(d.items()))
+    def dt(code, d):
+        if code == 200:
+            return ", ".join(f"{k}: {v}" for k, v in sorted(d.items()))
+        return extract_exc(d)
 
     def do_one(fasta, socket=None):
         if socket is None:
@@ -253,7 +266,9 @@ def annotate(timeout, address, fastas, output, workers):
         code, data = socket.msg(cmd="chloe", args=[fasta, output])
 
         click.secho(
-            f"{fasta}: [{dt(data)}]", fg="green" if code == 200 else "red", bold=True
+            f"{fasta}: [{dt(code,data)}]",
+            fg="green" if code == 200 else "red",
+            bold=True,
         )
 
     if workers > 1:
@@ -306,7 +321,7 @@ def annotate2(timeout, address, binary, fastas, output):
         code, data = socket.msg(cmd="annotate", args=[fasta_str])
 
         if code != 200:
-            click.secho(str(data), fg="red", bold=True)
+            click.secho(extract_exc(data), fg="red", bold=True)
             return
 
         ncid, sff = data["ncid"], data["sff"]
@@ -332,22 +347,24 @@ def num_conn(socket):
 @cli.command()
 @addresses
 def terminate(timeout, address):
+    """Terminate a single worker."""
+    socket = Socket(address, timeout)
+
+    code, msg = socket.msg(cmd=":terminate")
+    click.secho(
+        "OK" if code == 200 else msg or f"No Server at {address}",
+        fg="green" if code == 200 else "red",
+        bold=True,
+    )
+
+
+@cli.command(name="exit")
+@addresses
+def exitit(timeout, address):
     """Shutdown the server."""
     socket = Socket(address, timeout)
-    # terminate each thread.
-    nconn = num_conn(socket)
-    click.secho(f"terminating {nconn} server(s) @ {address}", fg="magenta")
-    while nconn >= 1:
-        code, _ = socket.msg(cmd=":terminate")
-        click.secho(
-            f"OK {nconn}" if code == 200 else f"No Server at {address}",
-            fg="green" if code == 200 else "red",
-            bold=True,
-        )
-        if nconn > 1:
-            nconn = num_conn(socket)
-        else:
-            nconn = 0
+    code, data = socket.msg(cmd="exit", args=[address])
+    click.secho(str(data), fg="green" if code == 200 else "red", bold=True)
 
 
 @cli.command()

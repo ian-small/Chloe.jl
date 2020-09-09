@@ -82,8 +82,9 @@ code, data = ret["code"], ret["data"]
 # actual filename written and total elapsed
 # time in ms to annotate
 sff_fname, elapsed_ms = data["filename"], data["elapsed"]
-# to terminate the server
-apicall(i, ":terminate")
+# to terminate the server cleanly (after finishing any work)
+apicall(i, "exit")
+
 ```
 
 The *actual* production configuration uses `src/chloe_distributed.jl` 
@@ -147,15 +148,12 @@ On the remote server:
 `git clone ...` the chloe github repo and download the julia runtime (natch!).
 *And* install all chloe package dependencies *globally* (see above).
 
-Then on your puny laptop you can run something like:
+Then -- on your puny laptop -- you can run something like:
 
-```bash
-ssh you@bigserver -f -L 9467:127.0.0.1:9467 \
-    'cd /path/to/chloe-repo; 
-        JULIA_NUM_THREADS={BIGNUM} /path/to/julia src/chloe_distributed.jl 
-        -l info --workers=4 
-        --address=ipc:///tmp/chloe-worker 
-        --broker=tcp://127.0.0.1:9467'
+```sh
+ssh  you@bigserver -t -o ExitOnForwardFailure=yes -L 9476:127.0.0.1:9467 \
+    'cd /path/to/chloe; JULIA_NUM_THREADS={BIGNUM} /path/to/bin/julia --startup-file=no --color=yes src/chloe_distributed.jl  
+    --broker=tcp://127.0.0.1:9467 -l info --workers=4'
 ```
 The port `9467` is an entirely random (but hopefully unused both on
 the remote server and locally) port number. The broker port *must* match
@@ -175,6 +173,8 @@ ret = apicall(i, "annotate", fasta)
 code, data = ret["code"], ret["data"]
 @assert code === 200
 sff = data["sff"] # sff file as a string
+# terminate the server
+apicall(i, "exit")
 ```
 
 ### Developer Notes:

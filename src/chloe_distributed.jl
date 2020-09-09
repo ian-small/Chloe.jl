@@ -1,7 +1,7 @@
 include("annotate_genomes.jl")
 include("ZMQLogger.jl")
 
-import JuliaWebAPI: APIResponder, ZMQTransport, JSONMsgFormat, register, process
+import JuliaWebAPI: APIResponder, APIInvoker, apicall, ZMQTransport, JSONMsgFormat, register, process
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 import Dates: now, toms
 import Distributed: addprocs, rmprocs, @spawnat, @everywhere
@@ -39,7 +39,7 @@ end
 
 function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     template="optimised_templates.v2.tsv", level="warn", workers=3,
-    backend::MayBeString=nothing)
+    backend::MayBeString=nothing, broker::MayBeString=nothing)
 
     procs = addprocs(workers; topology=:master_worker)
     # sic! src/....
@@ -108,6 +108,28 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
         return workers
     end
 
+    function bgexit(endpoint)
+        i = APIInvoker(endpoint)
+        for w in 1:workers
+            apicall(i, ":terminate")
+            if workers == 0
+                break
+            end
+        end
+    end
+    function exit(endpoint::MayBeString=nothing)
+        # use broker url if any
+        if endpoint === nothing
+            endpoint = broker
+        end
+        if endpoint === nothing
+            error("No endpoint!")
+        end
+        @async bgexit(endpoint)
+        return "Done"
+    end
+
+
     # we need to create separate ZMQ sockets to ensure strict
     # request/response (not e.g. request-request response-response)
     # we expect to *connect* to a ZMQ DEALER/ROUTER (see bin/broker.py)
@@ -133,6 +155,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
                     annotate,
                     ping,
                     nconn,
+                    exit,
                 ], address, ctx)
             )
         # :termiate called so process loop is finished
@@ -247,7 +270,7 @@ function main()
     # exit_on_sigint(false)
     Sys.set_process_title("chloe-distributed")
     distributed_args = args()
-    client_url = pop!(distributed_args, :broker, nothing)
+    client_url = get(distributed_args, :broker, nothing)
 
 
     if client_url !== nothing
