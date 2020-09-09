@@ -54,8 +54,9 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     machine = gethostname()
     reference = readReferences(refsdir, template)
     git = git_version()[1:7]
-    
+    nannotations = 0
     nthreads = Threads.nthreads()
+
     @info "processes: $workers"
     @info reference
     @info "chloe version $VERSION (git: $git) threads=$nthreads on machine $machine"
@@ -66,6 +67,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
         filename, target_id = fetch(@spawnat :any annotate_one_task(reference, fasta, fname, task_id))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
+        nannotations += 1
         return Dict("elapsed" => toms(elapsed), "filename" => filename, "ncid" => string(target_id))
     end
 
@@ -76,7 +78,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
 
     function annotate(fasta::String, task_id::MayBeString=nothing)
         start = now()
-        if startswith(fasta, "\x1f\x8b")
+        if startswith(fasta, "\u1f\u8b")
             # assume latin1 encoded binary gzip file
             n = length(fasta)
             fasta = decompress(fasta)
@@ -89,12 +91,13 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
         sff = String(take!(io))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
+        nannotations += 1
 
         return Dict("elapsed" => toms(elapsed), "sff" => sff, "ncid" => string(target_id))
     end
 
     function ping()
-        return "OK version=$VERSION git=$git threads=$nthreads workers=$workers on $machine"
+        return "OK version=$VERSION git=$git #anno=$nannotations threads=$nthreads workers=$workers on $machine"
     end
 
     # `bin/chloe.py terminate` uses this to find out how many calls of :terminate
