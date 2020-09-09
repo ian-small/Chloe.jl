@@ -242,7 +242,7 @@ function find_endpoint()
         endpoint = "$(tmplt)$(n)"
     end
     "ipc://$(endpoint)"
-    
+end 
 function main()
     # exit_on_sigint(false)
     Sys.set_process_title("chloe-distributed")
