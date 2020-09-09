@@ -22,7 +22,6 @@ function git_version()
     end
 end
 
-# from 
 function exit_on_sigint(on::Bool)
     # from https://github.com/JuliaLang/julia/pull/29383
     # and https://github.com/JuliaLang/julia/pull/29411
@@ -111,7 +110,10 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     function bgexit(endpoint)
         i = APIInvoker(endpoint)
         for w in 1:workers
-            apicall(i, ":terminate")
+            # allow for main task to count down workers
+            res = fetch(@async apicall(i, ":terminate"))
+            code = res["code"]
+            @info "code=$(code) $(workers)"
             if workers == 0
                 break
             end
@@ -126,7 +128,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
             error("No endpoint!")
         end
         @async bgexit(endpoint)
-        return "Done"
+        return "Done $(workers)"
     end
 
 
@@ -137,12 +139,13 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     ctx = ZMQ.Context()
 
     function cleanup()
-        close(ctx)
         try
             rmprocs(procs, waitfor=20)
+            close(ctx)
         catch
         end
     end
+
    
     atexit(cleanup)
 
@@ -274,12 +277,19 @@ function main()
 
 
     if client_url !== nothing
-        if distributed_args[:address] === client_url
-            distributed_args[:address] = find_endpoint()
-            @warn "broker and worker endpoints clash: redirecting worker to $(distributed_args[:address])"
+        if startswith(client_url, "@")
+            # just so the server knows how to terminate itself
+            distributed_args[:broker] = client_url[1:end]
+        else
+            # really start a broker
+            if distributed_args[:address] === client_url
+                distributed_args[:address] = find_endpoint()
+                @warn "broker and worker endpoints clash: redirecting worker to $(distributed_args[:address])"
+            end
+        
+            @info "Starting broker. Connect to: $client_url"
+            run_broker(distributed_args[:address], client_url)
         end
-        @info "Starting broker. Connect to: $client_url"
-        run_broker(distributed_args[:address], client_url)
     end
     chloe_distributed(;distributed_args...)
 

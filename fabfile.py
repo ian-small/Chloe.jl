@@ -33,7 +33,7 @@ def update(c):
         if not res.failed and not git_uptodate(res):
             secho('restarting service use: "fab ping" to check restart', fg="magenta")
             # hopefully supervisor will restart (see etc/supervisor-chloe-celery.conf)
-            c.run("python bin/chloe.py terminate", pty=True)
+            c.run("python bin/chloe.py exit", pty=True)
 
 
 @task(hosts=STILETTO)
@@ -45,20 +45,20 @@ def update_stiletto(c):
         result = c.run("uname -a", hide=True)
         # ,result.failed,result.return_code,result.succeeded
         echo(color(result.stdout.strip(), fg="green"))
-        c.run("git pull")
+        c.run("git pull", pty=True)
 
 
 @task(hosts=HOSTS)
 def restart(c):
     """Restart annotator service."""
     with c.cd(remote_dir):
-        c.run("python bin/chloe.py terminate")
+        c.run("python bin/chloe.py exit", pty=True)
 
 
 @task(hosts=HOSTS)
 def status(c, cmd=None):
     """Show status of supervisor."""
-    cmd = cmd or 'status'
+    cmd = cmd or "status"
     with c.cd(remote_dir):
         c.run(f"supervisorctl {cmd}")
 
