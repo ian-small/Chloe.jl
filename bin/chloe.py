@@ -8,17 +8,22 @@ from io import BytesIO, StringIO
 import click
 import zmq
 
+# from chloe.config import ZMQ_ADDRESS, ZMQ_WORKER
+
 PORT = re.compile("^[0-9]+$")
 
-# ADDRESS = "tcp://127.0.0.1:9467"
-ADDRESS = "ipc:///tmp/chloe-client"
 
-context = zmq.Context()
+context = zmq.Context.instance()
+
+ZMQ_ADDRESS = "ipc:///tmp/chloe-client"
+ZMQ_WORKER = "tcp://127.0.0.1:9467"
+
+WORKER_PORT = int(ZMQ_WORKER.split(":")[-1])
 
 
 class Socket:
     def __init__(self, address, timeout=None):
-        self.socket, self.poller = setup_zmq(address)
+        self.socket, self.poller = self.setup_zmq(address)
         self.timeout = timeout
 
     def poll(self):
@@ -27,7 +32,7 @@ class Socket:
             if not events:
                 self.socket.close(linger=0)
                 self.poller.unregister(self.socket)
-                raise RuntimeError(f"no response after {self.timeout} milliseconds")
+                raise TimeoutError(f"no response after {self.timeout} milliseconds")
 
     def msg(self, **kwargs):
         self.socket.send_json(kwargs)
@@ -35,14 +40,13 @@ class Socket:
         resp = self.socket.recv_json()
         return resp["code"], resp["data"]
 
-
-def setup_zmq(address):
-    #  Socket to talk to server
-    socket = context.socket(zmq.REQ)  # pylint: disable=no-member
-    socket.connect(address)
-    poller = zmq.Poller()
-    poller.register(socket, zmq.POLLIN)
-    return socket, poller
+    def setup_zmq(self, address):
+        #  Socket to talk to server
+        socket = context.socket(zmq.REQ)  # pylint: disable=no-member
+        socket.connect(address)
+        poller = zmq.Poller()
+        poller.register(socket, zmq.POLLIN)
+        return socket, poller
 
 
 # http://api.zeromq.org/2-1:zmq-setsockopt
@@ -62,7 +66,7 @@ def proxy(url_worker, url_client, hwm=1000):
     worker = context.socket(zmq.DEALER)
     worker.setsockopt(zmq.SNDHWM, hwm)
     # workers.setsockopt(zmq.ZMQ_SWAP, swap)
-    workers.bind(url_worker)
+    worker.bind(url_worker)
 
     zmq.proxy(clients, worker)
 
@@ -72,21 +76,39 @@ def proxy(url_worker, url_client, hwm=1000):
     context.term()
 
 
-@click.group()
+HELP = """
+Commands to directly connect to annotator
+"""
+
+
+@click.group(epilog=HELP)
 def cli():
     pass
 
 
+# pylint: disable=redefined-outer-name
 @cli.command()
 @click.option(
-    "-r", "--remote", type=int, help="remote port to connect to (same as local)"
+    "-r",
+    "--remote",
+    type=int,
+    help="remote port to connect to (the annotator) [default is same as local]",
 )
 @click.option(
-    "-l", "--local", default=9467, help="local port to connect to", show_default=True
+    "-l",
+    "--local",
+    default=WORKER_PORT,
+    help="local port to connect to (the broker)",
+    show_default=True,
 )
-@click.option("--router", help=f"run a broker endpoint too (e.g. {ADDRESS})")
+@click.option(
+    "--broker",
+    metavar="URL",
+    help=f"run a broker endpoint too (use 'default' for {ZMQ_ADDRESS})",
+)
 @click.option("-w", "--workers", default=8, help="number of processes to use")
 @click.option("--sleep", default=0.0, help="sleep seconds before trying to connect")
+@click.option("-t", "--threads", default=32, help="number of threads")
 @click.option(
     "--level",
     default="info",
@@ -94,13 +116,31 @@ def cli():
     show_default=True,
     type=click.Choice(["info", "warn", "debug", "error"]),
 )
-@click.option("--julia-dir", help="where julia (directory) is located on server")
 @click.option(
-    "--chloe-repo", default="annotator", help="where chloe git repo is on server"
+    "-j",
+    "--julia-dir",
+    metavar="DIRECTORY",
+    help="where julia located on server (will try to find it if not set)",
+)
+@click.option(
+    "-a",
+    "--annotator-repo",
+    metavar="DIRECTORY",
+    default="annotator",
+    help="where chloe git repo is on server",
 )
 @click.argument("ssh_connection")
 def remote_ssh(
-    ssh_connection, remote, local, workers, level, sleep, router, julia_dir, chloe_repo
+    ssh_connection,
+    remote,
+    local,
+    workers,
+    level,
+    sleep,
+    broker,
+    julia_dir,
+    annotator_repo,
+    threads,
 ):
     """start up a ssh tunnel to a server chloe-distributed using ssh connection."""
     from threading import Thread
@@ -114,16 +154,14 @@ def remote_ssh(
     if remote is None:
         remote = local
 
-    remote_dir = chloe_repo
-
-    if router:
+    if broker:
         address = f"tcp://127.0.0.1:{local}"
-        t = Thread(target=proxy, args=[address, router])
-        t.daemon = True
+        if broker == "default":
+            broker = ZMQ_ADDRESS
+        t = Thread(target=proxy, args=[address, broker], daemon=True)
         t.start()
-
-    if sleep:
-        # maybe need router to startup...
+        Sleep(sleep or 1.0)  # wait for it to start
+    elif sleep:
         Sleep(sleep)
     c = Connection(ssh_connection)  # entry in ~/.ssh/config
 
@@ -134,20 +172,29 @@ def remote_ssh(
             if julia_dir is not None:
                 julia = os.path.join(julia_dir, "bin", "julia")
             else:
-                res = c.run("julia -E Sys.BINDIR", warn=True, hide=True)
+                res = c.run(
+                    "PATH=$PATH:$HOME/bin julia -E Sys.BINDIR", warn=True, hide=True
+                )
                 if res.failed:
                     raise click.BadParameter(
                         "please specify the location of the julia directory",
-                        param_hint="julia",
+                        param_hint="julia-dir",
                     )
                 # strip "" quotes
                 julia = os.path.join(res.stdout.strip()[1:-1], "julia")
 
-            with c.cd(remote_dir):
+            if c.run(f"test -f '{julia}'", warn=True, hide=True).failed:
+                raise click.BadParameter(
+                    "f{julia} is not an executable on: {ssh_connection}",
+                    param_hint="julia-dir",
+                )
+
+            with c.cd(annotator_repo):
 
                 args = f"""-l {level} --workers={workers} --address=tcp://127.0.0.1:{remote}"""
                 cmd = (
-                    f"""JULIA_NUM_THREADS=96 {julia} src/chloe_distributed.jl {args}"""
+                    f"JULIA_NUM_THREADS={threads} {julia} --color=yes --startup-file=no"
+                    f" src/chloe_distributed.jl {args}"
                 )
                 # need a pty to send interrupt
                 c.run(cmd, pty=True)
@@ -165,7 +212,7 @@ def addresses(f):
     f = click.option(
         "-a",
         "--address",
-        default=ADDRESS,
+        default=ZMQ_ADDRESS,
         help="network address to connect to julia server",
         show_default=True,
         callback=callback,
@@ -247,11 +294,16 @@ def annotate2(timeout, address, binary, fastas, output):
                 b = fp.read()
             if not fasta.endswith(".gz"):
                 b = gzcompress(b)
-            fasta = b.decode("latin1")
+            fasta_str = b.decode("latin1")
+            if not fasta_str.startswith("\x1f\x8b"):
+                raise click.BadParameter(
+                    f"not a gzipped file: {fasta}", param_hint="fastas"
+                )
         else:
             with maybegz_open(fasta) as fp:
-                fasta = fp.read()
-        code, data = socket.msg(cmd="annotate", args=[fasta])
+                fasta_str = fp.read().lstrip()
+
+        code, data = socket.msg(cmd="annotate", args=[fasta_str])
 
         if code != 200:
             click.secho(str(data), fg="red", bold=True)
@@ -284,17 +336,18 @@ def terminate(timeout, address):
     socket = Socket(address, timeout)
     # terminate each thread.
     nconn = num_conn(socket)
-    # click.secho(f"terminating {nconn} server(s) @ {address}", fg="magenta")
-    while True:
-        nconn = num_conn(socket)
+    click.secho(f"terminating {nconn} server(s) @ {address}", fg="magenta")
+    while nconn >= 1:
         code, _ = socket.msg(cmd=":terminate")
         click.secho(
             f"OK {nconn}" if code == 200 else f"No Server at {address}",
             fg="green" if code == 200 else "red",
             bold=True,
         )
-        if nconn <= 1:
-            break
+        if nconn > 1:
+            nconn = num_conn(socket)
+        else:
+            nconn = 0
 
 
 @cli.command()
