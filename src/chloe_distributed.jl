@@ -240,6 +240,7 @@ function find_endpoint()
     while isfile(endpoint)
         n += 1
         endpoint = "$(tmplt)$(n)"
+    end
     "ipc://$(endpoint)"
     
 function main()
