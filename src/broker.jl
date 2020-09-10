@@ -18,7 +18,7 @@ function start_broker(worker_url::String, client_url::String)
             rc = ccall((:zmq_proxy, ZeroMQ_jll.libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
             @info "done zmq_proxy $(rc)"
         catch
-            @info "exception!"
+            @error "zmq_proxy exception!"
         end
     finally
         # control never comes here... clean up anyway.
