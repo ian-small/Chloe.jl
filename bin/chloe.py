@@ -42,8 +42,10 @@ class Socket:
             resp = self.socket.recv_json()
             return resp["code"], resp["data"]
         except TimeoutError as e:
+            self.destroy()
             return 501, (e.args and e.args[0]) or str(e)
 
+    # pylint: disable=no-self-use
     def setup_zmq(self, address):
         #  Socket to talk to server
         socket = context.socket(zmq.REQ)  # pylint: disable=no-member
@@ -51,6 +53,12 @@ class Socket:
         poller = zmq.Poller()
         poller.register(socket, zmq.POLLIN)
         return socket, poller
+
+    def destroy(self):
+        if self.socket is not None:
+            self.socket.close(linger=0)
+            self.poller.unregister(self.socket)
+            self.socket = self.poller = None
 
 
 def extract_exc(s):
@@ -209,7 +217,7 @@ def remote_ssh(
                 )
                 # need a pty to send interrupt
                 c.run(cmd, pty=True)
-                click.secho("stiletto terminated", fg="green", bold=True)
+                click.secho("remote terminated", fg="green", bold=True)
 
     run()
 
@@ -260,7 +268,9 @@ def annotate(timeout, address, fastas, output, workers):
         return extract_exc(d)
 
     def do_one(fasta, socket=None):
+        destroy = False
         if socket is None:
+            destroy = True
             socket = Socket(address, timeout)
 
         code, data = socket.msg(cmd="chloe", args=[fasta, output])
@@ -270,6 +280,8 @@ def annotate(timeout, address, fastas, output, workers):
             fg="green" if code == 200 else "red",
             bold=True,
         )
+        if destroy:
+            socket.destroy()
 
     if workers > 1:
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -284,8 +296,7 @@ def annotate(timeout, address, fastas, output, workers):
 def maybegz_open(fasta, mode="rt"):
     if fasta.endswith(".gz"):
         return gzip.open(fasta, mode)
-    else:
-        return open(fasta, mode)
+    return open(fasta, mode)
 
 
 def gzcompress(b):
@@ -297,17 +308,23 @@ def gzcompress(b):
 
 @cli.command()
 @addresses
+@click.option(
+    "--workers",
+    default=0,
+    help="send annotation requests in parallel using this many workers",
+)
 @click.option("-o", "--output", help="output .sff filename or directory")
-@click.option("--binary", is_flag=True, help="don't decompress")
+@click.option("--compress", is_flag=True, help="send fasta compressed")
 @click.argument("fastas", nargs=-1)
-def annotate2(timeout, address, binary, fastas, output):
+def annotate2(timeout, address, compress, fastas, workers, output):
     """Annotate fasta files (send and receive file content)."""
     socket = Socket(address, timeout)
-    for fasta in fastas:
-        if binary:
+
+    def get_fasta(fasta):
+        if compress:
             with open(fasta, "rb") as fp:
                 b = fp.read()
-            if not fasta.endswith(".gz"):
+            if not fasta.endswith(".gz") or b.startswith(b">"):
                 b = gzcompress(b)
             fasta_str = b.decode("latin1")
             if not fasta_str.startswith("\x1f\x8b"):
@@ -317,15 +334,24 @@ def annotate2(timeout, address, binary, fastas, output):
         else:
             with maybegz_open(fasta) as fp:
                 fasta_str = fp.read().lstrip()
+        return fasta_str
 
+    def do_one(fasta, socket=None):
+        destroy = False
+        if socket is None:
+            destroy = True
+            socket = Socket(address, timeout)
+        fasta_str = get_fasta(fasta)
         code, data = socket.msg(cmd="annotate", args=[fasta_str])
+        if destroy:
+            socket.destroy()
 
         if code != 200:
-            click.secho(extract_exc(data), fg="red", bold=True)
+            click.secho(extract_exc(data), fg="red", bold=True, err=True)
             return
 
         ncid, sff = data["ncid"], data["sff"]
-        click.secho(ncid, fg="green")
+        click.secho(ncid, fg="green", err=True)
         if not output:
             with StringIO(sff) as fp:
                 for line in fp:
@@ -338,10 +364,14 @@ def annotate2(timeout, address, binary, fastas, output):
             with open(tgt, "wt") as fp:
                 fp.write(sff)
 
-
-def num_conn(socket):
-    _, data = socket.msg(cmd="nconn")
-    return data
+    if workers > 1:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for fasta in fastas:
+                pool.submit(do_one, fasta)
+    else:
+        socket = Socket(address, timeout)
+        for fasta in fastas:
+            do_one(fasta, socket)
 
 
 @cli.command()

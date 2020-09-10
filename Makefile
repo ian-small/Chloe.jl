@@ -17,3 +17,4 @@ run-chloe-logger:
 run-chloe-backend:
 	JULIA_NUM_THREADS=8 julia --color=yes src/chloe_distributed.jl -l info --workers=4 --address=tcp://127.0.0.1:9467 --backend=ipc:///tmp/chloe-backend --broker=@ipc:///tmp/chloe-client
 
+.PHONY: run-chloe run-chloe-broker run-broker run-chloe-logger run-chloe-backend 
