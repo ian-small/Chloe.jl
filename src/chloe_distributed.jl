@@ -56,7 +56,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     nannotations = 0
     nthreads = Threads.nthreads()
 
-    @info "processes: $workers"
+    @info "starting annotator with workers: $workers"
     @info reference
     @info "chloe version $VERSION (git: $git) threads=$nthreads on machine $machine"
     @info "connecting to $address"
