@@ -21,6 +21,38 @@ function git_version()
         "unknown"
     end
 end
+# from https://stackoverflow.com/questions/27677399/julia-how-to-copy-data-to-another-processor-in-julia
+# https://github.com/ChrisRackauckas/ParallelDataTransfer.jl
+function sendto(p::Int; args...)
+    for (nm, val) in args
+        @debug "sending $val to $p as $nm"
+        @spawnat(p, Base.eval(Main, Expr(:(=), nm, val)))
+    end
+end
+
+function mapto(p::Int; args...)
+    
+    function send(nm, val)
+        @debug "sending $val to $p as $nm"
+        @spawnat(p, Base.eval(Main, Expr(:(=), nm, val)))
+    end
+
+    [send(nm, val) for (nm, val) in args]
+
+end
+
+getfrom(p::Int, nm::Symbol; mod=Main) = fetch(@spawnat(p, getfield(mod, nm)))
+
+
+function sendto(ps::Vector{Int}; args...)
+    for p in ps
+        sendto(p; args...)
+    end
+end
+
+function mapto(ps::Vector{Int}; args...)
+    [tsk for p in ps for tsk in mapto(p; args...) ]
+end
 
 function exit_on_sigint(on::Bool)
     # from https://github.com/JuliaLang/julia/pull/29383
@@ -49,9 +81,18 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
         @spawnat p set_global_logger(backend, level; topic="annotator")
     end
     set_global_logger(backend, level; topic="annotator")
-    
-    machine = gethostname()
+
     reference = readReferences(refsdir, template)
+
+    # Send reference object to workers.
+    # Call wait on the task so we effectively wait
+    # for all the data transfer to complete.
+    map(wait, mapto(procs, REFERENCE=reference))
+
+    pid = getpid()
+
+    machine = gethostname()
+
     git = git_version()[1:7]
     nannotations = 0
     nthreads = Threads.nthreads()
@@ -61,9 +102,11 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     @info "chloe version $VERSION (git: $git) threads=$nthreads on machine $machine"
     @info "connecting to $address"
 
+    reference = nothing # force garbage collection
+
     function chloe(fasta::String, fname::MayBeString, task_id::MayBeString=nothing)
         start = now()
-        filename, target_id = fetch(@spawnat :any annotate_one_task(reference, fasta, fname, task_id))
+        filename, target_id = fetch(@spawnat :any annotate_one_task(fasta, fname, task_id))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
         nannotations += 1
@@ -86,7 +129,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
 
         input = IOContext(IOBuffer(fasta))
 
-        io, target_id = fetch(@spawnat :any annotate_one_task(reference, input, task_id))
+        io, target_id = fetch(@spawnat :any annotate_one_task(input, task_id))
         sff = String(take!(io))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
@@ -96,7 +139,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     end
 
     function ping()
-        return "OK version=$VERSION git=$git #anno=$nannotations threads=$nthreads workers=$workers on $machine"
+        return "OK version=$VERSION git=$git #anno=$nannotations pid=$pid threads=$nthreads workers=$workers on $machine"
     end
 
     # `bin/chloe.py terminate` uses this to find out how many calls of :terminate
@@ -185,7 +228,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     #             ], address, ctx)
     #         )
     # end
-    @info success("done: annotator exiting.....")
+    @info success("done: annotator pid=$(pid) exiting.....")
 
 end
 
