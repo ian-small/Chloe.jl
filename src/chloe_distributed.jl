@@ -113,7 +113,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
             # allow for main task to count down workers
             res = fetch(@async apicall(i, ":terminate"))
             code = res["code"]
-            @info "code=$(code) $(workers)"
+            @debug "code=$(code) $(workers)"
             if workers == 0
                 break
             end
