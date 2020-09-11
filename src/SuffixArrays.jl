@@ -68,16 +68,16 @@ function makeSuffixArrayRanksArray(SA::SuffixArray)::SuffixArray
     return RA
 end
 
-import JLD: jldopen
+import JLD
 
 function writeGenomeWithSAs(filename::String, genome::GenomeWithSAs)
-    jldopen(filename, "w") do file
+    JLD.jldopen(filename, "w") do file
         write(file, genome.id, genome)
     end
 end
 
 function readGenomeWithSAs(filename::String, id::String)::GenomeWithSAs
-    jldopen(filename, "r") do file
+    JLD.jldopen(filename, "r") do file
         return read(file, id)
     end
 end

@@ -125,7 +125,9 @@ end
 # end
 
 function genome_wrap(genome_length::T, position::T)::T where {T <: Integer}
-    0 < position <= genome_length && return position
+    if 0 < position <= genome_length
+        return position
+    end
     while position <= 0
         position = position + genome_length
     end
