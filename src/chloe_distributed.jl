@@ -23,18 +23,18 @@ function git_version()
 end
 # from https://stackoverflow.com/questions/27677399/julia-how-to-copy-data-to-another-processor-in-julia
 # https://github.com/ChrisRackauckas/ParallelDataTransfer.jl
-function sendto(p::Int; args...)
-    for (nm, val) in args
-        @debug "sending $val to $p as $nm"
-        @spawnat(p, Base.eval(Main, Expr(:(=), nm, val)))
-    end
-end
+# function sendto(p::Int; args...)
+#     for (nm, val) in args
+#         @debug "sending $val to $p as $nm"
+#         @spawnat(p, Base.eval(Main, Expr(:(=), nm, val)))
+#     end
+# end
 
-function mapto(p::Int; args...)
+function sendto(p::Int; args...)
     
     function send(nm, val)
         @debug "sending $val to $p as $nm"
-        @spawnat(p, Base.eval(Main, Expr(:(=), nm, val)))
+        @spawnat p Base.eval(Main, Expr(:(=), nm, val))
     end
 
     [send(nm, val) for (nm, val) in args]
@@ -44,14 +44,14 @@ end
 getfrom(p::Int, nm::Symbol; mod=Main) = fetch(@spawnat(p, getfield(mod, nm)))
 
 
-function sendto(ps::Vector{Int}; args...)
-    for p in ps
-        sendto(p; args...)
-    end
-end
+# function sendto(ps::Vector{Int}; args...)
+#     for p in ps
+#         sendto(p; args...)
+#     end
+# end
 
-function mapto(ps::Vector{Int}; args...)
-    [tsk for p in ps for tsk in mapto(p; args...) ]
+function sendto(ps::Vector{Int}; args...)
+    [tsk for p in ps for tsk in sendto(p; args...) ]
 end
 
 function exit_on_sigint(on::Bool)
@@ -68,11 +68,7 @@ function create_responder(apispecs::Array{Function}, addr::String, ctx::ZMQ.Cont
     api
 end
 
-function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
-    template="optimised_templates.v2.tsv", level="warn", workers=3,
-    backend::MayBeString=nothing, broker::MayBeString=nothing)
-
-    procs = addprocs(workers; topology=:master_worker)
+function arm_procs(procs, reference::Reference,  backend::MayBeString, level::String)
     # sic! src/....
     @everywhere procs include("src/annotate_genomes.jl")
     @everywhere procs include("src/ZMQLogger.jl")
@@ -80,30 +76,43 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     for p in procs
         @spawnat p set_global_logger(backend, level; topic="annotator")
     end
-    set_global_logger(backend, level; topic="annotator")
-
-    reference = readReferences(refsdir, template)
-
-    # Send reference object to workers.
+    # Send reference object to workers (as Main.REFERENCE).
     # Call wait on the task so we effectively wait
     # for all the data transfer to complete.
-    map(wait, mapto(procs, REFERENCE=reference))
+    map(wait, sendto(procs, REFERENCE=reference))
+end
+
+function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
+    template="optimised_templates.v2.tsv", level="warn", workers=3,
+    backend::MayBeString=nothing, broker::MayBeString=nothing)
+
+    procs = addprocs(workers; topology=:master_worker)
+
+    workers = length(procs)
+
+    set_global_logger(backend, level; topic="annotator")
+
+    function get_reference()
+        return readReferences(refsdir, template)
+    end
+    reference = get_reference()
+    
+    arm_procs(procs, reference, backend, level)
 
     pid = getpid()
-
     machine = gethostname()
-
     git = git_version()[1:7]
-    nannotations = 0
     nthreads = Threads.nthreads()
 
-    @info "starting annotator with workers: $workers"
-    @info reference
-    @info "chloe version $VERSION (git: $git) threads=$nthreads on machine $machine"
+    @info "starting: chloe version $VERSION (git: $git) pid=$pid workers=$workers threads=$nthreads on machine $machine"
     @info "connecting to $address"
+    @info reference
 
+    # All sent to workers I don't need this anymore (except see add_workers below)
     reference = nothing # force garbage collection
 
+    nannotations = 0
+    
     function chloe(fasta::String, fname::MayBeString, task_id::MayBeString=nothing)
         start = now()
         filename, target_id = fetch(@spawnat :any annotate_one_task(fasta, fname, task_id))
@@ -124,7 +133,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
             # assume latin1 encoded binary gzip file
             n = length(fasta)
             fasta = decompress(fasta)
-            @info "decompressed fasta length $(n) -> $(length(fasta))"
+            @debug "decompressed fasta length $(n) -> $(length(fasta))"
         end
 
         input = IOContext(IOBuffer(fasta))
@@ -150,16 +159,23 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
         return workers
     end
 
-    function bgexit(endpoint)
+    function bgexit(endpoint::String, n::Int)
         i = APIInvoker(endpoint)
-        for w in 1:workers
-            # allow for main task to count down workers
-            res = fetch(@async apicall(i, ":terminate"))
-            code = res["code"]
-            @debug "code=$(code) $(workers)"
-            if workers == 0
+        for w in 1:n
+            # main task has removed workers
+            if workers === 0
                 break
             end
+            
+            # the real problem here is:
+            # -- unless we are running our own broker --
+            # there is no way to ensure we are terminating
+            # *our* listeners...
+
+            # @async to allow for main task to count down workers
+            res = fetch(@async apicall(i, ":terminate"))
+            code = res["code"]
+            @debug "code=$(code) workers=$(workers)"
         end
     end
     function exit(endpoint::MayBeString=nothing)
@@ -168,67 +184,105 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
             endpoint = broker
         end
         if endpoint === nothing
-            error("No endpoint!")
+            error("No broker endpoint!")
         end
-        @async bgexit(endpoint)
-        return "Done $(workers)"
+        @async bgexit(endpoint, workers)
+        return "Exit scheduled for $(workers) workers"
     end
 
+    function add_workers(n::Int, endpoint::MayBeString=nothing)
+        if n < 0
+            if -n >= length(procs)
+                error("use 'exit' to exit chloe!")
+            end
+            # remove workers
+            @async begin
+                m = length(procs) + n
+                remove = procs[m + 1:end]
+                rmprocs(remove) # wait
+                # update globals !not workers thou.
+                procs = procs[1:m]
+                # send terminate to abs(n) workers
+                if endpoint === nothing
+                    endpoint = broker
+                end
+                if endpoint !== nothing
+                    # main task will update workers count
+                    # when they exit
+                    bgexit(endpoint, abs(n))
+                end
+                @info "removed $(remove) processes using endpoint $(endpoint)"
+            end
 
+        elseif n > 0
+            # add workers
+            @async begin
+                added = addprocs(n, topology=:master_worker)
+                arm_procs(added, get_reference(), backend, level)
+                @info "added $(added) processes"
+                # update globals
+                procs = [procs..., added...]
+                workers = length(procs)
+                for w in added
+                    @async bgworker(w)
+                end
+            end
+        end
+        msg = n > 0 ? "add" : "remove"
+        "Chloë is scheduled to $(msg) $(abs(n)) worker$(abs(n) !== 1 ? "s" : "")"
+    end
     # we need to create separate ZMQ sockets to ensure strict
     # request/response (not e.g. request-request response-response)
-    # we expect to *connect* to a ZMQ DEALER/ROUTER (see bin/broker.py)
-    # that forms the actual front end.
+    # we expect to *connect* to a ZMQ DEALER/ROUTER (see bin/broker.py
+    # or src/broker.jl) that forms the actual front end.
+
     ctx = ZMQ.Context()
 
     function cleanup()
+        # zmq listeners are already finished
+        # only worker processes need destroying
+        close(ctx)
         try
             rmprocs(procs, waitfor=20)
-            close(ctx)
-        catch
+        catch e
+            @warn "background processes took to long to exit $e"
         end
     end
 
-   
     atexit(cleanup)
 
     done = Channel{Int}()
 
-    function bg(workno::Int)
+    function bgworker(workno::Int)
+        @debug "starting worker $workno"
         process(
-            create_responder([
-                    chloe,
-                    annotate,
-                    ping,
-                    nconn,
-                    exit,
-                ], address, ctx)
-            )
-        # :termiate called so process loop is finished
+        create_responder([
+                chloe,
+                annotate,
+                ping,
+                nconn,
+                exit,
+                add_workers,
+            ], address, ctx)
+        )
+        # :terminate called so process loop is finished
         put!(done, workno)
     end
 
-    for workno in 1:workers
-        @async bg(workno)
+    # kick off worker tasks to listen
+    # on zmq endpoints
+    for workno in procs
+        @async bgworker(workno)
+    end
+    @info "Chloë is ready to accept requests 🍰!"
+    while workers > 0
+        w = take!(done) # block here until listeners exit (by putting proc num on queue)
+        workers -= 1
+        @debug "worker done: $w workers=$workers"
     end
 
-    while workers > 0
-        take!(done) # block here until listeners exit
-        workers -= 1
-    end
-    # this creates #procs connections to the broker (in *this* process) each
-    # handling a req/resp cycle and spawning jobs to complete them
-    # @sync for p in procs
-    #     @async process(
-    #         create_responder([
-    #                 chloe,
-    #                 annotate,
-    #                 ping,
-    #                 nconn,
-    #             ], address, ctx)
-    #         )
-    # end
-    @info success("done: annotator pid=$(pid) exiting.....")
+    @info success("Chloë done: pid=$(pid) exiting.....🍹")
+    # atexit cleanup and kill(broker) task should be called now
 
 end
 
@@ -257,23 +311,27 @@ function args()
         arg_type = String
         metavar = "LOGLEVEL"
         default = "info"
-        help = "log level (warn,debug,info,error)"
+        help = "log level (warn,debug,info,error,critical)"
         "--workers", "-w"
         arg_type = Int
         default = 3
         help = "number of distributed processes"
-        "--broker"
-            arg_type = String
-            metavar = "URL"
-            help = "run the broker in the background"
-        "--backend"
-            arg_type = String
-            metavar = "URL"
-            help = "log to zmq endpoint"
+        "--broker", "-b"
+        arg_type = String
+        metavar = "URL"
+        help = "run a broker in the background"
+        "--backend", "-z"
+        arg_type = String
+        metavar = "URL"
+        help = "log to zmq endpoint"
+        # "--jld-reference"
+        # arg_type = String
+        # metavar = "URL"
+        # help = "JLD Reference Data"
     end
     distributed_args.epilog = """
-    Run Chloe as a ZMQ service with distributed annotation processes.
-    Requires a ZMQ DEALER/ROUTER to connect to unless `--broker` specifies
+    Run Chloë as a ZMQ service with distributed annotation processes.
+    Requires a ZMQ DEALER/ROUTER to connect to unless `--broker, -b` specifies
     an endpoint in which case it runs its own broker.
     """
     parse_args(ARGS, distributed_args; as_symbols=true)
@@ -318,16 +376,15 @@ function main()
     distributed_args = args()
     client_url = get(distributed_args, :broker, nothing)
 
-
     if client_url !== nothing
         if startswith(client_url, "@")
-            # just so the server knows how to terminate itself
-            distributed_args[:broker] = client_url[1:end]
+            # hack just so the server knows how to terminate itself
+            distributed_args[:broker] = client_url[2:end]
         else
             # really start a broker
             if distributed_args[:address] === client_url
                 distributed_args[:address] = find_endpoint()
-                @warn "broker and worker endpoints clash: redirecting worker to $(distributed_args[:address])"
+                @warn "broker and worker endpoints clash: redirecting workers to $(distributed_args[:address])"
             end
         
             @info "Starting broker. Connect to: $client_url"
