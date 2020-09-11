@@ -32,7 +32,7 @@ end
 
 struct Reference
     # length(ReferenceOrganisms) from directory reference_1116
-    refsrc::Array{FwdRev{String}}
+    refsrc::Array{String}
     refloops::Array{FwdRev{DNAString}}
     refSAs::Array{FwdRev{SuffixArray}}
     refRAs::Array{FwdRev{SuffixArray}}
@@ -40,9 +40,22 @@ struct Reference
     # from .tsv file
     feature_templates::Array{FeatureTemplate}
     gene_exons::Dict{String,Int32}
-    referenceOrganisms::Dict{String,String}
+    # referenceOrganisms::Dict{String,String}
 end
 
+function human(num::Int)::String
+    if num === 0
+        return "0B"
+    end
+    magnitude = floor(Int, log10(abs(num)) / 3)
+    val = num / (1000^magnitude)
+    sval = @sprintf("%.1f", val)
+    if magnitude > 7
+        return "$(sval)YB"
+    end
+    p = ["", "k", "M", "G", "T", "P", "E", "Z"][magnitude + 1]
+    return "$(sval)$(p)B"
+end
 # stops the REPL printing the entire 7MB of sequences!
 function Base.show(io::IO, reference::Reference)
     function fr_length(fr)
@@ -54,8 +67,8 @@ function Base.show(io::IO, reference::Reference)
     
     t1 = "#templates=$(reference.feature_templates |> length)"
     t2 = "#gene_exons=$(reference.gene_exons |> length)[$(reference.gene_exons |> values |> sum)]"
-    t3 = "#seq=$(2 * (reference.refloops |> length))[$bp bp]"
-    print(io, "Reference: $t1, $t2, $t3, suffix=$(sabytes)B, total=$(sabytes + bp)B")
+    t3 = "#seq=$(2 * (reference.refloops |> length))[$(human(bp)) bp]"
+    print(io, "Reference: $t1, $t2, $t3, suffix=$(human(sabytes)), total=$(human(sabytes + bp))")
 end
 """
     readReferences(reference_dir, template_file_tsv)
@@ -77,7 +90,7 @@ function readReferences(refsdir::String, templates::String)::Reference
     refSAs = Array{FwdRev{SuffixArray}}(undef, num_refs)
     refRAs = Array{FwdRev{SuffixArray}}(undef, num_refs)
     ref_features = Array{FwdRev{FeatureArray}}(undef, num_refs)
-    refsrc = Array{FwdRev{String}}(undef, num_refs)
+    refsrc = Array{String}(undef, num_refs)
     
 
     files = readdir(refsdir)
@@ -108,13 +121,31 @@ function readReferences(refsdir::String, templates::String)::Reference
         f_strand_features, r_strand_features = readFeatures(joinpath(refsdir, feature_file))
 
         ref_features[i] = FwdRev(f_strand_features, r_strand_features)
-        refsrc[i] = FwdRev(ref.first, ref.first)
+        refsrc[i] = ref.first
 
 
     end
     feature_templates, gene_exons = readTemplates(templates)
-    return Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons, ReferenceOrganisms)
+    return Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons)
 end
+
+# import JLD2
+
+# function write_jld_Reference(filename::String, id::String, reference::Reference)
+#     JLD2.jldopen(filename, "w") do file
+#         write(file, id, reference)
+#     end
+# end
+
+# function read_jld_Reference(filename::String, id::String="reference")::Reference
+#     JLD2.jldopen(filename, "r") do file
+#         return read(file, id)
+#     end
+# end
+# function write_jld_Reference(;output::String, refsdir="reference_1116", template="optimised_templates.v2.tsv")
+#     reference = readReferences(refsdir, template)
+#     write_jld_Reference(output, "reference", reference)
+# end
 
 # const ns(td) = Time(Nanosecond(td))
 const ns(td) = @sprintf("%.3fs", td / 1e9)
@@ -196,7 +227,7 @@ MayBeIO = Union{String,IO,Nothing}
 function annotate_one(reference::Reference, fasta::Union{String,IO},
     output::MayBeIO=nothing)
 
-    num_refs = length(reference.referenceOrganisms)
+    num_refs = length(reference.refsrc)
     t1 = time_ns()
 
     target_id, target_seqf = readFasta(fasta)
@@ -233,7 +264,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
         blocks_aligned_to_targetf[refcount] = FwdRev(ff, rf)
         blocks_aligned_to_targetr[refcount] = FwdRev(rr, fr)
         
-        @info "[$target_id]± aligned $(reference.refsrc[refcount].reverse) ($(length(ff)),$(length(rf))) $(ns(time_ns() - start))"
+        @info "[$target_id]± aligned $(reference.refsrc[refcount]) ($(length(ff)),$(length(rf))) $(ns(time_ns() - start))"
 
     end
     
@@ -246,11 +277,11 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     @info "[$target_id] aligned: ($(length(reference.refloops))) $(ns(t3 - t2))" 
 
     coverages = Dict{String,Float32}()
-    for (i, ref) in enumerate(reference.referenceOrganisms)
+    for (i, ref) in enumerate(reference.refsrc)
         coverage = 0
         coverage += blockCoverage(blocks_aligned_to_targetf[i].forward)
         coverage += blockCoverage(blocks_aligned_to_targetf[i].reverse)
-        coverages[ref[1]] = coverage /= target_length * 2
+        coverages[ref] = coverage /= target_length * 2
     end
     @debug "[$target_id] coverages:" coverages
 
