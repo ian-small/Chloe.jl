@@ -56,8 +56,8 @@ class Socket:
 
     def destroy(self):
         if self.socket is not None:
-            self.socket.close(linger=0)
             self.poller.unregister(self.socket)
+            self.socket.close(linger=0)
             self.socket = self.poller = None
 
 
@@ -71,28 +71,34 @@ def extract_exc(s):
 # http://api.zeromq.org/2-1:zmq-setsockopt
 def proxy(url_worker, url_client, hwm=1000):
     """Server routine"""
-    # pylint: disable=no-member
+    try:
+        # pylint: disable=no-member
 
-    # Socket to talk to clients
-    clients = context.socket(zmq.ROUTER)
-    # number of *messages* in queue
-    clients.setsockopt(zmq.RCVHWM, hwm)
-    # clients.setsockopt(zmq.ZMQ_SWAP, swap)
+        # Socket to talk to clients
+        clients = context.socket(zmq.ROUTER)
+        # number of *messages* in queue
+        clients.setsockopt(zmq.RCVHWM, hwm)
+        # clients.setsockopt(zmq.ZMQ_SWAP, swap)
 
-    clients.bind(url_client)
+        clients.bind(url_client)
 
-    # Socket to talk to workers
-    worker = context.socket(zmq.DEALER)
-    worker.setsockopt(zmq.SNDHWM, hwm)
-    # workers.setsockopt(zmq.ZMQ_SWAP, swap)
-    worker.bind(url_worker)
+        # Socket to talk to workers
+        worker = context.socket(zmq.DEALER)
+        worker.setsockopt(zmq.SNDHWM, hwm)
+        # workers.setsockopt(zmq.ZMQ_SWAP, swap)
+        worker.bind(url_worker)
 
-    zmq.proxy(clients, worker)
+        zmq.proxy(clients, worker)
 
-    # We never get here but clean up anyhow
-    clients.close()
-    workers.close()
-    context.term()
+        # We never get here but clean up anyhow
+        clients.close()
+        workers.close()
+        context.term()
+    except zmq.ZMQError as e:
+        # probably Address already in use
+        click.secho(f"broker: {e}", fg="red", bold=True, err=True)
+        # we're in a thread.. need this to exit
+        os._exit(1)  # pylint: disable=protected-access
 
 
 HELP = """
@@ -392,6 +398,19 @@ def terminate(timeout, address):
 @addresses
 def exitit(timeout, address):
     """Shutdown the server."""
+
+    def h(s):
+        return click.style(s, fg="yellow", bold=True)
+
+    click.echo(
+        f"""
+{h("Warning!")}: sending and "extra" `exit` via the broker when
+the annotator is down may kill it as soon as it starts up again.
+(Since the kill request will remain "lurking" in the broker queue.)
+
+{h("Don't run this twice in a row!")}.
+"""
+    )
     socket = Socket(address, timeout)
     code, data = socket.msg(cmd="exit", args=[address])
     click.secho(str(data), fg="green" if code == 200 else "red", bold=True)
@@ -412,6 +431,22 @@ def workers(timeout, address):
     """Number of service workers"""
     socket = Socket(address, timeout)
     code, data = socket.msg(cmd="nconn")
+    click.secho(str(data), fg="green" if code == 200 else "red", bold=True)
+
+
+@cli.command()
+@addresses
+@click.option(
+    "-w",
+    "--workers",
+    type=int,
+    required=True,
+    help="number of workers to add or remove",
+)
+def add_workers(timeout, address, workers):
+    """add or remove service workers"""
+    socket = Socket(address, timeout)
+    code, data = socket.msg(cmd="add_workers", args=[workers, address])
     click.secho(str(data), fg="green" if code == 200 else "red", bold=True)
 
 
