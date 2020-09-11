@@ -129,7 +129,8 @@ function readTemplates(file::String)::Tuple{Array{FeatureTemplate,1},Dict{String
             push!(templates, template)
         end
     end
-    return sort!(templates, by=x -> x.path), StatsBase.countmap(gene_exons)
+  
+    return sort!(templates, by=x -> x.path), StatsBase.addcounts!(Dict{String,Int32}(), gene_exons)
 end
 
 struct AnnotationArray
