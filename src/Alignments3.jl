@@ -1,6 +1,6 @@
 
 AlignedBlock = Tuple{Int32,Int32,Int32}
-AlignedBlocks = Array{AlignedBlock,1}
+AlignedBlocks = Vector{AlignedBlock}
 
 DNAString = String
 
