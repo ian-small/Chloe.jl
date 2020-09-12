@@ -56,9 +56,14 @@ class Socket:
 
     def destroy(self):
         if self.socket is not None:
-            self.poller.unregister(self.socket)
-            self.socket.close(linger=0)
+            s, p = self.socket, self.poller
             self.socket = self.poller = None
+            p.unregister(s)
+            s.close(linger=0)
+
+    def __del__(self):
+        if self:
+            self.destroy()
 
 
 def extract_exc(s):
@@ -91,8 +96,8 @@ def proxy(url_worker, url_client, hwm=1000):
         zmq.proxy(clients, worker)
 
         # We never get here but clean up anyhow
-        clients.close()
-        workers.close()
+        clients.close(linger=0)
+        workers.close(linger=0)
         context.term()
     except zmq.ZMQError as e:
         # probably Address already in use
