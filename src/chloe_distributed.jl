@@ -70,16 +70,37 @@ end
 
 function arm_procs(procs, reference::Reference,  backend::MayBeString, level::String)
     # sic! src/....
-    @everywhere procs include("src/annotate_genomes.jl")
-    @everywhere procs include("src/ZMQLogger.jl")
-    # can't use rolling logger for procs because of file contentsion
-    for p in procs
-        @spawnat p set_global_logger(backend, level; topic="annotator")
+    @everywhere procs begin
+        include("src/annotate_genomes.jl")
+        include("src/ZMQLogger.jl")     
     end
-    # Send reference object to workers (as Main.REFERENCE).
-    # Call wait on the task so we effectively wait
-    # for all the data transfer to complete.
-    map(wait, sendto(procs, REFERENCE=reference))
+    # # Send reference object to workers (as Main.REFERENCE).
+    # # Call wait on the task so we effectively wait
+    # # for all the data transfer to complete.
+    # sendto(procs, REFERENCE=reference) .|> wait
+    [ @spawnat p begin
+
+        set_global_logger(backend, level; topic="annotator")
+        global REFERENCE = reference
+
+    end for p in procs] .|> wait  
+end
+function arm_procs(procs, backend::MayBeString, level::String;
+        refsdir="reference_1116", template="optimised_templates.v2.tsv")
+    # need to do @everywhere first because it
+    # doesn't work in the @spwanat block below!
+    @everywhere procs begin
+        include("src/annotate_genomes.jl")
+        include("src/ZMQLogger.jl")     
+    end
+    [ @spawnat p begin
+
+        set_global_logger(backend, level; topic="annotator")
+        global REFERENCE = readReferences(refsdir, template)
+
+    end for p in procs] .|> wait
+
+
 end
 
 function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
@@ -96,8 +117,10 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
         return readReferences(refsdir, template)
     end
     reference = get_reference()
-    
-    arm_procs(procs, reference, backend, level)
+    # with MMAPped files we prefer to
+    # allow the workers to read the data
+    # arm_procs(procs, reference, backend, level)
+    arm_procs(procs, backend, level, refsdir=refsdir, template=template)
 
     pid = getpid()
     machine = gethostname()
@@ -110,7 +133,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
 
     # All sent to workers I don't need this anymore (except see add_workers below)
     reference = nothing # force garbage collection
-
+    GC.gc()
     nannotations = 0
     
     function chloe(fasta::String, fname::MayBeString, task_id::MayBeString=nothing)
@@ -218,7 +241,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
             # add workers
             @async begin
                 added = addprocs(n, topology=:master_worker)
-                arm_procs(added, get_reference(), backend, level)
+                arm_procs(added, backend, level; refsdir=refsdir, template=template)
                 @info "added $(added) processes"
                 # update globals
                 procs = [procs..., added...]
