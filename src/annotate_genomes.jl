@@ -8,6 +8,7 @@ include("Annotations.jl")
 import Base
 import Printf: @sprintf
 import JSON
+import Mmap
 
 # const ReferenceOrganisms = Dict(
 #     "AP000423"  => "Arabidopsis",
@@ -30,6 +31,25 @@ struct FwdRev{T}
     reverse::T
 end
 
+Base.:(==)(x::FwdRev{T}, y::FwdRev{T}) where T = x.forward == y.forward && x.reverse == y.reverse
+
+function mmap_suffix_arrays(filename::String) Tuple{FwdRev{SuffixArray},FwdRev{SuffixArray}}
+    size = filesize(filename)
+    nelem = floor(Int, (size + 2) / 20)
+    nbytes = 4 * nelem
+    sbytes = 2 * nelem - 1
+    println("$nelem $sbytes $size")
+
+    f = open(filename)
+    # zero offset???
+    saf = Mmap.mmap(f, SuffixArray, nelem, 0 + 0 * nbytes)
+    sar = Mmap.mmap(f, SuffixArray, nelem, 0 + 1 * nbytes)
+    raf = Mmap.mmap(f, SuffixArray, nelem, 0 + 2 * nbytes)
+    rar = Mmap.mmap(f, SuffixArray, nelem, 0 + 3 * nbytes)
+    sf =  Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes)
+    sr  = Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes + sbytes)
+    return FwdRev(saf, sar), FwdRev(raf, rar), FwdRev(String(sf), String(sr))
+end
 struct Reference
     # length(ReferenceOrganisms) from directory reference_1116
     refsrc::Array{String}
@@ -69,6 +89,14 @@ function Base.show(io::IO, reference::Reference)
     t2 = "#gene_exons=$(reference.gene_exons |> length)[$(reference.gene_exons |> values |> sum)]"
     t3 = "#seq=$(2 * (reference.refloops |> length))[$(human(bp)) bp]"
     print(io, "Reference: $t1, $t2, $t3, suffix=$(human(sabytes)), total=$(human(sabytes + bp))")
+
+end
+   
+function FwdRevSA(gwsas::GenomeWithSAs)
+    FwdRev(gwsas.forwardSA, gwsas.reverseSA)
+end
+function FwdRevRA(gwsas::GenomeWithSAs)
+    FwdRev(makeSuffixArrayRanksArray(gwsas.forwardSA), makeSuffixArrayRanksArray(gwsas.reverseSA))
 end
 """
     readReferences(reference_dir, template_file_tsv)
@@ -102,17 +130,21 @@ function readReferences(refsdir::String, templates::String)::Reference
     iff_files = files[idx]
 
     for (i, ref) in enumerate(ReferenceOrganisms)
-        path = joinpath(refsdir, ref.first * ".gwsas")
-        if !isfile(path)
-            error("no gwsas file $path")
+        gwsas = joinpath(refsdir, ref.first * ".gwsas")
+
+        mmap = joinpath(refsdir, ref.first * ".mmap")
+        
+        if isfile(mmap)
+            refSAs[i], refRAs[i], refloops[i] = mmap_suffix_arrays(mmap)
+            @info "found mmap file for: $(ref.first)"
+        elseif isfile(gwsas)
+            refgwsas = readGenomeWithSAs(gwsas, ref.first)
+            rev = revComp(refgwsas.sequence)
+            refloops[i] = FwdRev(refgwsas.sequence * refgwsas.sequence[1:end - 1], rev * rev[1:end - 1])
+            refSAs[i], refRAs[i] = FwdRevSA(refgwsas), FwdRevRA(refgwsas)
+        else
+            error("no data file for $(ref.first)")
         end
-        refgwsas = readGenomeWithSAs(path, ref.first)
-        rev = revComp(refgwsas.sequence)
-        
-        refloops[i] = FwdRev(refgwsas.sequence * refgwsas.sequence[1:end - 1], rev * rev[1:end - 1])
-        refSAs[i] = FwdRev(refgwsas.forwardSA, refgwsas.reverseSA)
-        refRAs[i] = FwdRev(makeSuffixArrayRanksArray(refgwsas.forwardSA), makeSuffixArrayRanksArray(refgwsas.reverseSA))
-        
         idx = findfirst(x -> startswith(x, ref.second), iff_files)
         if idx === nothing
             error("no sff file for $(ref.second)")
@@ -355,7 +387,7 @@ end
 function annotate_one_task(fasta::MayBeString, output::MayBeIO, task_id::MayBeString)
     annotation_local_storage(TASK_KEY, task_id)
     try
-        # the global REFERNCE should have been
+        # the global REFERENCE should have been
         # sent to the worker process by main process
         @debug "using $(Main.REFERENCE)"
         annotate_one(Main.REFERENCE::Reference, fasta, output)
@@ -368,7 +400,7 @@ end
 function annotate_one_task(fasta::Union{String,IO}, task_id::MayBeString)
     annotation_local_storage(TASK_KEY, task_id)
     try
-        # the global REFERNCE should have been
+        # the global REFERENCE should have been
         # sent to the worker process by main process
         @debug "using $(Main.REFERENCE)"
         annotate_one(Main.REFERENCE::Reference, fasta, IOBuffer())
