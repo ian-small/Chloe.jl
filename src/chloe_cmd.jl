@@ -31,6 +31,9 @@ cmd_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into 
     "suffix"
         help = "generate suffix arrays from fasta files"
         action = :command
+    "mmap"
+        help = "generate mmap files from .gwsas files"
+        action = :command
     # "jld"
     #     help = "generate jld reference file"
     #     action = :command
@@ -47,7 +50,7 @@ end
         required = true
         action = :store_arg
         help = "sff files to process" 
-        "--directory", "-d"
+    "--directory", "-d"
         arg_type = String
         help = "output directory" 
 end
@@ -59,6 +62,19 @@ end
         required = true
         action = :store_arg
         help = "fasta files to process"
+    "--directory", "-d"
+        arg_type = String
+        help = "output directory" 
+end
+
+@add_arg_table! cmd_args["mmap"]  begin
+    "gwsas_fasta"
+        arg_type = String
+        nargs = '+'
+        required = true
+        action = :store_arg
+        help = "gwsas/fasta files to process"
+
 end
 
 @add_arg_table! cmd_args["annotate"]  begin
@@ -119,6 +135,8 @@ function cmd_main()
             writeallGFF3(;a...)
         elseif cmd == :annotate
             chloe(;a...)
+        elseif cmd == :mmap
+            create_mmaps(;a...)
         elseif cmd == :suffix
             writesuffixarray(;a...)
         end

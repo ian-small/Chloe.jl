@@ -1,4 +1,4 @@
-SuffixArray = Array{Int32,1}
+SuffixArray = Vector{Int32}
 DNAString = String
 
 struct GenomeWithSAs
@@ -6,6 +6,12 @@ struct GenomeWithSAs
     sequence::String
     forwardSA::SuffixArray
     reverseSA::SuffixArray
+end
+
+# define equality between GenomeWithSAs
+Base.:(==)(x::GenomeWithSAs, y::GenomeWithSAs) = begin
+    return x.id == y.id && x.sequence == y.sequence && 
+        x.forwardSA == y.forwardSA && x.reverseSA == y.reverseSA;
 end
 
 function makeSuffixArray(source::DNAString, circular::Bool)::SuffixArray
