@@ -426,7 +426,7 @@ function translateFeature(genome::DNAString, feat::Feature)
         aa += 1
         peptide[aa] = get(genetic_code, SubString(genome, i, i + 2), 'X')
     end
-    return String(peptide)
+    return DNAString(peptide)
 end
 
 function translateModel(genome::DNAString, model::AFeature)::DNAString
@@ -677,7 +677,7 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
         last_exon = last(model)
         # if CDS, find phase, stop codon and set feature.length
         if isType(last_exon, "CDS")
-            translation = translateFeature(targetloop, last_exon)
+            # translation = translateFeature(targetloop, last_exon)
             # @debug "translation" translation
             last_exon.phase = getFeaturePhaseFromAnnotationOffsets(last_exon, annotations)
 
@@ -685,7 +685,7 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
                 setLongestORF!(last_exon, genome_length, targetloop)
             end
 
-            translation = translateFeature(targetloop, last_exon)
+            # translation = translateFeature(targetloop, last_exon)
 
             last_cds_examined = last_exon
         end
