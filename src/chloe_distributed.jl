@@ -113,10 +113,10 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
 
     set_global_logger(backend, level; topic="annotator")
 
-    function get_reference()
-        return readReferences(refsdir, template)
-    end
-    reference = get_reference()
+    # function get_reference()
+    #     return readReferences(refsdir, template)
+    # end
+    # reference = get_reference()
     # with MMAPped files we prefer to
     # allow the workers to read the data
     # arm_procs(procs, reference, backend, level)
@@ -129,11 +129,11 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
 
     @info "starting: chloe version $VERSION (git: $git) pid=$pid workers=$workers threads=$nthreads on machine $machine"
     @info "connecting to $address"
-    @info reference
+    # @info reference
 
     # All sent to workers I don't need this anymore (except see add_workers below)
-    reference = nothing # force garbage collection
-    GC.gc()
+    # reference = nothing # force garbage collection
+    # GC.gc()
     nannotations = 0
     
     function chloe(fasta::String, fname::MayBeString, task_id::MayBeString=nothing)
@@ -347,11 +347,9 @@ function args()
         arg_type = String
         metavar = "URL"
         help = "log to zmq endpoint"
-        # "--jld-reference"
-        # arg_type = String
-        # metavar = "URL"
-        # help = "JLD Reference Data"
+
     end
+
     distributed_args.epilog = """
     Run Chloë as a ZMQ service with distributed annotation processes.
     Requires a ZMQ DEALER/ROUTER to connect to unless `--broker, -b` specifies

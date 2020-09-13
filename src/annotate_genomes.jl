@@ -1,4 +1,9 @@
 
+include("MMappedString.jl")
+
+# MMappedString = String
+DNAString = AbstractString
+
 include("Utilities.jl")
 include("SuffixArrays.jl")
 include("Alignments3.jl")
@@ -9,6 +14,7 @@ import Base
 import Printf: @sprintf
 import JSON
 import Mmap
+
 
 # const ReferenceOrganisms = Dict(
 #     "AP000423"  => "Arabidopsis",
@@ -36,9 +42,9 @@ Base.:(==)(x::FwdRev{T}, y::FwdRev{T}) where T = x.forward == y.forward && x.rev
 function mmap_suffix_arrays(filename::String) Tuple{FwdRev{SuffixArray},FwdRev{SuffixArray}}
     size = filesize(filename)
     nelem = floor(Int, (size + 2) / 20)
+    
     nbytes = 4 * nelem
     sbytes = 2 * nelem - 1
-    println("$nelem $sbytes $size")
 
     f = open(filename)
     # zero offset???
@@ -48,15 +54,18 @@ function mmap_suffix_arrays(filename::String) Tuple{FwdRev{SuffixArray},FwdRev{S
     rar = Mmap.mmap(f, SuffixArray, nelem, 0 + 3 * nbytes)
     sf =  Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes)
     sr  = Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes + sbytes)
-    return FwdRev(saf, sar), FwdRev(raf, rar), FwdRev(String(sf), String(sr))
+    msf, msr = MMappedString(sf),  MMappedString(sr)
+    return f, FwdRev(saf, sar), FwdRev(raf, rar), FwdRev(msf, msr)
 end
 struct Reference
     # length(ReferenceOrganisms) from directory reference_1116
     refsrc::Array{String}
-    refloops::Array{FwdRev{DNAString}}
+    refloops::Array{FwdRev{MMappedString}}
     refSAs::Array{FwdRev{SuffixArray}}
     refRAs::Array{FwdRev{SuffixArray}}
     ref_features::Array{FwdRev{FeatureArray}}
+    # any open memory mapped files...
+    # _mmaps::Array{Union{Nothing,IOStream}}
     # from .tsv file
     feature_templates::Array{FeatureTemplate}
     gene_exons::Dict{String,Int32}
@@ -92,11 +101,29 @@ function Base.show(io::IO, reference::Reference)
 
 end
    
-function FwdRevSA(gwsas::GenomeWithSAs)
-    FwdRev(gwsas.forwardSA, gwsas.reverseSA)
-end
-function FwdRevRA(gwsas::GenomeWithSAs)
-    FwdRev(makeSuffixArrayRanksArray(gwsas.forwardSA), makeSuffixArrayRanksArray(gwsas.reverseSA))
+
+
+function read_gwsas(gwsas::String, id::String)
+    
+    function FwdRevSA(gwsas::GenomeWithSAs)
+        FwdRev(gwsas.forwardSA, gwsas.reverseSA)
+    end
+    function FwdRevRA(gwsas::GenomeWithSAs)
+        FwdRev(makeSuffixArrayRanksArray(gwsas.forwardSA), makeSuffixArrayRanksArray(gwsas.reverseSA))
+    end
+    function FwdRevMap(fwd::String, rev::String)
+        # makes a copy unfortuately...
+        FwdRev(MMappedString(fwd), MMappedString(rev))
+    end
+         
+    refgwsas = readGenomeWithSAs(gwsas, id)
+    fwd = refgwsas.sequence
+    rev = revComp(fwd)
+    fwd = fwd * fwd[1:end - 1]
+    rev = rev * rev[1:end - 1]
+
+
+    FwdRevSA(refgwsas), FwdRevRA(refgwsas), FwdRevMap(fwd, rev)
 end
 """
     readReferences(reference_dir, template_file_tsv)
@@ -114,11 +141,12 @@ function readReferences(refsdir::String, templates::String)::Reference
 
     num_refs = length(ReferenceOrganisms)
 
-    refloops = Array{FwdRev{DNAString}}(undef, num_refs)
+    refloops = Array{FwdRev{MMappedString}}(undef, num_refs)
     refSAs = Array{FwdRev{SuffixArray}}(undef, num_refs)
     refRAs = Array{FwdRev{SuffixArray}}(undef, num_refs)
     ref_features = Array{FwdRev{FeatureArray}}(undef, num_refs)
     refsrc = Array{String}(undef, num_refs)
+    # mmapped = Array{Union{Nothing,IOStream}}(undef, num_refs)
     
 
     files = readdir(refsdir)
@@ -131,22 +159,20 @@ function readReferences(refsdir::String, templates::String)::Reference
 
     for (i, ref) in enumerate(ReferenceOrganisms)
         gwsas = joinpath(refsdir, ref.first * ".gwsas")
-
         mmap = joinpath(refsdir, ref.first * ".mmap")
         
         if isfile(mmap)
-            refSAs[i], refRAs[i], refloops[i] = mmap_suffix_arrays(mmap)
+            _, refSAs[i], refRAs[i], refloops[i] = mmap_suffix_arrays(mmap)
             @info "found mmap file for: $(ref.first)"
         elseif isfile(gwsas)
-            refgwsas = readGenomeWithSAs(gwsas, ref.first)
-            rev = revComp(refgwsas.sequence)
-            refloops[i] = FwdRev(refgwsas.sequence * refgwsas.sequence[1:end - 1], rev * rev[1:end - 1])
-            refSAs[i], refRAs[i] = FwdRevSA(refgwsas), FwdRevRA(refgwsas)
+            refSAs[i], refRAs[i], refloops[i] = read_gwsas(gwsas, ref.first)
+            @info "found gwsas file for: $(ref.first)"
         else
             error("no data file for $(ref.first)")
         end
         idx = findfirst(x -> startswith(x, ref.second), iff_files)
         if idx === nothing
+            # TODO check for fasta files
             error("no sff file for $(ref.second)")
         end
         feature_file = iff_files[idx]
@@ -161,23 +187,8 @@ function readReferences(refsdir::String, templates::String)::Reference
     return Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons)
 end
 
-# import JLD2
 
-# function write_jld_Reference(filename::String, id::String, reference::Reference)
-#     JLD2.jldopen(filename, "w") do file
-#         write(file, id, reference)
-#     end
-# end
 
-# function read_jld_Reference(filename::String, id::String="reference")::Reference
-#     JLD2.jldopen(filename, "r") do file
-#         return read(file, id)
-#     end
-# end
-# function write_jld_Reference(;output::String, refsdir="reference_1116", template="optimised_templates.v2.tsv")
-#     reference = readReferences(refsdir, template)
-#     write_jld_Reference(output, "reference", reference)
-# end
 
 # const ns(td) = Time(Nanosecond(td))
 const ns(td) = @sprintf("%.3fs", td / 1e9)
@@ -277,6 +288,9 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     target_sar = makeSuffixArray(targetloopr, true)
     target_rar = makeSuffixArrayRanksArray(target_sar)
     
+    # targetloopf = MMappedString(targetloopf)
+    # targetloopr = MMappedString(targetloopr)
+
     t2 = time_ns()
 
     @info "[$target_id] made suffix arrays: $(ns(t2 - t1))"
@@ -299,7 +313,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
         @info "[$target_id]± aligned $(reference.refsrc[refcount]) ($(length(ff)),$(length(rf))) $(ns(time_ns() - start))"
 
     end
-    
+
     Threads.@threads for refno in 1:length(reference.refloops)
         alignit(refno)
     end
