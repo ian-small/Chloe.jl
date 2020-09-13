@@ -1,14 +1,17 @@
 
 ## Abstract String backed by a readonly Memory Mapped Vector{UInt8}
 # as I can't be sure that String(Vector{UInt8}) doesn't make a copy.... :(
+struct Unicode end
+struct ASCII end
 
-
-struct MMappedString <: AbstractString
+struct MMappedString{T <: Union{Unicode,ASCII}} <: AbstractString
     ptr::Vector{UInt8}
 end
 
-MMappedString(s::String) = MMappedString(Vector{UInt8}(s)) # copy unfortunately
+MMappedString(ptr) = MMappedString{Unicode}(ptr)
 
+MMappedString(s::String) = MMappedString(Vector{UInt8}(s)) # copy unfortunately
+MMappedString{ASCII}(s::String) = MMappedString{ASCII}(Vector{UInt8}(s)) # copy unfortunately
 import Base
 import Base: ==
 
@@ -17,33 +20,35 @@ function ==(x::MMappedString, y::MMappedString)
 end
 function ==(x::String, y::MMappedString)
     sa = sizeof(x)
-    sa == length(y.ptr) && Base._memcmp(x, y.ptr, sa) == 0
+    sa == length(y.ptr) && Base._memcmp(x, pointer(y.ptr), sa) == 0
 end
 
 ==(y::MMappedString, x::String) = x == y
 
-function Base.cmp(a::MMappedString, b::MMappedString)
+@inline function Base.cmp(a::MMappedString, b::MMappedString)
     Base.cmp(a.ptr, b.ptr)
 end
 
-function cmp(a::String, b::MMappedString)
+
+function Base.cmp(a::String, b::MMappedString)
     al, bl = sizeof(a), length(b)
-    c = Base._memcmp(a, b.ptr, min(al, bl))
+    c = Base._memcmp(a, pointer(b.ptr), min(al, bl))
     return c < 0 ? -1 : c > 0 ? +1 : Base.cmp(al, bl)
 end
 
-function Base.cmp(a::MMappedString, b::String)
+@inline function Base.cmp(a::MMappedString, b::String)
     -Base.cmp(b, a)
 end
 
 
-function Base.hash(s::MMappedString, h::UInt)
+@inline function Base.hash(s::MMappedString, h::UInt)
     Base.hash(s.ptr, h)
 end
 
 function Base.show(io::IO, s::MMappedString)
     print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr)) of type $(codeunit(s))")
 end
+
 # Base.print(io::IO, s::MMappedString) = print(io, string(s))
 # Base.textwidth(s::MMappedString) = textwidth(string(s))
 
@@ -60,12 +65,12 @@ Base.pointer(s::MMappedString, i::Integer) = pointer(s.ptr, i)
 Base.ncodeunits(s::MMappedString) = length(s.ptr)
 Base.codeunit(s::MMappedString) = UInt8
 
-@inline function Base.codeunit(s::MMappedString, i::Int)
+Base.@propagate_inbounds function Base.codeunit(s::MMappedString, i::Int)
     s.ptr[i]
 end
 
 # Ugh! I had to copy and paste this from julia/base/strings/string.jl
-# why didn't they put the logic on a Vector{UInt8}
+# why didn't they put the UTF8 logic on a Vector{UInt8}
 
 ## thisind, nextind ##
 
@@ -92,6 +97,7 @@ end
 
 Base.@propagate_inbounds Base.nextind(s::MMappedString, i::Int) = _nextind_str(s, i)
 
+
 @inline function _nextind_str(s::MMappedString, i::Int)
     i == 0 && return 1
     n = ncodeunits(s)
@@ -117,8 +123,8 @@ Base.@propagate_inbounds Base.nextind(s::MMappedString, i::Int) = _nextind_str(s
 end
 
 
-Base.isvalid(s::MMappedString) = Base.isvalid(String, s.ptr)
 
+Base.isvalid(s::MMappedString) = Base.isvalid(String, s.ptr)
 
 ## required core functionality ##
 
@@ -129,6 +135,8 @@ Base.@propagate_inbounds function Base.iterate(s::MMappedString, i::Int=firstind
     Base.between(b, 0x80, 0xf7) || return reinterpret(Char, u), i + 1
     return iterate_continued(s, i, u)
 end
+
+
 
 function iterate_continued(s::MMappedString, i::Int, u::UInt32)
     u < 0xc0000000 && (i += 1; @goto ret)
@@ -159,6 +167,7 @@ Base.@propagate_inbounds function Base.getindex(s::MMappedString, i::Int)
     return getindex_continued(s, i, u)
 end
 
+
 function getindex_continued(s::MMappedString, i::Int, u::UInt32)
     if u < 0xc0000000
         # called from `getindex` which checks bounds
@@ -187,8 +196,7 @@ end
 
 Base.getindex(s::MMappedString, r::UnitRange{<:Integer}) = s[Int(first(r)):Int(last(r))]
 
-# @inline 
-function Base.getindex(s::MMappedString, r::UnitRange{Int})
+@inline function Base.getindex(s::MMappedString, r::UnitRange{Int})
     isempty(r) && return ""
     i, j = first(r), last(r)
     @boundscheck begin
@@ -205,8 +213,7 @@ end
 
 Base.length(s::MMappedString) = length_continued(s, 1, ncodeunits(s), ncodeunits(s))
 
-# @inline 
-function Base.length(s::MMappedString, i::Int, j::Int)
+@inline function Base.length(s::MMappedString, i::Int, j::Int)
     @boundscheck begin
         0 < i ≤ ncodeunits(s) + 1 || throw(Base.BoundsError(s, i))
         0 ≤ j < ncodeunits(s) + 1 || throw(Base.BoundsError(s, j))
@@ -216,6 +223,7 @@ function Base.length(s::MMappedString, i::Int, j::Int)
     c = j - i + (i == k)
     length_continued(s, i, j, c)
 end
+
 
 @inline function length_continued(s::MMappedString, i::Int, n::Int, c::Int)
     i < n || return c
@@ -252,3 +260,57 @@ function Base.isascii(s::MMappedString)
     end
     return true
 end
+
+
+# specializations
+
+## Must be ASCII! Otherwise the bitwise equality above
+# would not work and latin1 from 0x80 up are 2 byte representations
+
+function Base.show(io::IO, s::MMappedString{ASCII})
+    print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr)) of type $(codeunit(s)) Latin1")
+end
+Base.@propagate_inbounds function Base.iterate(s::MMappedString{ASCII}, i::Int=firstindex(s))
+    i > ncodeunits(s) && return nothing
+    b = codeunit(s, i)
+    Char(b), i + 1
+end
+Base.@propagate_inbounds function Base.nextind(s::MMappedString{ASCII}, i::Int)
+    i == 0 && return 1
+    n = ncodeunits(s)
+    @boundscheck Base.between(i, 1, n) || throw(Base.BoundsError(s, i))
+    i + 1
+end
+Base.@propagate_inbounds function Base.thisind(s::MMappedString{ASCII}, i::Int)
+    i == 0 && return 0
+    n = ncodeunits(s)
+    i == n + 1 && return i
+    @boundscheck Base.between(i, 1, n) || throw(Base.BoundsError(s, i))
+    i
+end
+Base.@propagate_inbounds function Base.prevind(s::MMappedString{ASCII}, i::Int)
+    i == 1 && return 0
+    n = ncodeunits(s)
+    @boundscheck Base.between(i, 1, n + 1) || throw(Base.BoundsError(s, i))
+    i - 1
+end
+@inline function Base.length(s::MMappedString{ASCII}, i::Int, j::Int)
+    @boundscheck begin
+        0 < i ≤ ncodeunits(s) + 1 || throw(Base.BoundsError(s, i))
+        0 ≤ j < ncodeunits(s) + 1 || throw(Base.BoundsError(s, j))
+    end
+    j < i && return 0
+    return j - i + 1
+end
+Base.isvalid(s::MMappedString{ASCII}, i::Int) = checkbounds(Bool, s, i)
+Base.length(s::MMappedString{ASCII}) = length(s.ptr)
+Base.lastindex(s::MMappedString{ASCII}) = lastindex(s.ptr)
+Base.@propagate_inbounds function Base.getindex(s::MMappedString{ASCII}, i::Int)
+    b = codeunit(s, i)
+    Char(b)
+end
+Base.isvalid(s::MMappedString{ASCII}) = Base.isascii(s)
+# @Base.propagate_inbounds function Base.getindex(s::MMappedString{ASCII}, r::UnitRange{Int})
+#     isempty(r) && return ""
+#     return (@view s.ptr[r]) .|> Char |> String
+# end

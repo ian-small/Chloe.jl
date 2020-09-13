@@ -1,7 +1,7 @@
 
 include("MMappedString.jl")
 
-# MMappedString = String
+MappedPtrString = MMappedString{ASCII}
 DNAString = AbstractString
 
 include("Utilities.jl")
@@ -54,13 +54,13 @@ function mmap_suffix_arrays(filename::String) Tuple{FwdRev{SuffixArray},FwdRev{S
     rar = Mmap.mmap(f, SuffixArray, nelem, 0 + 3 * nbytes)
     sf =  Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes)
     sr  = Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes + sbytes)
-    msf, msr = MMappedString(sf),  MMappedString(sr)
+    msf, msr = MappedPtrString(sf),  MappedPtrString(sr)
     return f, FwdRev(saf, sar), FwdRev(raf, rar), FwdRev(msf, msr)
 end
 struct Reference
     # length(ReferenceOrganisms) from directory reference_1116
     refsrc::Array{String}
-    refloops::Array{FwdRev{MMappedString}}
+    refloops::Array{FwdRev{MappedPtrString}}
     refSAs::Array{FwdRev{SuffixArray}}
     refRAs::Array{FwdRev{SuffixArray}}
     ref_features::Array{FwdRev{FeatureArray}}
@@ -113,7 +113,7 @@ function read_gwsas(gwsas::String, id::String)
     end
     function FwdRevMap(fwd::String, rev::String)
         # makes a copy unfortuately...
-        FwdRev(MMappedString(fwd), MMappedString(rev))
+        FwdRev(MappedPtrString(fwd), MappedPtrString(rev))
     end
          
     refgwsas = readGenomeWithSAs(gwsas, id)
@@ -141,7 +141,7 @@ function readReferences(refsdir::String, templates::String)::Reference
 
     num_refs = length(ReferenceOrganisms)
 
-    refloops = Array{FwdRev{MMappedString}}(undef, num_refs)
+    refloops = Array{FwdRev{MappedPtrString}}(undef, num_refs)
     refSAs = Array{FwdRev{SuffixArray}}(undef, num_refs)
     refRAs = Array{FwdRev{SuffixArray}}(undef, num_refs)
     ref_features = Array{FwdRev{FeatureArray}}(undef, num_refs)
@@ -288,8 +288,8 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     target_sar = makeSuffixArray(targetloopr, true)
     target_rar = makeSuffixArrayRanksArray(target_sar)
     
-    # targetloopf = MMappedString(targetloopf)
-    # targetloopr = MMappedString(targetloopr)
+    targetloopf = MappedPtrString(targetloopf)
+    targetloopr = MappedPtrString(targetloopr)
 
     t2 = time_ns()
 
