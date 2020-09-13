@@ -1,6 +1,5 @@
 
 import CodecZlib: GzipDecompressorStream, GzipCompressorStream
-DNAString = String
 
 function gbff2fasta(infile::String)
     open(infile) do f
@@ -90,7 +89,7 @@ end
 const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 
                   'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
     
-function revComp(dna::DNAString)::DNAString # where {T <: AbstractString}
+function revComp(dna::AbstractString)::String # where {T <: AbstractString}
     reverse(map(x -> get(COMP, x, 'N'), dna))
 end
 
@@ -207,7 +206,7 @@ const genetic_code = Dict{String,Char}(
     "AGT" => 'S',"AGC" => 'S',"AGA" => 'R',"AGG" => 'R',
     "GGT" => 'G',"GGC" => 'G',"GGA" => 'G',"GGG" => 'G')
 
-function translateDNA(dna::DNAString)::String
+function translateDNA(dna::AbstractString)::String
     peptide_length = fld(length(dna), 3)
     peptide = Array{Char}(undef, peptide_length)
     aa = 0

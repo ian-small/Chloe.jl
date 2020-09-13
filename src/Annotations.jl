@@ -26,8 +26,8 @@ function isFeatureName(feature::Feature, name::String)
     name == getFeatureName(feature)
 end
 
-AFeature = Array{Feature,1}
-AAFeature = Array{AFeature,1}
+AFeature = Vector{Feature}
+AAFeature = Vector{AFeature}
 # entire set of Features for one strand of one genome
 struct FeatureArray
     genome_id::String
@@ -426,12 +426,12 @@ function translateFeature(genome::DNAString, feat::Feature)
         aa += 1
         peptide[aa] = get(genetic_code, SubString(genome, i, i + 2), 'X')
     end
-    return DNAString(peptide)
+    return String(peptide)
 end
 
-function translateModel(genome::DNAString, model::AFeature)::DNAString
+function translateModel(genome::DNAString, model::AFeature)::String
 
-    DNA = Array{DNAString}(undef, 0)
+    DNA = Array{String}(undef, 0)
     for (i, feat) in enumerate(model)
         getFeatureType(feat) ≠ "CDS" && continue
         start = feat.start

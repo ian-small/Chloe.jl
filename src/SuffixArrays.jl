@@ -1,5 +1,4 @@
 SuffixArray = Vector{Int32}
-DNAString = String
 
 struct GenomeWithSAs
     id::String
@@ -14,7 +13,7 @@ Base.:(==)(x::GenomeWithSAs, y::GenomeWithSAs) = begin
         x.forwardSA == y.forwardSA && x.reverseSA == y.reverseSA;
 end
 
-function makeSuffixArray(source::DNAString, circular::Bool)::SuffixArray
+function makeSuffixArray(source::AbstractString, circular::Bool)::SuffixArray
 
     if circular
 		last = Int((length(source) + 1) / 2)
@@ -34,7 +33,7 @@ function makeSuffixArray(source::DNAString, circular::Bool)::SuffixArray
 
 end
 
-function makeSuffixArrayT(seqloop::DNAString)::SuffixArray # assumes seqloop is circular
+function makeSuffixArrayT(seqloop::AbstractString)::SuffixArray # assumes seqloop is circular
 
 	last::Int32 = trunc(Int32, cld((length(seqloop) + 1) / 2, 3))
 	suffixes = Array{SubString}(undef, last * 3)

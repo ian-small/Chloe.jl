@@ -1,5 +1,3 @@
-# include("Utilities.jl")
-# include("SuffixArrays.jl")
 
 import Mmap
 
