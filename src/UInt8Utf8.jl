@@ -6,7 +6,6 @@ export utf8_iterate, utf8_length, utf8_nextind, utf8_prevind, utf8_thisind
 
 export ascii_getindex, ascii_isvalid, ascii_iterate, ascii_nextind, ascii_prevind, ascii_thisind
 
-
 import Base
 
 utf8_ncodeunits(s::Vector{UInt8}) = length(s)
@@ -20,7 +19,6 @@ utf8_codeunit(s::Vector{UInt8}, i::Int) = s[i]
 ## thisind, nextind ##
 
 Base.@propagate_inbounds utf8_thisind(s::Vector{UInt8}, i::Int) = thisind_mm(s, i)
-
 
 @inline function thisind_mm(s::Vector{UInt8}, i::Int)
     i == 0 && return 0
@@ -41,7 +39,6 @@ Base.@propagate_inbounds utf8_thisind(s::Vector{UInt8}, i::Int) = thisind_mm(s, 
 end
 
 Base.@propagate_inbounds utf8_nextind(s::Vector{UInt8}, i::Int) = nextind_mm(s, i)
-
 
 @inline function nextind_mm(s::Vector{UInt8}, i::Int)
     i == 0 && return 1
@@ -80,8 +77,6 @@ function utf8_prevind(s::Vector{UInt8}, i::Int, n::Int)
     return i - n
 end
 
-
-
 utf8_isvalid(s::Vector{UInt8}) = Base.isvalid(String, s)
 
 ## required core functionality ##
@@ -93,8 +88,6 @@ Base.@propagate_inbounds function utf8_iterate(s::Vector{UInt8}, i::Int)
     Base.between(b, 0x80, 0xf7) || return reinterpret(Char, u), i + 1
     return iterate_continued_mm(s, i, u)
 end
-
-
 
 function iterate_continued_mm(s::Vector{UInt8}, i::Int, u::UInt32)
     u < 0xc0000000 && (i += 1; @goto ret)
@@ -124,7 +117,6 @@ Base.@propagate_inbounds function utf8_getindex(s::Vector{UInt8}, i::Int)
     Base.between(b, 0x80, 0xf7) || return reinterpret(Char, u)
     return getindex_continued(s, i, u)
 end
-
 
 function getindex_continued(s::Vector{UInt8}, i::Int, u::UInt32)
     if u < 0xc0000000
@@ -180,7 +172,6 @@ utf8_length(s::Vector{UInt8}) = length_continued(s, 1, utf8_ncodeunits(s), utf8_
     length_continued(s, i, j, c)
 end
 
-
 @inline function length_continued(s::Vector{UInt8}, i::Int, n::Int, c::Int)
     i < n || return c
     @inbounds b = utf8_codeunit(s, i)
@@ -224,6 +215,7 @@ Base.@propagate_inbounds function ascii_iterate(s::Vector{UInt8}, i::Int)
     b = utf8_codeunit(s, i)
     Char(b), i + 1
 end
+
 # step forward and back by one byte == one character
 Base.@propagate_inbounds function ascii_nextind(s::Vector{UInt8}, i::Int)
     i == 0 && return 1
@@ -231,6 +223,7 @@ Base.@propagate_inbounds function ascii_nextind(s::Vector{UInt8}, i::Int)
     @boundscheck Base.between(i, 1, n) || throw(Base.BoundsError(s, i))
     i + 1
 end
+
 Base.@propagate_inbounds function ascii_thisind(s::Vector{UInt8}, i::Int)
     i == 0 && return 0
     n = utf8_ncodeunits(s)
@@ -238,6 +231,7 @@ Base.@propagate_inbounds function ascii_thisind(s::Vector{UInt8}, i::Int)
     @boundscheck Base.between(i, 1, n) || throw(Base.BoundsError(s, i))
     i
 end
+
 Base.@propagate_inbounds function ascii_prevind(s::Vector{UInt8}, i::Int)
     i == 1 && return 0
     n = utf8_ncodeunits(s)
@@ -254,11 +248,14 @@ end
     j < i && return 0
     return j - i + 1
 end
+
 ascii_isvalid(s::Vector{UInt8}, i::Int) = checkbounds(Bool, s, i)
+
 Base.@propagate_inbounds function ascii_getindex(s::Vector{UInt8}, i::Int)
     b = utf8_codeunit(s, i)
     Char(b)
 end
+
 @Base.propagate_inbounds function ascii_getindex(s::Vector{UInt8}, r::UnitRange{Int})
     isempty(r) && return ""
     return (@view s[r]) .|> Char |> String

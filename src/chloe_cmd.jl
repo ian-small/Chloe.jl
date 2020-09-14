@@ -97,25 +97,6 @@ function getargs()
             help = "template tsv"
     end
 
-    # @add_arg_table! cmd_args["jld"]  begin
-    #     "--output", "-o"
-    #         arg_type = String
-    #         help = "output filename"
-    #         required = true
-    #     "--reference", "-r"
-    #         arg_type = String
-    #         default = "reference_1116"
-    #         dest_name = "refsdir"
-    #         metavar = "DIRECTORY"
-    #         help = "reference directory"
-    #     "--template", "-t"
-    #         arg_type = String
-    #         default = "optimised_templates.v2.tsv"
-    #         metavar = "TSV"
-    #         dest_name = "template"
-    #         help = "template tsv"
-    # end
-
     # args.epilog = """
     #     examples:\n
     #     \ua0\ua0 # chloe.jl -t template.tsv -r reference_dir fasta1 fasta2 ...\n
