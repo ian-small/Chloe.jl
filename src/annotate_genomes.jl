@@ -1,18 +1,12 @@
 DNAString = AbstractString
 
+
+include("UInt8Utf8.jl")
 include("MMappedString.jl")
 include("Utilities.jl")
 include("SuffixArrays.jl")
 include("Alignments3.jl")
 include("Annotations.jl")
-
-
-# can be any of String, MMappedString, MappedPtrString{ASCII}
-# If you have memory mapped files (see julia chloe.jl mmap *.fa)
-# then use MMappedString{ASCII} since it will not read
-# the data backing the memory mapping
-MappedPtrString = MMappedString{ASCII}
-# MappedPtrString = String
 
 
 # import Dates: Time, Nanosecond
@@ -21,6 +15,14 @@ import Printf: @sprintf
 import JSON
 import Mmap
 
+import .MappedString: MMappedString, ASCII
+
+# can be any of String, MMappedString, MappedPtrString{ASCII}
+# If you have memory mapped files (see julia chloe.jl mmap *.fa)
+# then use MMappedString{ASCII} since it will not read
+# the data backing the memory mapping
+MappedPtrString = MMappedString{ASCII}
+# MappedPtrString = String
 
 # const ReferenceOrganisms = Dict(
 #     "AP000423"  => "Arabidopsis",
@@ -45,7 +47,7 @@ end
 
 Base.:(==)(x::FwdRev{T}, y::FwdRev{T}) where T = x.forward == y.forward && x.reverse == y.reverse
 
-function mmap_suffix_arrays(filename::String)
+function read_mmap_suffix(filename::String)
     size = filesize(filename)
     nelem = floor(Int, (size + 2) / 20)
     
@@ -123,7 +125,7 @@ function Base.show(io::IO, reference::Reference)
     print(io, "Reference: $t1, $t2, $t3, suffix=$(human(sabytes)), total=$(human(sabytes + bp))")
 
 end
-   
+
 
 
 function read_gwsas(gwsas::String, id::String)
@@ -185,7 +187,7 @@ function readReferences(refsdir::String, templates::String)::Reference
         mmap = joinpath(refsdir, ref.first * ".mmap")
         
         if isfile(mmap)
-            refSAs[i], refRAs[i], refloops[i] = mmap_suffix_arrays(mmap)
+            refSAs[i], refRAs[i], refloops[i] = read_mmap_suffix(mmap)
             @info "found mmap file for: $(ref.first)"
         elseif isfile(gwsas)
             refSAs[i], refRAs[i], refloops[i] = read_gwsas(gwsas, ref.first)

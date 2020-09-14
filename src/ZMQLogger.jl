@@ -1,6 +1,6 @@
 import Logging
 import ZMQ
-using UUIDs: UUID
+import UUIDs: UUID
 
 const TASK_KEY = UUID("30c48ab6-eb66-4e00-8274-c879a8246cdb")
 
@@ -84,7 +84,7 @@ end
 
 const LEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, 
                     "warn" => Logging.Warn, "error" => Logging.Error)
-MayBeString = Union{Nothing,String}
+
 
 function set_global_logger(logfile::MayBeString, level::String="warn"; quiet::Bool=true, topic="")
     

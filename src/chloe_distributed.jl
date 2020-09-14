@@ -2,12 +2,15 @@ include("annotate_genomes.jl")
 include("ZMQLogger.jl")
 include("msgformat.jl")
 
-import JuliaWebAPI: APIResponder, APIInvoker, apicall, ZMQTransport, JSONMsgFormat, register, process
+import JuliaWebAPI: APIResponder, APIInvoker, apicall, ZMQTransport, register, process
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 import Dates: now, toms
 import Distributed: addprocs, rmprocs, @spawnat, @everywhere
 import Crayons: @crayon_str
 import StringEncodings: encode
+import ZMQ
+
+import .WebAPI: TerminatingJSONMsgFormat
 
 const success = crayon"bold green"
 const ADDRESS = "tcp://127.0.0.1:9467"
@@ -73,7 +76,7 @@ function arm_procs(procs, reference::Reference,  backend::MayBeString, level::St
     # sic! src/....
     @everywhere procs begin
         include("src/annotate_genomes.jl")
-        include("src/ZMQLogger.jl")   
+        include("src/ZMQLogger.jl")
     end
     # # Send reference object to workers (as Main.REFERENCE).
     # # Call wait on the task so we effectively wait
@@ -92,7 +95,7 @@ function arm_procs(procs, backend::MayBeString, level::String;
     # doesn't work in the @spwanat block below!
     @everywhere procs begin
         include("src/annotate_genomes.jl")
-        include("src/ZMQLogger.jl")   
+        include("src/ZMQLogger.jl")  
     end
     [ @spawnat p begin
 
@@ -246,7 +249,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
             # add workers
             @async begin
                 added = addprocs(n, topology=:master_worker)
-                arm_procs(added, pid, backend, level; refsdir=refsdir, template=template)
+                arm_procs(added, backend, level; refsdir=refsdir, template=template)
                 @info "added $(added) processes"
                 # update globals
                 procs = [procs..., added...]

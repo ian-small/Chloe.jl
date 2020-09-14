@@ -7,6 +7,10 @@ struct GenomeWithSAs
     reverseSA::SuffixArray
 end
 
+datasize(g::GenomeWithSAs) = begin
+    sizeof(GenomeWithSAs) + sizeof(id) + sizeof(g.sequence) + datasize(g.forwardSA) + datasize(g.reverseSA)
+end
+
 # define equality between GenomeWithSAs
 Base.:(==)(x::GenomeWithSAs, y::GenomeWithSAs) = begin
     return x.id == y.id && x.sequence == y.sequence && 
