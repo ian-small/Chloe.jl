@@ -33,12 +33,9 @@ function getargs()
         "mmap"
             help = "generate mmap files from .gwsas files"
             action = :command
-        # "jld"
-        #     help = "generate jld reference file"
-        #     action = :command
         "--level", "-l"
             arg_type = String
-            default = "warn"
+            default = "info"
             help = "log level (warn,debug,info,error)"
     end
 
