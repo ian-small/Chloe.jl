@@ -12,6 +12,7 @@ include("Annotations.jl")
 # then use MMappedString{ASCII} since it will not read
 # the data backing the memory mapping
 MappedPtrString = MMappedString{ASCII}
+# MappedPtrString = String
 
 
 # import Dates: Time, Nanosecond
@@ -70,7 +71,7 @@ struct Reference
     refRAs::Vector{FwdRev{SuffixArray}}
     ref_features::Vector{FwdRev{FeatureArray}}
     # any open memory mapped files...
-    # _mmaps::Array{Union{Nothing,IOStream}}
+    # _mmaps::Vector{Union{Nothing,IOStream}}
     # from .tsv file
     feature_templates::Vector{FeatureTemplate}
     gene_exons::Dict{String,Int32}
@@ -163,12 +164,12 @@ function readReferences(refsdir::String, templates::String)::Reference
 
     num_refs = length(ReferenceOrganisms)
 
-    refloops = Array{FwdRev{MappedPtrString}}(undef, num_refs)
-    refSAs = Array{FwdRev{SuffixArray}}(undef, num_refs)
-    refRAs = Array{FwdRev{SuffixArray}}(undef, num_refs)
-    ref_features = Array{FwdRev{FeatureArray}}(undef, num_refs)
-    refsrc = Array{String}(undef, num_refs)
-    # mmapped = Array{Union{Nothing,IOStream}}(undef, num_refs)
+    refloops = Vector{FwdRev{MappedPtrString}}(undef, num_refs)
+    refSAs = Vector{FwdRev{SuffixArray}}(undef, num_refs)
+    refRAs = Vector{FwdRev{SuffixArray}}(undef, num_refs)
+    ref_features = Vector{FwdRev{FeatureArray}}(undef, num_refs)
+    refsrc = Vector{String}(undef, num_refs)
+    # mmapped = Vector{Union{Nothing,IOStream}}(undef, num_refs)
     
 
     files = readdir(refsdir)
@@ -217,14 +218,14 @@ const ns(td) = @sprintf("%.3fs", td / 1e9)
 
 MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,AFeatureStack}
-AAlignedBlocks = Array{FwdRev{AlignedBlocks},1}
+AAlignedBlocks = Vector{FwdRev{AlignedBlocks}}
 
 function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     reference::Reference, coverages::Dict{String,Float32},
     strand::Char, blocks_aligned_to_target::AAlignedBlocks,
     targetloop::DNAString)::Strand
 
-    annotations = Array{Annotation}(undef, 0)
+    annotations = Vector{Annotation}()
     for (ref_feature_array, blocks) in zip(reference.ref_features, blocks_aligned_to_target)
         annotations = cat(annotations, findOverlaps(ref_feature_array.forward, blocks.forward), dims=1)
         annotations = cat(annotations, findOverlaps(ref_feature_array.reverse, blocks.reverse), dims=1)
@@ -242,7 +243,7 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     t5 = time_ns()
     @info "[$target_id]$strand ref features stacks ($(length(strand_feature_stacks))): $(ns(t5 - t4))"
 
-    target_strand_features = FeatureArray(target_id, target_length, strand, AFeature(undef, 0))
+    target_strand_features = FeatureArray(target_id, target_length, strand, AFeature())
 
     for stack in strand_feature_stacks
         left_border, length = alignTemplateToStack(stack, shadow)
@@ -354,16 +355,16 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     @debug "[$target_id] coverages:" coverages
 
 
-    function watson(strands::Array{Strand})
+    function watson(strands::Vector{Strand})
         strands[1] = do_strand(target_id, t3, target_length, reference, coverages,
             '+', blocks_aligned_to_targetf, targetloopf)
     end
-    function crick(strands::Array{Strand})
+    function crick(strands::Vector{Strand})
         strands[2] = do_strand(target_id, t3, target_length, reference, coverages,
             '-', blocks_aligned_to_targetr, targetloopr)
     end
 
-    strands = Array{Strand}(undef, 2)
+    strands = Vector{Strand}(undef, 2)
     Threads.@threads for worker in [watson, crick]
         worker(strands)
     end
@@ -410,7 +411,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO})
     annotate_one(reference, fasta, IOBuffer())
 end
 
-function annotate(refsdir::String, templates::String, fa_files::Array{String}, output::MayBeString)
+function annotate(refsdir::String, templates::String, fa_files::Vector{String}, output::MayBeString)
 
     reference = readReferences(refsdir, templates)
 

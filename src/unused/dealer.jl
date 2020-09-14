@@ -35,7 +35,7 @@ function invoker(name)
 end
 
 function multi()
-    channels = Array{Tuple{APIInvoker{InProcTransport,DictMsgFormat},APIResponder{InProcTransport,DictMsgFormat}}}(undef, 0)
+    channels = Vector{Tuple{APIInvoker{InProcTransport,DictMsgFormat},APIResponder{InProcTransport,DictMsgFormat}}}()
     for i in 1:5
         name = "worker$i"
         push!(channels, (invoker(name), worker2(name)))

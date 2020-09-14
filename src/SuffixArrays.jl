@@ -21,7 +21,7 @@ function makeSuffixArray(source::AbstractString, circular::Bool)::SuffixArray
         last = length(source)
     end
 
-    suffixes = Array{SubString}(undef, last)
+    suffixes = Vector{SubString}(undef, last)
     for offset = 1:last
         suffixes[offset] = SubString(source, offset)
     end
@@ -36,7 +36,7 @@ end
 function makeSuffixArrayT(seqloop::AbstractString)::SuffixArray # assumes seqloop is circular
 
 	last::Int32 = trunc(Int32, cld((length(seqloop) + 1) / 2, 3))
-	suffixes = Array{SubString}(undef, last * 3)
+	suffixes = Vector{SubString}(undef, last * 3)
 
 	frame = translateDNA(seqloop)
 	for offset = 1:last
@@ -55,7 +55,7 @@ function makeSuffixArrayT(seqloop::AbstractString)::SuffixArray # assumes seqloo
 	return makeSuffixArray(suffixes)
 end
 
-function makeSuffixArray(suffixes::Array{SubString})::SuffixArray
+function makeSuffixArray(suffixes::Vector{SubString})::SuffixArray
 
     suffixArray = SuffixArray(undef, length(suffixes))
     suffixArray = sortperm!(suffixArray, suffixes)

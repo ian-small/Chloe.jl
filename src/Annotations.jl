@@ -8,7 +8,7 @@ mutable struct Feature
     # phase is the number of nucleotides to skip at the start of the sequence 
     # to be in the correct reading frame
     phase::Int8
-    _path_components::Array{String}
+    _path_components::Vector{String}
     Feature(path, start, length, phase) = new(path, start, length, phase, split(path, '/'))
 end
 
@@ -46,8 +46,8 @@ function readFeatures(file::String)::Tuple{FeatureArray,FeatureArray}
     open(file) do f
         header = split(readline(f), '\t')
         genome_length = parse(Int32, header[2])
-        f_strand_features = FeatureArray(header[1], genome_length, '+', AFeature(undef, 0))
-        r_strand_features = FeatureArray(header[1], genome_length, '-', AFeature(undef, 0))
+        f_strand_features = FeatureArray(header[1], genome_length, '+', AFeature())
+        r_strand_features = FeatureArray(header[1], genome_length, '-', AFeature())
         while !eof(f)
             fields = split(readline(f), '\t')
             feature = Feature(fields[1], parse(Int, fields[3]), parse(Int, fields[4]), parse(Int, fields[5]))
@@ -146,7 +146,7 @@ end
 struct AnnotationArray
     genome_id::String
     strand::Char
-    annotations::Array{Annotation}
+    annotations::Vector{Annotation}
 end
 datasize(s::AnnotationArray) = begin
     sizeof(AnnotationArray) + sizeof(s.genome_id) + datasize(s.annotations)
@@ -166,16 +166,16 @@ end
 
 struct FeatureStack
     path::String
-    stack::Array{Int32}
+    stack::Vector{Int32}
     template::FeatureTemplate
 end
 
-AFeatureStack = Array{FeatureStack}
-ShadowStack = Array{Int32}
+AFeatureStack = Vector{FeatureStack}
+ShadowStack = Vector{Int32}
 
 function fillFeatureStack(target_length::Int32, annotations::AnnotationArray,
-    templates::Array{FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
-    stacks = AFeatureStack(undef, 0)
+    templates::Vector{FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
+    stacks = AFeatureStack()
     shadowstack::ShadowStack = fill(Int32(-1), target_length) # will be negative image of all stacks combined,
     # initialised to small negative number; acts as prior expectation for feature-finding
     for annotation in annotations.annotations
@@ -335,7 +335,7 @@ function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Annota
     return StatsBase.mode(phases) # return most common phase
 end
 
-function weightedMode(values::Array{Int32}, weights::Array{Float32})::Int32
+function weightedMode(values::Vector{Int32}, weights::Vector{Float32})::Int32
     weightedCounts = zeros(0, 2)
     for (v, w) in zip(values, weights)
         row = findfirst(isequal(v), weightedCounts[:,1])
@@ -351,7 +351,7 @@ end
 
 # uses weighted mode, weighting by alignment length and distance from boundary
 function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationArray, 
-            target_length::Integer, coverages::Dict{String,Float32})::Tuple{Feature,Array{Int32},Array{Float32}}
+            target_length::Integer, coverages::Dict{String,Float32})::Tuple{Feature,Vector{Int32},Vector{Float32}}
     # grab all the matching features
     matching_annotations = findall(x -> x.path == feat.path, annotations.annotations)
     isempty(matching_annotations) && return feat, [], []
@@ -367,10 +367,10 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationA
             push!(overlapping_annotations, annotation)
         end
     end
-    end5s = Array{Int32}(undef, 0)
-    end5ws = Array{Float32}(undef, 0)
-    end3s = Array{Int32}(undef, 0)
-    end3ws = Array{Float32}(undef, 0)
+    end5s = Vector{Int32}()
+    end5ws = Vector{Float32}()
+    end3s = Vector{Int32}()
+    end3ws = Vector{Float32}()
 
     for annotation in overlapping_annotations
         # predicted 5' end is annotation start - offset5
@@ -403,7 +403,7 @@ end
 
 
 function groupFeaturesIntoGeneModels(features::FeatureArray)::AAFeature
-    gene_models = AAFeature(undef, 0)
+    gene_models = AAFeature()
     current_model = Feature[]
     for feature in features.features
         if isempty(current_model)
@@ -426,7 +426,7 @@ function translateFeature(genome::DNAString, feat::Feature)
     @assert feat.start > 0
     feat.length < 3 && return ""
 
-    peptide = Array{Char}(undef, fld(feat.length, 3))
+    peptide = Vector{Char}(undef, fld(feat.length, 3))
 
     aa = 0
     fend = feat.start + feat.length - 3
@@ -444,7 +444,7 @@ end
 
 function translateModel(genome::DNAString, model::AFeature)::String
 
-    DNA = Array{String}(undef, 0)
+    DNA = Vector{String}()
     for (i, feat) in enumerate(model)
         getFeatureType(feat) ≠ "CDS" && continue
         start = feat.start
@@ -456,7 +456,7 @@ function translateModel(genome::DNAString, model::AFeature)::String
     
     dna = join(DNA, "")
 
-    peptide = Array{Char}(undef, fld(length(dna), 3))
+    peptide = Vector{Char}(undef, fld(length(dna), 3))
 
     aa = 0
     for i = 1:3:length(dna) - 2
@@ -655,7 +655,7 @@ function setLongestORF!(feat::Feature, genome_length::Int32, targetloop::DNAStri
     end
 end
 
-function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, stacks::Array{FeatureStack})
+function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, stacks::Vector{FeatureStack})
     # feat1 shoud be before feat2
     range_to_test = min(feat1.start + feat1.length - 1, feat2.start):max(feat1.start + feat1.length - 1, feat2.start)
 

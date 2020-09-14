@@ -60,7 +60,7 @@ end
 
 function lcps2AlignmentBlocks(lcps::AlignedBlocks, circular::Bool, min_run_length::Integer)::AlignedBlocks
     seqlen = length(lcps)
-    aligned_blocks = AlignedBlocks(undef, 0)
+    aligned_blocks = AlignedBlocks()
     a_start = lcps[1][1]
     b_start = lcps[1][2]
     pointer = -1
@@ -182,7 +182,7 @@ end
 
 function mergeBlockArrays(blocks1::AlignedBlocks, blocks2::AlignedBlocks)::AlignedBlocks
     # assume sorted arrays
-    merged_array = AlignedBlocks(undef, 0)
+    merged_array = AlignedBlocks()
     blocks1_pointer = 1
     blocks2_pointer = 1
     blocks1_len = length(blocks1)
@@ -247,7 +247,7 @@ function alignLoops(ref_loop::DNAString,
         aligned_blocks = fillAllGaps!(aligned_blocks, src, src_SA, src_RA, tgt, tgt_SA, tgt_RA)
         aligned_blocks
     end
-    block = Array{AlignedBlocks}(undef, 2)
+    block = Vector{AlignedBlocks}(undef, 2)
     function rt()
         block[1] = align(ref_loop, ref_SA, ref_RA, target_loop, target_SA, target_RA)
     end

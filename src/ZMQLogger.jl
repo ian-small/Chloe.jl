@@ -64,7 +64,7 @@ function Logging.handle_message(logger::ZMQLogger, level, message, _module, grou
         if task_id !== nothing
             topic = "$(topic).$(task_id)"
         end
-        # julia Strings are already utf-8: Array{UInt8,1}(msg)
+        # julia Strings are already utf-8: Vector{UInt8}(msg)
         ZMQ.send(logger.socket, ZMQ.Message(topic); more=true)
         ZMQ.send(logger.socket, ZMQ.Message(msg); more=false)
     end

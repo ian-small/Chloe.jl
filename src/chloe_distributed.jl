@@ -61,7 +61,7 @@ function exit_on_sigint(on::Bool)
     ccall(:jl_exit_on_sigint, Cvoid, (Cint,), on)
 end
 
-function create_responder(apispecs::Array{Function}, addr::String, ctx::ZMQ.Context)
+function create_responder(apispecs::Vector{Function}, addr::String, ctx::ZMQ.Context)
     api = APIResponder(ZMQTransport(addr, ZMQ.REP, false, ctx), TerminatingJSONMsgFormat(), "chloe", false)
     for func in apispecs
         register(api, func)

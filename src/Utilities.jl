@@ -66,7 +66,7 @@ function readFasta(fasta::String)::Tuple{String,String}
     end
 end
 function readFasta(f::IO)::Tuple{String,String}
-    seqs = Array{String}(undef, 0)
+    seqs = Vector{String}()
     header = strip(readline(f))
     if !startswith(header, ">")
         error("expecting '>' as start of fasta header found: \"$(header)\"")
@@ -208,7 +208,7 @@ const genetic_code = Dict{String,Char}(
 
 function translateDNA(dna::AbstractString)::String
     peptide_length = fld(length(dna), 3)
-    peptide = Array{Char}(undef, peptide_length)
+    peptide = Vector{Char}(undef, peptide_length)
     aa = 0
     for i = 1:3:length(dna) - 2
         aa += 1
