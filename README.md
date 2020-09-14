@@ -42,7 +42,7 @@ Unfortunately to run Chloe from the command line this doesn't work
 (or it does "work" but won't help you to run Chloe from the command line).
 
 You need to get the dependencies into the main julia "package"
-(in `~/.julia/environments/v1.4/Project.toml`). So you will just have
+(in `~/.julia/environments/v1.5/Project.toml`). So you will just have
 to run a julia REPL like above -- but don't "activate" -- just
 `add CodecZlib ArgParse # etc` manually (How annoying is this!).
 

@@ -97,7 +97,7 @@ Base.isascii(s::MMappedString) = utf8_isascii(s.ptr)
 # would not work and latin1 from 0x80 up are 2 byte representations in utf-8
 
 Base.show(io::IO, s::MMappedString{ASCII}) = begin
-    print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr)) of type $(Base.codeunit(s)) Latin1")
+    print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr)) of type $(Base.codeunit(s)) ASCII only")
 end
 
 Base.iterate(s::MMappedString{ASCII}, i::Int=firstindex(s)) = ascii_iterate(s.ptr, i)
