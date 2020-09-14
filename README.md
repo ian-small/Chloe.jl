@@ -102,6 +102,13 @@ to the same DEALER.
 *or* specify `--broker=URL` to `src/chloe_distrbuted.jl`. No
 python required.
 
+The worker process can be made to share the reference Data using memory mapped data files.
+You can create these by running:
+
+```sh
+julia chloe.jl mmap reference_1116/*.fa
+```
+
 
 ## Distributed
 
