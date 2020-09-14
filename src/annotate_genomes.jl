@@ -1,13 +1,18 @@
-
-include("MMappedString.jl")
-
-MappedPtrString = MMappedString{ASCII}
 DNAString = AbstractString
 
+include("MMappedString.jl")
 include("Utilities.jl")
 include("SuffixArrays.jl")
 include("Alignments3.jl")
 include("Annotations.jl")
+
+
+# can be any of String, MMappedString, MappedPtrString{ASCII}
+# If you have memory mapped files (see julia chloe.jl mmap *.fa)
+# then use MMappedString{ASCII} since it will not read
+# the data backing the memory mapping
+MappedPtrString = MMappedString{ASCII}
+
 
 # import Dates: Time, Nanosecond
 import Base
@@ -39,7 +44,7 @@ end
 
 Base.:(==)(x::FwdRev{T}, y::FwdRev{T}) where T = x.forward == y.forward && x.reverse == y.reverse
 
-function mmap_suffix_arrays(filename::String) Tuple{FwdRev{SuffixArray},FwdRev{SuffixArray}}
+function mmap_suffix_arrays(filename::String)
     size = filesize(filename)
     nelem = floor(Int, (size + 2) / 20)
     
@@ -55,22 +60,39 @@ function mmap_suffix_arrays(filename::String) Tuple{FwdRev{SuffixArray},FwdRev{S
     sf =  Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes)
     sr  = Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes + sbytes)
     msf, msr = MappedPtrString(sf),  MappedPtrString(sr)
-    return f, FwdRev(saf, sar), FwdRev(raf, rar), FwdRev(msf, msr)
+    return FwdRev(saf, sar), FwdRev(raf, rar), FwdRev(msf, msr)
 end
 struct Reference
     # length(ReferenceOrganisms) from directory reference_1116
-    refsrc::Array{String}
-    refloops::Array{FwdRev{MappedPtrString}}
-    refSAs::Array{FwdRev{SuffixArray}}
-    refRAs::Array{FwdRev{SuffixArray}}
-    ref_features::Array{FwdRev{FeatureArray}}
+    refsrc::Vector{String}
+    refloops::Vector{FwdRev{MappedPtrString}}
+    refSAs::Vector{FwdRev{SuffixArray}}
+    refRAs::Vector{FwdRev{SuffixArray}}
+    ref_features::Vector{FwdRev{FeatureArray}}
     # any open memory mapped files...
     # _mmaps::Array{Union{Nothing,IOStream}}
     # from .tsv file
-    feature_templates::Array{FeatureTemplate}
+    feature_templates::Vector{FeatureTemplate}
     gene_exons::Dict{String,Int32}
     # referenceOrganisms::Dict{String,String}
 end
+
+datasize(t::T) where T = sizeof(t)
+datasize(f::FwdRev{T}) where T = sizeof(FwdRev{T}) + datasize(f.forward) + datasize(f.reverse)
+datasize(v::Vector{T}) where T = sum(datasize(a) for a in v)
+datasize(t::Dict{K,V}) where {K,V} = sum(datasize(e.first) + datasize(e.second) for e in t)
+datasize(m::MMappedString) = length(m.ptr)
+datasize(r::Reference) = begin
+    (sizeof(Reference)
+    + datasize(r.refsrc) 
+    + datasize(r.refloops)
+    + datasize(r.refSAs)
+    + datasize(r.refRAs)
+    + datasize(r.ref_features)
+    + datasize(r.feature_templates)
+    + datasize(r.gene_exons))
+end
+
 
 function human(num::Int)::String
     if num === 0
@@ -155,14 +177,14 @@ function readReferences(refsdir::String, templates::String)::Reference
         error("No sff files found!")
     end
     
-    iff_files = files[idx]
+    sff_files = files[idx]
 
     for (i, ref) in enumerate(ReferenceOrganisms)
         gwsas = joinpath(refsdir, ref.first * ".gwsas")
         mmap = joinpath(refsdir, ref.first * ".mmap")
         
         if isfile(mmap)
-            _, refSAs[i], refRAs[i], refloops[i] = mmap_suffix_arrays(mmap)
+            refSAs[i], refRAs[i], refloops[i] = mmap_suffix_arrays(mmap)
             @info "found mmap file for: $(ref.first)"
         elseif isfile(gwsas)
             refSAs[i], refRAs[i], refloops[i] = read_gwsas(gwsas, ref.first)
@@ -170,12 +192,12 @@ function readReferences(refsdir::String, templates::String)::Reference
         else
             error("no data file for $(ref.first)")
         end
-        idx = findfirst(x -> startswith(x, ref.second), iff_files)
+        idx = findfirst(x -> startswith(x, ref.second), sff_files)
         if idx === nothing
             # TODO check for fasta files
-            error("no sff file for $(ref.second)")
+            error("no sff file for $(ref.first) -> $(ref.second)")
         end
-        feature_file = iff_files[idx]
+        feature_file = sff_files[idx]
         f_strand_features, r_strand_features = readFeatures(joinpath(refsdir, feature_file))
 
         ref_features[i] = FwdRev(f_strand_features, r_strand_features)

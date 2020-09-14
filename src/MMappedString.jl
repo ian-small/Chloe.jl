@@ -11,7 +11,8 @@ end
 MMappedString(ptr) = MMappedString{Unicode}(ptr)
 
 MMappedString(s::String) = MMappedString(Vector{UInt8}(s)) # copy unfortunately
-MMappedString{ASCII}(s::String) = MMappedString{ASCII}(Vector{UInt8}(s)) # copy unfortunately
+MMappedString{ASCII}(s::String) = MMappedString{ASCII}(Vector{UInt8}(s))
+
 import Base
 import Base: ==
 
@@ -70,14 +71,15 @@ Base.@propagate_inbounds function Base.codeunit(s::MMappedString, i::Int)
 end
 
 # Ugh! I had to copy and paste this from julia/base/strings/string.jl
-# why didn't they put the UTF8 logic on a Vector{UInt8}
+# why didn't they put the UTF8 logic on a Vector{UInt8}? (which
+# is basically what a String is)
 
 ## thisind, nextind ##
 
-Base.@propagate_inbounds Base.thisind(s::MMappedString, i::Int) = _thisind_str(s, i)
+Base.@propagate_inbounds Base.thisind(s::MMappedString, i::Int) = _thisind_mm(s, i)
 
 
-@inline function _thisind_str(s::MMappedString, i::Int)
+@inline function _thisind_mm(s::MMappedString, i::Int)
     i == 0 && return 0
     n = ncodeunits(s)
     i == n + 1 && return i
@@ -95,10 +97,10 @@ Base.@propagate_inbounds Base.thisind(s::MMappedString, i::Int) = _thisind_str(s
     return i
 end
 
-Base.@propagate_inbounds Base.nextind(s::MMappedString, i::Int) = _nextind_str(s, i)
+Base.@propagate_inbounds Base.nextind(s::MMappedString, i::Int) = _nextind_mm(s, i)
 
 
-@inline function _nextind_str(s::MMappedString, i::Int)
+@inline function _nextind_mm(s::MMappedString, i::Int)
     i == 0 && return 1
     n = ncodeunits(s)
     @boundscheck Base.between(i, 1, n) || throw(Base.BoundsError(s, i))
@@ -133,12 +135,12 @@ Base.@propagate_inbounds function Base.iterate(s::MMappedString, i::Int=firstind
     b = codeunit(s, i)
     u = UInt32(b) << 24
     Base.between(b, 0x80, 0xf7) || return reinterpret(Char, u), i + 1
-    return iterate_continued(s, i, u)
+    return iterate_continued_mm(s, i, u)
 end
 
 
 
-function iterate_continued(s::MMappedString, i::Int, u::UInt32)
+function iterate_continued_mm(s::MMappedString, i::Int, u::UInt32)
     u < 0xc0000000 && (i += 1; @goto ret)
     n = ncodeunits(s)
     # first continuation byte
@@ -265,7 +267,7 @@ end
 # specializations
 
 ## Must be ASCII! Otherwise the bitwise equality above
-# would not work and latin1 from 0x80 up are 2 byte representations
+# would not work and latin1 from 0x80 up are 2 byte representations in utf-8
 
 function Base.show(io::IO, s::MMappedString{ASCII})
     print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr)) of type $(codeunit(s)) Latin1")
@@ -275,6 +277,7 @@ Base.@propagate_inbounds function Base.iterate(s::MMappedString{ASCII}, i::Int=f
     b = codeunit(s, i)
     Char(b), i + 1
 end
+# step forward and back by one byte == one character
 Base.@propagate_inbounds function Base.nextind(s::MMappedString{ASCII}, i::Int)
     i == 0 && return 1
     n = ncodeunits(s)
@@ -294,16 +297,19 @@ Base.@propagate_inbounds function Base.prevind(s::MMappedString{ASCII}, i::Int)
     @boundscheck Base.between(i, 1, n + 1) || throw(Base.BoundsError(s, i))
     i - 1
 end
+
 @inline function Base.length(s::MMappedString{ASCII}, i::Int, j::Int)
     @boundscheck begin
-        0 < i ≤ ncodeunits(s) + 1 || throw(Base.BoundsError(s, i))
-        0 ≤ j < ncodeunits(s) + 1 || throw(Base.BoundsError(s, j))
+        m = ncodeunits(s)
+        0 < i ≤ m + 1 || throw(Base.BoundsError(s, i))
+        0 ≤ j < m + 1 || throw(Base.BoundsError(s, j))
     end
     j < i && return 0
     return j - i + 1
 end
 Base.isvalid(s::MMappedString{ASCII}, i::Int) = checkbounds(Bool, s, i)
 Base.length(s::MMappedString{ASCII}) = length(s.ptr)
+Base.firstindex(s::MMappedString{ASCII}) = 1
 Base.lastindex(s::MMappedString{ASCII}) = lastindex(s.ptr)
 Base.@propagate_inbounds function Base.getindex(s::MMappedString{ASCII}, i::Int)
     b = codeunit(s, i)

@@ -25,8 +25,8 @@ end
 function one_mmap_from_gwsas(infile::String)
 
     _, f = splitpath(infile)
-    id = splitext(f)[1]
-    gwsas = readGenomeWithSAs(infile, id)
+    seqid = splitext(f)[1]
+    gwsas = readGenomeWithSAs(infile, seqid)
 
     fwd = gwsas.sequence
     fwd = uppercase(fwd)
@@ -38,9 +38,8 @@ function one_mmap_from_gwsas(infile::String)
     urev = Vector{UInt8}(revs)
     n = length(gwsas.forwardSA)
     d = splitpath(infile)
-    outfile = joinpath(d[1:end - 1]..., "$(id).mmap")
+    outfile = joinpath(d[1:end - 1]..., "$(seqid).mmap")
     @info "writing mmap array from gwsas: $outfile"
-    total = 4 * 4 * n  + 2 * ( 2 * n - 1) 
     open(outfile, "w") do f
         write(f, gwsas.forwardSA)
         write(f, gwsas.reverseSA)
@@ -71,7 +70,6 @@ function one_mmap_from_fasta(infile::String)
     d = splitpath(infile)
     outfile = joinpath(d[1:end - 1]..., "$(seqid).mmap")
     @info "writing mmap array from fasta to: $outfile"
-    total = 4 * 4 * n  + 2 * ( 2 * n - 1) 
     open(outfile, "w") do f
         write(f, saf)
         write(f, sar)
@@ -88,7 +86,7 @@ function create_mmaps(;gwsas_fasta=String[])
     for infile in gwsas_fasta
         if endswith(infile, ".gwsas")
             one_mmap_from_gwsas(infile)
-        elseif endswith(infile, ".fa")
+        elseif endswith(infile, r"\.(fasta|fa)")
             one_mmap_from_fasta(infile)
         else
             @warn "unknown file type $infile"

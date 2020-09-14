@@ -11,6 +11,9 @@ mutable struct Feature
     _path_components::Array{String}
     Feature(path, start, length, phase) = new(path, start, length, phase, split(path, '/'))
 end
+
+datasize(f::Feature) = sizeof(Feature) + sizeof(f.path) + sum(sizeof(p) for p in f._path_components)
+
 const featurePath(feature::Feature) = feature._path_components # split(feat.path, '/')
 function getFeatureName(feature::Feature)
     feature._path_components[1]
@@ -35,12 +38,16 @@ struct FeatureArray
     strand::Char
     features::AFeature
 end
+datasize(f::FeatureArray) = begin
+    sizeof(FeatureArray) + sizeof(f.genome_id) + sum(datasize(a) for a in f.features)
+end
 
 function readFeatures(file::String)::Tuple{FeatureArray,FeatureArray}
     open(file) do f
         header = split(readline(f), '\t')
-        f_strand_features = FeatureArray(header[1], parse(Int32, header[2]), '+', AFeature(undef, 0))
-        r_strand_features = FeatureArray(header[1], parse(Int32, header[2]), '-', AFeature(undef, 0))
+        genome_length = parse(Int32, header[2])
+        f_strand_features = FeatureArray(header[1], genome_length, '+', AFeature(undef, 0))
+        r_strand_features = FeatureArray(header[1], genome_length, '-', AFeature(undef, 0))
         while !eof(f)
             fields = split(readline(f), '\t')
             feature = Feature(fields[1], parse(Int, fields[3]), parse(Int, fields[4]), parse(Int, fields[5]))
@@ -68,10 +75,11 @@ struct Annotation
     # to be in the correct reading frame
     phase::Int8
 end
+datasize(a::Annotation) = sizeof(Annotation) + sizeof(a.genome_id)
 
 # checks all blocks for overlap so could be speeded up by using an interval tree
-function addOverlapBlocks(genome_id::String, feature::Feature, blocks::AlignedBlocks)::Array{Annotation}
-    pushed_features = Array{Annotation}(undef, 0)
+function addOverlapBlocks(genome_id::String, feature::Feature, blocks::AlignedBlocks)::Vector{Annotation}
+    pushed_features = Vector{Annotation}()
     feature_type = getFeatureType(feature)
     for block in blocks
         if rangesOverlap(feature.start, feature.length, block[1], block[3])
@@ -103,8 +111,10 @@ struct FeatureTemplate
     median_length::Int32
 end
 
+datasize(s::FeatureTemplate) = sizeof(FeatureTemplate) + sizeof(s.path)
 
-function readTemplates(file::String)::Tuple{Array{FeatureTemplate,1},Dict{String,Int32}}
+
+function readTemplates(file::String)::Tuple{Vector{FeatureTemplate},Dict{String,Int32}}
     templates = FeatureTemplate[]
     gene_exons = String[]
     if !isfile(file)
@@ -138,14 +148,17 @@ struct AnnotationArray
     strand::Char
     annotations::Array{Annotation}
 end
+datasize(s::AnnotationArray) = begin
+    sizeof(AnnotationArray) + sizeof(s.genome_id) + datasize(s.annotations)
+end
 
-function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Array{Annotation}
-    annotations = Array{Annotation}(undef, 0)
+function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
+    annotations = Vector{Annotation}()
     for feature in ref_featurearray.features
         new_annotations = addOverlapBlocks(ref_featurearray.genome_id, feature, aligned_blocks)
         if !isempty(new_annotations)
             # pushed_features.annotations = cat(pushed_features.annotations, new_features, dims = 1)
-            annotations = cat(annotations, new_annotations, dims=1)
+            push!(annotations, new_annotations...)
         end
     end
     return annotations

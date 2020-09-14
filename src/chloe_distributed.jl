@@ -1,5 +1,6 @@
 include("annotate_genomes.jl")
 include("ZMQLogger.jl")
+include("msgformat.jl")
 
 import JuliaWebAPI: APIResponder, APIInvoker, apicall, ZMQTransport, JSONMsgFormat, register, process
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
@@ -61,7 +62,7 @@ function exit_on_sigint(on::Bool)
 end
 
 function create_responder(apispecs::Array{Function}, addr::String, ctx::ZMQ.Context)
-    api = APIResponder(ZMQTransport(addr, ZMQ.REP, false, ctx), JSONMsgFormat(), "chloe", false)
+    api = APIResponder(ZMQTransport(addr, ZMQ.REP, false, ctx), TerminatingJSONMsgFormat(), "chloe", false)
     for func in apispecs
         register(api, func)
     end
@@ -72,7 +73,7 @@ function arm_procs(procs, reference::Reference,  backend::MayBeString, level::St
     # sic! src/....
     @everywhere procs begin
         include("src/annotate_genomes.jl")
-        include("src/ZMQLogger.jl")     
+        include("src/ZMQLogger.jl")   
     end
     # # Send reference object to workers (as Main.REFERENCE).
     # # Call wait on the task so we effectively wait
@@ -91,7 +92,7 @@ function arm_procs(procs, backend::MayBeString, level::String;
     # doesn't work in the @spwanat block below!
     @everywhere procs begin
         include("src/annotate_genomes.jl")
-        include("src/ZMQLogger.jl")     
+        include("src/ZMQLogger.jl")   
     end
     [ @spawnat p begin
 
@@ -99,7 +100,6 @@ function arm_procs(procs, backend::MayBeString, level::String;
         global REFERENCE = readReferences(refsdir, template)
 
     end for p in procs] .|> wait
-
 
 end
 
@@ -120,6 +120,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     # with MMAPped files we prefer to
     # allow the workers to read the data
     # arm_procs(procs, reference, backend, level)
+
     arm_procs(procs, backend, level, refsdir=refsdir, template=template)
 
     pid = getpid()
@@ -184,7 +185,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
 
     function bgexit(endpoint::String, n::Int)
         i = APIInvoker(endpoint)
-        for w in 1:n
+        while n > 0
             # main task has removed workers
             if workers === 0
                 break
@@ -193,12 +194,16 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
             # the real problem here is:
             # -- unless we are running our own broker --
             # there is no way to ensure we are terminating
-            # *our* listeners...
+            # *our* listeners... we send a pid so it can check
 
             # @async to allow for main task to count down workers
-            res = fetch(@async apicall(i, ":terminate"))
+            res = fetch(@async apicall(i, ":exit", pid))
             code = res["code"]
             @debug "code=$(code) workers=$(workers)"
+            # ping wrong server... oops
+            if code === 200
+                n -= 1
+            end
         end
     end
     function exit(endpoint::MayBeString=nothing)
@@ -241,7 +246,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
             # add workers
             @async begin
                 added = addprocs(n, topology=:master_worker)
-                arm_procs(added, backend, level; refsdir=refsdir, template=template)
+                arm_procs(added, pid, backend, level; refsdir=refsdir, template=template)
                 @info "added $(added) processes"
                 # update globals
                 procs = [procs..., added...]
