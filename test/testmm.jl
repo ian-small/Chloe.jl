@@ -2,7 +2,10 @@
 using Test
 import Test: @test
 
+include("../src/UInt8Utf8.jl")
 include("../src/MMappedString.jl")
+
+import .MappedString: ASCII, MMappedString
 
 function gen_ascii(n)
     v = rand(0:127, n)

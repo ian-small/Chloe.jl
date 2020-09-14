@@ -1,4 +1,7 @@
 
+module WebAPI
+export TerminatingJSONMsgFormat
+
 import JuliaWebAPI
 import JuliaWebAPI: juliaformat, AbstractMsgFormat, juliaformat, wireformat, JSONMsgFormat
 
@@ -31,3 +34,4 @@ function JuliaWebAPI.juliaformat(fmt::TerminatingJSONMsgFormat, msgstr)
     return ret
 end
 
+end
