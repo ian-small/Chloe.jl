@@ -15,7 +15,8 @@ import ZMQ
 import .WebAPI: TerminatingJSONMsgFormat
 
 const success = crayon"bold green"
-const ADDRESS = "tcp://127.0.0.1:9467"
+const ZMQ_WORKER = "tcp://127.0.0.1:9467"
+const ZMQ_CLIENT = "ipc:///tmp/chloe-client"
 
 # change this if you change the API!
 const VERSION = "1.0"
@@ -123,7 +124,7 @@ function verify_refs(refsdir, template)
     
 end
 
-function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
+function chloe_distributed(;refsdir="reference_1116", address=ZMQ_WORKER,
     template="optimised_templates.v2.tsv", level="warn", workers=3,
     backend::MayBeString=nothing, broker::MayBeString=nothing)
 
@@ -191,7 +192,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
             @debug "decompressed fasta length $(n) -> $(length(fasta))"
         end
 
-        input = IOContext(IOBuffer(fasta))
+        input = IOBuffer(fasta)
 
         io, target_id = fetch(@spawnat :any annotate_one_task(input, task_id))
         sff = String(take!(io))
@@ -367,7 +368,7 @@ function args()
         "--address", "-a"
         arg_type = String
         metavar = "URL"
-        default = ADDRESS
+        default = ZMQ_WORKER
         help = "ZMQ DEALER address to connect to"
         "--level", "-l"
         arg_type = String
@@ -381,7 +382,7 @@ function args()
         "--broker", "-b"
         arg_type = String
         metavar = "URL"
-        help = "run a broker in the background"
+        help = "run a broker in the background (use \"default\" for default endpoint)"
         "--backend", "-z"
         arg_type = String
         metavar = "URL"
@@ -440,6 +441,10 @@ function main()
     client_url = get(distributed_args, :broker, nothing)
 
     if client_url !== nothing
+        if client_url == "default"
+            client_url = ZMQ_CLIENT
+            distributed_args[:broker] = client_url
+        end
         if startswith(client_url, "@")
             # hack just so the server knows how to terminate itself
             distributed_args[:broker] = client_url[2:end]
