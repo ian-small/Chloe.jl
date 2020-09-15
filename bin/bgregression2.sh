@@ -4,10 +4,10 @@ if [ ! -d testo ]; then
 fi
 rm -rf testo/*
 echo "ensure: make run-chloe-broker"
-for f in $(ls testfa/*.fa)
+fafiles=$(ls testfa/*.fa)
+python bin/chloe.py annotate2 -o testo --workers=4 $fafiles
+for f in $fafiles
 do
-    echo "annotating $f"
-    python bin/chloe.py annotate2 --binary -o testo $f 
     bn=$(basename $f)
     o="${bn%.*}.sff"
     echo "diffing testfa/$o testo/$o"
