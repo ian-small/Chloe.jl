@@ -51,7 +51,7 @@ package prompt:
 
 ```julia
 pkg> add ArgParse Dates CodecZlib JLD JuliaWebAPI LogRoller StringEncodings
-pkg> add Logging Printf StatsBase Crayons JSON ZeroMQ_jll ZMQ UUIDs
+pkg> add Logging Printf StatsBase Crayons JSON ZeroMQ_jll ZMQ
 ```
 
 ## Chloë Server

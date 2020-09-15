@@ -1,12 +1,11 @@
 import Logging
 import ZMQ
-import UUIDs: UUID
 
-const TASK_KEY = UUID("30c48ab6-eb66-4e00-8274-c879a8246cdb")
+const TASK_KEY = "CURRENT_TASK"
 
-ANNO_TASK = Dict{UUID,String}()
+const ANNO_TASK = Dict{String,String}()
 
-function annotation_local_storage(key::UUID, value::MayBeString)
+function annotation_local_storage(key::String, value::MayBeString)
     if value === nothing
         delete!(ANNO_TASK, key)
     else
@@ -15,7 +14,7 @@ function annotation_local_storage(key::UUID, value::MayBeString)
     nothing
 end
 
-function annotation_local_storage(key::UUID)::MayBeString
+function annotation_local_storage(key::String)::MayBeString
     get(ANNO_TASK, key, nothing)
 end
 struct ZMQLogger <: Logging.AbstractLogger
