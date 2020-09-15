@@ -38,6 +38,8 @@ function run_ascii(n=2000)
 
     s = String(m)
 
+    @test length(m) == length(s)
+
     @test Base.isvalid(s)
     @test Base.isvalid(m)
 
@@ -52,8 +54,10 @@ function run_ascii(n=2000)
 
     l1 = ncodeunits(s) + 1
     @test thisind(m, 0) == 0 && thisind(s, 0) == 0
-    @test thisind(m, l1) == l1 && thisind(s, l1) == l1
-
+    @test thisind(m, l1) == l1
+    @test thisind(s, l1) == l1
+    @test firstindex(m) == firstindex(s)
+    @test lastindex(m) == lastindex(s)
 
     for i in randindex(length(m) - 1, 100)
         # only for ascii

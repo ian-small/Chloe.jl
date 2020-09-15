@@ -4,13 +4,13 @@ module UInt8Utf8
 export utf8_codeunit, utf8_ncodeunits, utf8_getindex, utf8_isascii, utf8_isvalid
 export utf8_iterate, utf8_length, utf8_nextind, utf8_prevind, utf8_thisind
 
-export ascii_getindex, ascii_isvalid, ascii_iterate, ascii_nextind, ascii_prevind, ascii_thisind
+export ascii_getindex, ascii_isvalid, ascii_length, ascii_iterate, ascii_nextind, ascii_prevind, ascii_thisind
 
 import Base
 
 utf8_ncodeunits(s::Vector{UInt8}) = length(s)
 utf8_codeunit(s::Vector{UInt8}) = UInt8
-utf8_codeunit(s::Vector{UInt8}, i::Int) = s[i]
+@inline utf8_codeunit(s::Vector{UInt8}, i::Int) = s[i]
 
 # Ugh! I had to copy and paste this from julia/base/strings/string.jl
 # why didn't they put the UTF8 logic on a Vector{UInt8}? (which
@@ -256,7 +256,7 @@ Base.@propagate_inbounds function ascii_getindex(s::Vector{UInt8}, i::Int)
     Char(b)
 end
 
-@Base.propagate_inbounds function ascii_getindex(s::Vector{UInt8}, r::UnitRange{Int})
+Base.@propagate_inbounds function ascii_getindex(s::Vector{UInt8}, r::UnitRange{Int})
     isempty(r) && return ""
     return (@view s[r]) .|> Char |> String
 end

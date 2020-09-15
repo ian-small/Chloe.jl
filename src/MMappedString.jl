@@ -122,4 +122,6 @@ Base.getindex(s::MMappedString{ASCII}, i::Int) = ascii_getindex(s.ptr, i)
 
 Base.isvalid(s::MMappedString{ASCII}) = utf8_isascii(s.ptr)
 
+Base.getindex(s::MMappedString{ASCII}, r::UnitRange{Int}) = ascii_getindex(s.ptr, r)
+
 end
