@@ -3,23 +3,24 @@ AlignedBlock = Tuple{Int32,Int32,Int32}
 AlignedBlocks = Vector{AlignedBlock}
 
 
-function compareSubStrings(a::SubString, b::SubString)::Tuple{Int32,Int}
+@inline function compareSubStrings(a::SubString, b::SubString)::Tuple{Int32,Int}
     # a, b = Iterators.Stateful(a), Iterators.Stateful(b)
     count::Int32 = 0
     for (c, d) in zip(a, b)
-        c ≠ d && return ifelse(c < d, (count, -1), (count, 1))
+        c ≠ d && return c < d ? (count, -1) : (count, 1)
         count += 1
     end
-    isempty(a) && return ifelse(isempty(b), (count, 0), (count, -1))
+    isempty(a) && return isempty(b) ? (count, 0) : (count, -1)
     return (count, 1)
 end
 
 function alignSAs(a::DNAString, saa::SuffixArray, b::DNAString, sab::SuffixArray)::AlignedBlocks
     lcps = AlignedBlocks(undef, length(saa))
     bpointer = 1
-    for apointer = 1:length(saa)
+    zerot = (Int32(0), Int32(0), Int32(0))
+    @inbounds for apointer = 1:length(saa)
         ssa = SubString(a, saa[apointer])
-        oldtuple = (0, 0, 0)
+        oldtuple = zerot
         while true
             ssb = SubString(b, sab[bpointer])
             (lcp, direction) = compareSubStrings(ssa, ssb)
@@ -118,8 +119,7 @@ function fillGap(block1::AlignedBlock, block2::AlignedBlock,
     for i = 1:target_gap
         target_gap_SA[i] = targetSA[target_ranks_slice[i]]
     end
-    # @debug "fillGap: " ref_gap_range = length(ref_gap_range) target_gap_range = length(target_gap_range)
-
+ 
     # align gap SAs to get lcps
     gap_lcps = alignSAs(refloop, ref_gap_SA, targetloop, target_gap_SA)
     gap_blocks = lcps2AlignmentBlocks(gap_lcps, false, matchLengthThreshold(ref_gap, target_gap))
@@ -147,7 +147,7 @@ function fillAllGaps!(aligned_blocks::AlignedBlocks,
     targetloop::DNAString, targetSA::SuffixArray, targetRA::SuffixArray)::AlignedBlocks
     block1_pointer = 1
     block2_pointer = 2
-    while block2_pointer <= length(aligned_blocks)
+    @inbounds while block2_pointer <= length(aligned_blocks)
         block1 = aligned_blocks[block1_pointer]
         block2 = aligned_blocks[block2_pointer]
         block1, block2 = mergeBlocks(block1, block2)
