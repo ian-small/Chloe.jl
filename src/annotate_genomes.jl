@@ -291,6 +291,8 @@ directory.
 
 `reference` are the reference annotations (see `readReferences`)
 """
+# MayBeIO: write to file (String), IO buffer or create filename based on fasta filename
+# Union{IO,String}: read fasta from IO buffer or a file (String)
 MayBeIO = Union{String,IO,Nothing}
 function annotate_one(reference::Reference, fasta::Union{String,IO},
     output::MayBeIO=nothing)
@@ -374,19 +376,6 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     target_fstrand_models, fstrand_feature_stacks = strands[1]
     target_rstrand_models, rstrand_feature_stacks = strands[2]
 
-    if output !== nothing
-        if typeof(output) == String
-            fname = output::String
-            if isdir(fname)
-                fname = joinpath(fname, "$(target_id).sff")
-            end
-        else
-            fname = output # IOBuffer, IOStream
-        end
-    else
-        fname = "$(target_id).sff"
-    end
-
     # find inverted repeat if any
     f_aligned_blocks, r_aligned_blocks = alignLoops(targetloopf, target_saf, target_raf,
                                                     targetloopr, target_sar, target_rar)
@@ -400,6 +389,18 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
         nothing
     end
     
+    if output !== nothing
+        if typeof(output) == String
+            fname = output::String
+            if isdir(fname)
+                fname = joinpath(fname, "$(target_id).sff")
+            end
+        else
+            fname = output # IOBuffer
+        end
+    else
+        fname = "$(target_id).sff"
+    end
     writeSFF(fname, target_id, target_fstrand_models, target_rstrand_models,
         reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks,
         targetloopf, targetloopr, ir)
