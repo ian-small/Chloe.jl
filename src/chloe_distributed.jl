@@ -2,10 +2,12 @@ include("annotate_genomes.jl")
 include("ZMQLogger.jl")
 include("msgformat.jl")
 
+import Base
 import JuliaWebAPI: APIResponder, APIInvoker, apicall, ZMQTransport, register, process
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 import Dates: now, toms
-import Distributed: addprocs, rmprocs, @spawnat, @everywhere
+import Distributed
+import Distributed: addprocs, rmprocs, @spawnat, @everywhere, nworkers
 import Crayons: @crayon_str
 import StringEncodings: encode
 import ZMQ
@@ -20,8 +22,9 @@ const VERSION = "1.0"
 
 function git_version()
     try
-        strip(read(`git rev-parse HEAD`, String))
-    catch
+        r = run(pipeline(`git rev-parse HEAD`, stderr=devnull))
+        strip(read(r, String))
+    catch e
         "unknown"
     end
 end
@@ -64,6 +67,7 @@ function exit_on_sigint(on::Bool)
     ccall(:jl_exit_on_sigint, Cvoid, (Cint,), on)
 end
 
+
 function create_responder(apispecs::Vector{Function}, addr::String, ctx::ZMQ.Context)
     api = APIResponder(ZMQTransport(addr, ZMQ.REP, false, ctx), TerminatingJSONMsgFormat(), "chloe", false)
     for func in apispecs
@@ -73,14 +77,14 @@ function create_responder(apispecs::Vector{Function}, addr::String, ctx::ZMQ.Con
 end
 
 function arm_procs(procs, reference::Reference,  backend::MayBeString, level::String)
-    # sic! src/....
+    here = dirname(@__FILE__)
     @everywhere procs begin
-        include("src/annotate_genomes.jl")
-        include("src/ZMQLogger.jl")
+        include(joinpath($here, "annotate_genomes.jl"))
+        include(joinpath($here, "ZMQLogger.jl"))
     end
-    # # Send reference object to workers (as Main.REFERENCE).
-    # # Call wait on the task so we effectively wait
-    # # for all the data transfer to complete.
+    # Send reference object to nlisteners (as Main.REFERENCE).
+    # Call wait on the task so we effectively wait
+    # for all the data transfer to complete.
     # sendto(procs, REFERENCE=reference) .|> wait
     [ @spawnat p begin
 
@@ -93,9 +97,10 @@ function arm_procs(procs, backend::MayBeString, level::String;
         refsdir="reference_1116", template="optimised_templates.v2.tsv")
     # need to do @everywhere first because it
     # doesn't work in the @spwanat block below!
+    here = dirname(@__FILE__)
     @everywhere procs begin
-        include("src/annotate_genomes.jl")
-        include("src/ZMQLogger.jl")  
+        include(joinpath($here, "annotate_genomes.jl"))
+        include(joinpath($here, "ZMQLogger.jl"))
     end
     [ @spawnat p begin
 
@@ -106,15 +111,39 @@ function arm_procs(procs, backend::MayBeString, level::String;
 
 end
 
+function verify_refs(refsdir, template)
+    if ~isfile(template) || ~isdir(refsdir) || ~isfile(joinpath(refsdir, "ReferenceOrganisms.json"))
+        @error "template: $(template) or refsdir: $(refsdir) is incorrect!"
+        Base.exit(1)
+    end
+    # files = findall(x-> x.endswith(r"\.(gwsas|mmap)"), readdir(refsdir))
+    # if length(files) == 0
+    #     @error "please run `julia chloe.jl mmap $(refsdir)/*.fa`"
+    #     Base.exit(1)
+    # end
+    
+end
+
 function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     template="optimised_templates.v2.tsv", level="warn", workers=3,
     backend::MayBeString=nothing, broker::MayBeString=nothing)
 
-    procs = addprocs(workers; topology=:master_worker)
-
-    workers = length(procs)
-
     set_global_logger(backend, level; topic="annotator")
+
+    # don't wait for workers to find the wrong directory
+    verify_refs(refsdir, template)
+
+    # user may have added run with 
+    # julia command -p2 etc.
+    n = nworkers()
+    toadd = workers - (n == 1 ? 0 : n)
+    if toadd > 0
+        addprocs(toadd; topology=:master_worker)
+    end
+    procs = Distributed.workers()
+
+    nlisteners = length(procs)
+
 
     # function get_reference()
     #     return readReferences(refsdir, template)
@@ -131,11 +160,11 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     git = git_version()[1:7]
     nthreads = Threads.nthreads()
 
-    @info "starting: chloe version $VERSION (git: $git) pid=$pid workers=$workers threads=$nthreads on machine $machine"
+    @info "starting: chloe version $VERSION (git: $git) pid=$pid workers=$nlisteners threads=$nthreads on machine $machine"
     @info "connecting to $address"
     # @info reference
 
-    # All sent to workers I don't need this anymore (except see add_workers below)
+    # All sent to nlisteners I don't need this anymore (except see add_nlisteners below)
     # reference = nothing # force garbage collection
     # GC.gc()
     nannotations = 0
@@ -175,7 +204,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     end
 
     function ping()
-        return "OK version=$VERSION git=$git #anno=$nannotations pid=$pid threads=$nthreads workers=$workers on $machine"
+        return "OK version=$VERSION git=$git #anno=$nannotations pid=$pid threads=$nthreads workers=$nlisteners on $machine"
     end
 
     # `bin/chloe.py terminate` uses this to find out how many calls of :terminate
@@ -183,14 +212,15 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
     # stop process(APIResponder) from the outside since it is block wait on 
     # the zmq sockets.
     function nconn()
-        return workers
+        return nlisteners
     end
 
     function bgexit(endpoint::String, n::Int)
         i = APIInvoker(endpoint)
-        while n > 0
-            # main task has removed workers
-            if workers === 0
+        maxfails = 10
+        while n > 0 && maxfails > 0
+            # main task has removed nlisteners
+            if nlisteners === 0
                 break
             end
             
@@ -199,13 +229,15 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
             # there is no way to ensure we are terminating
             # *our* listeners... we send a pid so it can check
 
-            # @async to allow for main task to count down workers
+            # @async to allow for main task to count down nlisteners
             res = fetch(@async apicall(i, ":exit", pid))
             code = res["code"]
-            @debug "code=$(code) workers=$(workers)"
+            @debug "code=$(code) workers=$(nlisteners)"
             # ping wrong server... oops
             if code === 200
                 n -= 1
+            else
+                maxfails -= 1
             end
         end
     end
@@ -217,8 +249,8 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
         if endpoint === nothing
             error("No broker endpoint!")
         end
-        @async bgexit(endpoint, workers)
-        return "Exit scheduled for $(workers) workers"
+        @async bgexit(endpoint, nlisteners)
+        return "Exit scheduled for $(nlisteners) workers"
     end
 
     function add_workers(n::Int, endpoint::MayBeString=nothing)
@@ -226,19 +258,19 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
             if -n >= length(procs)
                 error("use 'exit' to exit chloe!")
             end
-            # remove workers
+            # remove listeners & workers
             @async begin
                 m = length(procs) + n
                 remove = procs[m + 1:end]
                 rmprocs(remove) # wait
-                # update globals !not workers thou.
+                # update globals !not nlisteners thou.
                 procs = procs[1:m]
-                # send terminate to abs(n) workers
+                # send terminate to abs(n) listeners
                 if endpoint === nothing
                     endpoint = broker
                 end
                 if endpoint !== nothing
-                    # main task will update workers count
+                    # main task will update nlisteners count
                     # when they exit
                     bgexit(endpoint, abs(n))
                 end
@@ -253,7 +285,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
                 @info "added $(added) processes"
                 # update globals
                 procs = [procs..., added...]
-                workers = length(procs)
+                nlisteners = length(procs)
                 for w in added
                     @async bgworker(w)
                 end
@@ -306,10 +338,10 @@ function chloe_distributed(;refsdir="reference_1116", address=ADDRESS,
         @async bgworker(workno)
     end
     @info "Chloë is ready to accept requests 🍰!"
-    while workers > 0
+    while nlisteners > 0
         w = take!(done) # block here until listeners exit (by putting proc num on queue)
-        workers -= 1
-        @debug "worker done: $w workers=$workers"
+        nlisteners -= 1
+        @debug "worker done: $w workers=$nlisteners"
     end
 
     @info success("Chloë done: pid=$(pid) exiting.....🍹")
@@ -362,6 +394,9 @@ function args()
     Run Chloë as a ZMQ service with distributed annotation processes.
     Requires a ZMQ DEALER/ROUTER to connect to unless `--broker, -b` specifies
     an endpoint in which case it runs its own broker.
+
+    You can also use julia arguments to specify workers with e.g.
+    `julia -p4 ....` etc.
     """
     parse_args(ARGS, distributed_args; as_symbols=true)
 
