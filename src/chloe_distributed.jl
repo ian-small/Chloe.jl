@@ -116,11 +116,11 @@ function verify_refs(refsdir, template)
         @error "template: $(template) or refsdir: $(refsdir) is incorrect!"
         Base.exit(1)
     end
-    # files = findall(x-> x.endswith(r"\.(gwsas|mmap)"), readdir(refsdir))
-    # if length(files) == 0
-    #     @error "please run `julia chloe.jl mmap $(refsdir)/*.fa`"
-    #     Base.exit(1)
-    # end
+    files = findall(x -> x.endswith(r"\.(gwsas|mmap)"), readdir(refsdir))
+    if length(files) == 0
+        @error "please run `julia chloe.jl mmap $(refsdir)/*.fa`"
+        Base.exit(1)
+    end
     
 end
 
@@ -144,15 +144,10 @@ function chloe_distributed(;refsdir="reference_1116", address=ZMQ_WORKER,
 
     nlisteners = length(procs)
 
-
-    # function get_reference()
-    #     return readReferences(refsdir, template)
-    # end
-    # reference = get_reference()
     # with MMAPped files we prefer to
     # allow the workers to read the data
-    # arm_procs(procs, reference, backend, level)
 
+    # arm_procs(procs, reference, backend, level)
     arm_procs(procs, backend, level, refsdir=refsdir, template=template)
 
     pid = getpid()
