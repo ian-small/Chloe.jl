@@ -156,12 +156,10 @@ function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlo
     annotations = Vector{Annotation}()
     for feature in ref_featurearray.features
         new_annotations = addOverlapBlocks(ref_featurearray.genome_id, feature, aligned_blocks)
-        if !isempty(new_annotations)
-            # pushed_features.annotations = cat(pushed_features.annotations, new_features, dims = 1)
-            push!(annotations, new_annotations...)
-        end
+        push!(annotations, new_annotations...)
+
     end
-    return annotations
+    annotations
 end
 
 struct FeatureStack
@@ -292,31 +290,6 @@ function getModelID!(model_ids::Dict{String,Int32}, model::AFeature)
     return model_id
 end
 
-# function writeSFF(outfile::String, fstrand_features::FeatureArray, rstrand_features::FeatureArray)
-#     open(outfile, "w") do outfile
-#         write(outfile, fstrand_features.genome_id, "\t", string(fstrand_features.genome_length), "\n")
-#         for f in fstrand_features.features
-#             write(outfile, f.path)
-#             write(outfile, "\t")
-#             write(outfile, fstrand_features.strand)
-#             write(outfile, "\t")
-#             write(outfile, string(f.start))
-#             write(outfile, "\t")
-#             write(outfile, string(f.length))
-#             write(outfile, "\n")
-#         end
-#         for f in rstrand_features.features
-#             write(outfile, f.path)
-#             write(outfile, "\t")
-#             write(outfile, rstrand_features.strand)
-#             write(outfile, "\t")
-#             write(outfile, string(f.start))
-#             write(outfile, "\t")
-#             write(outfile, string(f.length))
-#             write(outfile, "\n")
-#         end
-#     end
-# end
 
 function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::AnnotationArray)::Int8
     matching_annotations = findall(x -> x.path == feat.path, annotations.annotations)
@@ -335,18 +308,23 @@ function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Annota
     return StatsBase.mode(phases) # return most common phase
 end
 
+# function weightedMode(values::Vector{Int32}, weights::Vector{Float32})::Int32
+#     weightedCounts = zeros(0, 2)
+#     for (v, w) in zip(values, weights)
+#         row = findfirst(isequal(v), weightedCounts[:,1])
+#         if isnothing(row)
+#             weightedCounts = vcat(weightedCounts, [v w])
+#         else
+#             weightedCounts[row,2] += w
+#         end
+#     end
+#     maxweight, maxrow = findmax(weightedCounts[:,2])
+#     return Int32(weightedCounts[maxrow,1])
+# end
+
 function weightedMode(values::Vector{Int32}, weights::Vector{Float32})::Int32
-    weightedCounts = zeros(0, 2)
-    for (v, w) in zip(values, weights)
-        row = findfirst(isequal(v), weightedCounts[:,1])
-        if isnothing(row)
-            weightedCounts = vcat(weightedCounts, [v w])
-        else
-            weightedCounts[row,2] += w
-        end
-    end
-    maxweight, maxrow = findmax(weightedCounts[:,2])
-    return Int32(weightedCounts[maxrow,1])
+    w, v = findmax(StatsBase.addcounts!(Dict{Int32,Float32}(), values, weights))
+    return v
 end
 
 # uses weighted mode, weighting by alignment length and distance from boundary
@@ -362,8 +340,8 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationA
         annotation.offset5 >= feat.length && continue
         annotation.offset3 >= feat.length && continue
         if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
-            if annotation.start < minstart; minstart = annotation.start; end
-            if annotation.start + annotation.length - 1 > maxend; maxend = annotation.start + annotation.length - 1; end
+            minstart = min(minstart, annotation.start)
+            maxend = max(maxend, annotation.start + annotation.length - 1)
             push!(overlapping_annotations, annotation)
         end
     end
@@ -413,7 +391,7 @@ function groupFeaturesIntoGeneModels(features::FeatureArray)::AAFeature
         else
             sort!(current_model, by=x -> x.start)
             push!(gene_models, current_model)
-            current_model = []
+            current_model = Feature[]
             push!(current_model, feature)
         end
     end
@@ -560,7 +538,9 @@ function findStartCodon!(cds::Feature, genome_length::Int32, genomeloop::DNAStri
     gene = getFeatureName(cds)
     allowACG = false
     allowGTG = false
-    if gene == "rps19"; allowGTG = true; end
+    if gene == "rps19"
+        allowGTG = true
+    end
 
     while (!isStartCodon(codon, allowACG, allowGTG) && start3 <= genome_length)
         if isStopCodon(codon, false)
@@ -690,16 +670,11 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
         last_exon = last(model)
         # if CDS, find phase, stop codon and set feature.length
         if isType(last_exon, "CDS")
-            # translation = translateFeature(targetloop, last_exon)
-            # @debug "translation" translation
             last_exon.phase = getFeaturePhaseFromAnnotationOffsets(last_exon, annotations)
 
             if !isFeatureName(last_exon, "rps12A")
                 setLongestORF!(last_exon, genome_length, targetloop)
             end
-
-            # translation = translateFeature(targetloop, last_exon)
-
             last_cds_examined = last_exon
         end
         for i in length(model) - 1:-1:1

@@ -181,6 +181,7 @@ function readReferences(refsdir::String, templates::String)::Reference
     end
     
     sff_files = files[idx]
+    mmaps = 0
 
     for (i, ref) in enumerate(ReferenceOrganisms)
         gwsas = joinpath(refsdir, ref.first * ".gwsas")
@@ -189,6 +190,7 @@ function readReferences(refsdir::String, templates::String)::Reference
         if isfile(mmap)
             refSAs[i], refRAs[i], refloops[i] = read_mmap_suffix(mmap)
             @info "found mmap file for: $(ref.first)"
+            mmaps += 1
         elseif isfile(gwsas)
             refSAs[i], refRAs[i], refloops[i] = read_gwsas(gwsas, ref.first)
             @info "found gwsas file for: $(ref.first)"
@@ -206,13 +208,13 @@ function readReferences(refsdir::String, templates::String)::Reference
         ref_features[i] = FwdRev(f_strand_features, r_strand_features)
         refsrc[i] = ref.first
 
-
+    end
+    if mmaps != len(refsrc)
+        @warn "better to use memory mapped files use: `julia chloe.jl mmap $(refsdir)/*.fa`"
     end
     feature_templates, gene_exons = readTemplates(templates)
     return Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons)
 end
-
-
 
 
 # const ns(td) = Time(Nanosecond(td))
@@ -229,13 +231,11 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
 
     annotations = Vector{Annotation}()
     for (ref_feature_array, blocks) in zip(reference.ref_features, blocks_aligned_to_target)
-        annotations = cat(annotations, findOverlaps(ref_feature_array.forward, blocks.forward), dims=1)
-        annotations = cat(annotations, findOverlaps(ref_feature_array.reverse, blocks.reverse), dims=1)
+        push!(annotations, findOverlaps(ref_feature_array.forward, blocks.forward)...)
+        push!(annotations, findOverlaps(ref_feature_array.reverse, blocks.reverse)...)
     end
     sort!(annotations, by=x -> x.path)
     strand_annotations = AnnotationArray(target_id, strand, annotations)
-
-    @debug "[$target_id]$strand thread=$(Threads.threadid())"
 
     t4 = time_ns()
     @info "[$target_id]$strand overlapping ref annotations ($(length(annotations))): $(ns(t4 - start_ns))"
@@ -332,7 +332,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
         ff, fr = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopf, target_saf, target_raf) 
         rf, rr = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
         # *OR* use only forward
-        # rr_aligned_blocks, rf_aligned_blocks = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
+        # rr, rf = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
         # note cross ...
         blocks_aligned_to_targetf[refcount] = FwdRev(ff, rf)
         blocks_aligned_to_targetr[refcount] = FwdRev(rr, fr)
@@ -350,11 +350,9 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     @info "[$target_id] aligned: ($(length(reference.refloops))) $(ns(t3 - t2))" 
 
     coverages = Dict{String,Float32}()
-    for (i, ref) in enumerate(reference.refsrc)
-        coverage = 0
-        coverage += blockCoverage(blocks_aligned_to_targetf[i].forward)
-        coverage += blockCoverage(blocks_aligned_to_targetf[i].reverse)
-        coverages[ref] = coverage /= target_length * 2
+    for (ref, a) in zip(reference.refsrc, blocks_aligned_to_targetf)
+        coverage = blockCoverage(a.forward) + blockCoverage(a.reverse)
+        coverages[ref] = coverage / target_length * 2
     end
     @debug "[$target_id] coverages:" coverages
 
