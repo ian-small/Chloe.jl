@@ -3,7 +3,7 @@ module WebAPI
 export TerminatingJSONMsgFormat
 
 import JuliaWebAPI
-import JuliaWebAPI: juliaformat, AbstractMsgFormat, juliaformat, wireformat, JSONMsgFormat
+import JuliaWebAPI: JSONMsgFormat, AbstractMsgFormat, juliaformat, wireformat
 
 # overide JuliaWebAPI interface
 
@@ -25,11 +25,10 @@ function JuliaWebAPI.juliaformat(fmt::TerminatingJSONMsgFormat, msgstr)
         if length(pid) != 1
             error("wrong arguments")
         end
-        if getpid() == pid[1]
-            ret["cmd"] = ":terminate"
-        else
+        if getpid() != pid[1]
             error("exit: incorrect process")
         end
+        ret["cmd"] = ":terminate"
     end
     return ret
 end
