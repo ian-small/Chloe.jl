@@ -22,8 +22,7 @@ const VERSION = "1.0"
 
 function git_version()
     try
-        r = run(pipeline(`git rev-parse HEAD`, stderr=devnull))
-        strip(read(r, String))
+        strip(read(pipeline(`git rev-parse HEAD`, stderr=devnull), String))
     catch e
         "unknown"
     end
