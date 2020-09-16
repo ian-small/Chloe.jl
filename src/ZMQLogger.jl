@@ -2,9 +2,10 @@ module ZMQLogging
 
 export TASK_KEY, set_global_logger, ZMQLogger
 
-import Logging
 import ZMQ
 MayBeString = Union{String,Nothing}
+
+include("globals.jl")
 
 const TASK_KEY = "CURRENT_TASK"
 
@@ -86,9 +87,6 @@ function Logging.catch_exceptions(logger::ZMQLogger)
     false
 end
 
-const LEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, 
-                    "warn" => Logging.Warn, "error" => Logging.Error)
-
 
 function set_global_logger(logfile::MayBeString, level::String="warn"; quiet::Bool=true, topic="")
     
@@ -99,7 +97,7 @@ function set_global_logger(logfile::MayBeString, level::String="warn"; quiet::Bo
         return color, prefix, ""
 
     end
-    llevel = get(LEVELS, level, Logging.Warn)
+    llevel = get(LOGLEVELS, level, Logging.Warn)
 
     if logfile === nothing
         logger = Logging.ConsoleLogger(stderr, llevel, meta_formatter=quiet ? quiet_metafmt : Logging.default_metafmt)

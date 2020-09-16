@@ -3,17 +3,16 @@ module CmdLine
 export cmd_main
 
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
-import Logging
+
+include("globals.jl")
 
 import ..Annotator
 import ..Sff2Gff
 import ..SuffixArray
 
-const LOGLEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => Logging.Warn, 
-"error" => Logging.Error)
  
-function chloe(;refsdir="reference_1116", fasta_files=String[],
-    template="optimised_templates.v2.tsv", output::Union{Nothing,String}=nothing)
+function chloe(;refsdir=DEFAULT_REFS, fasta_files=String[],
+    template=DEFAULT_TEMPLATE, output::Union{Nothing,String}=nothing)
 
     Annotator.annotate(refsdir, template, fasta_files, output)
 
@@ -88,13 +87,13 @@ function getargs()
             help = "output filename (or directory if multiple fasta files)"
         "--reference", "-r"
             arg_type = String
-            default = "reference_1116"
+            default = DEFAULT_REFS
             dest_name = "refsdir"
             metavar = "DIRECTORY"
             help = "reference directory"
         "--template", "-t"
             arg_type = String
-            default = "optimised_templates.v2.tsv"
+            default = DEFAULT_TEMPLATE
             metavar = "TSV"
             dest_name = "template"
             help = "template tsv"
