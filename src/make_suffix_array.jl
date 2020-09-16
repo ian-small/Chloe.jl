@@ -1,7 +1,10 @@
 
+module SuffixArray
+export create_mmaps, writesuffixarray
 import Mmap
+import ..Annotator: revComp, readFasta, makeSuffixArray, makeSuffixArrayRanksArray, GenomeWithSAs, writeGenomeWithSAs
 
-function writesuffixarray(;fasta_files=String[], directory=Union{String,Nothing})
+function writesuffixarray(;fasta_files=String[], directory=Union{String,Nothing} = nothing)
     for infile in fasta_files
         seqid, seqf = readFasta(infile)
         seqr = revComp(seqf)
@@ -15,7 +18,9 @@ function writesuffixarray(;fasta_files=String[], directory=Union{String,Nothing}
         if directory !== nothing
             filename = joinpath(directory, gwsas.id * ".gwsas")
         else
-            filename = gwsas.id * ".gwsas"
+            d = splitpath(infile)
+            filename = joinpath(d[1:end - 1]..., "$(gwsas.id).gwsas")
+
         end
         @info "writing suffix array: $filename"
         writeGenomeWithSAs(filename, gwsas)
@@ -93,3 +98,4 @@ function create_mmaps(;gwsas_fasta=String[])
         end
     end
 end
+end # module

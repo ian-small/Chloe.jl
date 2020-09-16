@@ -1,3 +1,7 @@
+module Sff2Gff
+export writeallGFF3
+
+import ..Annotator: AFeature, getFeatureType, FeatureArray, readFeatures, groupFeaturesIntoGeneModels
 
 function mergeAdjacentFeaturesinModel!(genome_id, genome_length, strand, model::AFeature)
     f1_pointer = 1
@@ -87,7 +91,7 @@ function writeGFF3(outfile, genemodel::FeatureArray)
     end
     write(outfile, "###\n")
 end
-function writeallGFF3(;sff_files=String[], directory=Nothing)
+function writeallGFF3(;sff_files=String[], directory=nothing)
     for infile in sff_files
         fstrand_features, rstrand_features = readFeatures(infile)
         # for each strand
@@ -108,8 +112,11 @@ function writeallGFF3(;sff_files=String[], directory=Nothing)
 
         # write models in GFF3 format
         fname = fstrand_features.genome_id * ".gff3";
-        if directory !== Nothing
+        if directory !== nothing
             fname = joinpath(directory, fname)
+        else
+            d = splitpath(infile)
+            fname = joinpath(d[1:end - 1]..., fname)
         end
         @info "writing gff3: $fname"
         open(fname, "w") do outfile
@@ -120,3 +127,4 @@ function writeallGFF3(;sff_files=String[], directory=Nothing)
         end
     end
 end
+end # module

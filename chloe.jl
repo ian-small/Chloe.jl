@@ -1,4 +1,9 @@
+include("src/annotate_genomes.jl")
+include("src/sff2GFF3.jl")
+include("src/make_suffix_array.jl")
 include("src/chloe_cmd.jl")
+
 if abspath(PROGRAM_FILE) == @__FILE__
+    import .CmdLine: cmd_main
     cmd_main()
 end

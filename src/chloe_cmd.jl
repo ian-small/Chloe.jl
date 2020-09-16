@@ -1,18 +1,21 @@
 
+module CmdLine
+export cmd_main
 
-include("annotate_genomes.jl")
-include("sff2GFF3.jl")
-include("make_suffix_array.jl")
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 import Logging
 
-const levels = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => Logging.Warn, 
+import ..Annotator
+import ..Sff2Gff
+import ..SuffixArray
+
+const LOGLEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => Logging.Warn, 
 "error" => Logging.Error)
  
 function chloe(;refsdir="reference_1116", fasta_files=String[],
     template="optimised_templates.v2.tsv", output::Union{Nothing,String}=nothing)
 
-    annotate(refsdir, template, fasta_files, output)
+    Annotator.annotate(refsdir, template, fasta_files, output)
 
 end
 
@@ -107,24 +110,21 @@ end
 function cmd_main() 
     parsed_args = getargs()
     level = parsed_args[:level]
-    Logging.with_logger(Logging.ConsoleLogger(stderr, get(levels, level, Logging.Warn))) do 
+    Logging.with_logger(Logging.ConsoleLogger(stderr, get(LOGLEVELS, level, Logging.Warn))) do 
         cmd = parsed_args[:_COMMAND_]
         a = parsed_args[cmd]
         if cmd == :gff3
-            writeallGFF3(;a...)
+            Sff2Gff.writeallGFF3(;a...)
         elseif cmd == :annotate
             chloe(;a...)
         elseif cmd == :mmap
-            create_mmaps(;a...)
+            SuffixArray.create_mmaps(;a...)
         elseif cmd == :suffix
-            writesuffixarray(;a...)
+            SuffixArray.writesuffixarray(;a...)
         end
     end
 
 end
 
-
-if abspath(PROGRAM_FILE) == @__FILE__
-    cmd_main()
-end
+end # module
 
