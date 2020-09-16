@@ -1,3 +1,7 @@
+module Broker
+
+export broker_main
+
 import ZMQ
 import ZeroMQ_jll
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
@@ -54,6 +58,9 @@ function broker_main()
     start_broker(args[:worker], args[:client])
 end
 
+end # module
+
 if abspath(PROGRAM_FILE) == @__FILE__
+    import .Broker: broker_main
     broker_main()
 end
