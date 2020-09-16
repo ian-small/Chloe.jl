@@ -1,5 +1,10 @@
+module ZMQLogging
+
+export TASK_KEY, set_global_logger, ZMQLogger
+
 import Logging
 import ZMQ
+MayBeString = Union{String,Nothing}
 
 const TASK_KEY = "CURRENT_TASK"
 
@@ -103,3 +108,4 @@ function set_global_logger(logfile::MayBeString, level::String="warn"; quiet::Bo
     end
     Logging.global_logger(logger) 
 end
+end # module

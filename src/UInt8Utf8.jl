@@ -4,7 +4,8 @@ module UInt8Utf8
 export utf8_codeunit, utf8_ncodeunits, utf8_getindex, utf8_isascii, utf8_isvalid
 export utf8_iterate, utf8_length, utf8_nextind, utf8_prevind, utf8_thisind
 
-export ascii_getindex, ascii_isvalid, ascii_length, ascii_iterate, ascii_nextind, ascii_prevind, ascii_thisind
+export ascii_getindex, ascii_isvalid, ascii_length, ascii_iterate
+export ascii_nextind, ascii_prevind, ascii_thisind
 
 import Base
 
