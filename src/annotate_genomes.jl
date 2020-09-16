@@ -1,3 +1,7 @@
+module Annotator
+
+export annotate, annotate_one, readReferences, Reference, MayBeIO, MayBeString
+
 DNAString = AbstractString
 
 
@@ -23,22 +27,6 @@ import .MappedString: MMappedString, ASCII
 # the data backing the memory mapping
 MappedPtrString = MMappedString{ASCII}
 # MappedPtrString = String
-
-# const ReferenceOrganisms = Dict(
-#     "AP000423"  => "Arabidopsis",
-#     "JX512022"  => "Medicago",
-#     "Z00044"    => "Nicotiana",
-#     "KT634228"  => "Picea",
-#     "NC_002202" => "Spinacia",
-#     "NC_001666" => "Zea",
-#     "NC_005086" => "Amborella",
-#     "NC_016986" => "Ginkgo",
-#     "NC_021438" => "Gnetum",
-#     "NC_030504" => "Liriodendron",
-#     "NC_024542" => "Nymphaea",
-#     "NC_031333" => "Oryza",
-#     "NC_026040" => "Zamia"
-# )
 
 struct FwdRev{T}
     forward::T
@@ -150,6 +138,22 @@ function read_gwsas(gwsas::String, id::String)
 
     FwdRevSA(refgwsas), FwdRevRA(refgwsas), FwdRevMap(fwd, rev)
 end
+
+function verify_refs(refsdir, template)
+    if ~isfile(template) || ~isdir(refsdir) || ~isfile(joinpath(refsdir, "ReferenceOrganisms.json"))
+        msg = "template: $(template) or refsdir: $(refsdir) is incorrect!"
+        @error msg
+        throw(ArgumentError(msg))
+    end
+    files = findall(x -> endswith(x, r"\.(gwsas|mmap)"), readdir(refsdir))
+    if length(files) == 0
+        msg = "please run `julia chloe.jl mmap $(refsdir)/*.fa`"
+        @error msg
+        throw(ArgumentError(msg))
+    end
+    
+end
+
 """
     readReferences(reference_dir, template_file_tsv)
 
@@ -160,7 +164,11 @@ function readReferences(refsdir::String, templates::String)::Reference
     if !isdir(refsdir)
         error("$(refsdir) is not a directory")
     end
-    ReferenceOrganisms = open(joinpath(refsdir, "ReferenceOrganisms.json")) do f
+    path = joinpath(refsdir, "ReferenceOrganisms.json")
+    if ~isfile(path)
+        error("readReferences: require \"$(path)\" JSON file")
+    end
+    ReferenceOrganisms = open(path) do f
         JSON.parse(f, dicttype=Dict{String,String})
     end
 
@@ -209,8 +217,8 @@ function readReferences(refsdir::String, templates::String)::Reference
         refsrc[i] = ref.first
 
     end
-    if mmaps != len(refsrc)
-        @warn "better to use memory mapped files use: `julia chloe.jl mmap $(refsdir)/*.fa`"
+    if mmaps != length(refsrc)
+        @info "better to use memory mapped files use: `julia chloe.jl mmap $(refsdir)/*.fa`"
     end
     feature_templates, gene_exons = readTemplates(templates)
     return Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons)
@@ -294,8 +302,7 @@ directory.
 # MayBeIO: write to file (String), IO buffer or create filename based on fasta filename
 # Union{IO,String}: read fasta from IO buffer or a file (String)
 MayBeIO = Union{String,IO,Nothing}
-function annotate_one(reference::Reference, fasta::Union{String,IO},
-    output::MayBeIO=nothing)
+function annotate_one(reference::Reference, fasta::Union{String,IO}, output::MayBeIO)
 
     num_refs = length(reference.refsrc)
     t1 = time_ns()
@@ -303,7 +310,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO},
     target_id, target_seqf = readFasta(fasta)
     target_length = Int32(length(target_seqf))
     
-    @info "[$target_id] length: $target_length"
+    @info "[$target_id] seq length: $(target_length)bp"
     
     target_seqr = revComp(target_seqf)
     
@@ -421,28 +428,4 @@ function annotate(refsdir::String, templates::String, fa_files::Vector{String}, 
     end
 end
 
-#### these are only used by chloe_distributed ####
-function annotate_one_task(fasta::MayBeString, output::MayBeIO, task_id::MayBeString)
-    annotation_local_storage(TASK_KEY, task_id)
-    try
-        # the global REFERENCE should have been
-        # sent to the worker process by main process
-        @debug "using $(Main.REFERENCE)"
-        annotate_one(Main.REFERENCE::Reference, fasta, output)
-    finally
-        annotation_local_storage(TASK_KEY, nothing)
-    end
-end
-
-
-function annotate_one_task(fasta::Union{String,IO}, task_id::MayBeString)
-    annotation_local_storage(TASK_KEY, task_id)
-    try
-        # the global REFERENCE should have been
-        # sent to the worker process by main process
-        @debug "using $(Main.REFERENCE)"
-        annotate_one(Main.REFERENCE::Reference, fasta, IOBuffer())
-    finally
-        annotation_local_storage(TASK_KEY, nothing)
-    end
-end
+end # module

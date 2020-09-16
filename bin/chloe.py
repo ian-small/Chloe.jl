@@ -224,7 +224,7 @@ def remote_ssh(
                 args = f"""-l {level} --workers={workers} --address=tcp://127.0.0.1:{remote}"""
                 cmd = (
                     f"JULIA_NUM_THREADS={threads} {julia} --color=yes --startup-file=no"
-                    f" src/chloe_distributed.jl {args}"
+                    f" distributed.jl {args}"
                 )
                 # need a pty to send interrupt
                 c.run(cmd, pty=True)

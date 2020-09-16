@@ -1,3 +1,6 @@
+
+import JLD
+
 SuffixArray = Vector{Int32}
 
 struct GenomeWithSAs
@@ -76,8 +79,6 @@ function makeSuffixArrayRanksArray(SA::SuffixArray)::SuffixArray
     end
     return RA
 end
-
-import JLD
 
 function writeGenomeWithSAs(filename::String, genome::GenomeWithSAs)
     JLD.jldopen(filename, "w") do file

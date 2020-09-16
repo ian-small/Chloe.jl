@@ -1,22 +1,29 @@
-include("annotate_genomes.jl")
-include("ZMQLogger.jl")
-include("msgformat.jl")
+# module ChloeDistributed
+
+# export distributed_main, chloe_distributed, run_broker
+
+import Distributed
+import Distributed: addprocs, rmprocs, @spawnat, @everywhere, nworkers
+
 
 import Base
 import JuliaWebAPI: APIResponder, APIInvoker, apicall, ZMQTransport, register, process
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 import Dates: now, toms
-import Distributed
-import Distributed: addprocs, rmprocs, @spawnat, @everywhere, nworkers
 import Crayons: @crayon_str
 import StringEncodings: encode
 import ZMQ
 
 import .WebAPI: TerminatingJSONMsgFormat
+import .Annotator: readReferences, Reference, MayBeString, verify_refs
+import .ZMQLogging: set_global_logger
 
-const success = crayon"bold green"
+
+
 const ZMQ_WORKER = "tcp://127.0.0.1:9467"
 const ZMQ_CLIENT = "ipc:///tmp/chloe-client"
+const DEFAULT_REFS = "reference_1116"
+const DEFAULT_TEMPLATE = "optimised_templates.v2.tsv"
 
 # change this if you change the API!
 const VERSION = "1.0"
@@ -37,18 +44,18 @@ end
 #     end
 # end
 
-function sendto(p::Int; args...)
+# function sendto(p::Int; args...)
     
-    function send(nm, val)
-        @debug "sending $val to $p as $nm"
-        @spawnat p Base.eval(Main, Expr(:(=), nm, val))
-    end
+#     function send(nm, val)
+#         @debug "sending $val to $p as $nm"
+#         @spawnat p Base.eval(Main, Expr(:(=), nm, val))
+#     end
 
-    [send(nm, val) for (nm, val) in args]
+#     [send(nm, val) for (nm, val) in args]
 
-end
+# end
 
-getfrom(p::Int, nm::Symbol; mod=Main) = fetch(@spawnat(p, getfield(mod, nm)))
+# getfrom(p::Int, nm::Symbol; mod=Main) = fetch(@spawnat(p, getfield(mod, nm)))
 
 
 # function sendto(ps::Vector{Int}; args...)
@@ -57,15 +64,9 @@ getfrom(p::Int, nm::Symbol; mod=Main) = fetch(@spawnat(p, getfield(mod, nm)))
 #     end
 # end
 
-function sendto(ps::Vector{Int}; args...)
-    [tsk for p in ps for tsk in sendto(p; args...) ]
-end
-
-function exit_on_sigint(on::Bool)
-    # from https://github.com/JuliaLang/julia/pull/29383
-    # and https://github.com/JuliaLang/julia/pull/29411
-    ccall(:jl_exit_on_sigint, Cvoid, (Cint,), on)
-end
+# function sendto(ps::Vector{Int}; args...)
+#     [tsk for p in ps for tsk in sendto(p; args...) ]
+# end
 
 
 function create_responder(apispecs::Vector{Function}, addr::String, ctx::ZMQ.Context)
@@ -76,59 +77,67 @@ function create_responder(apispecs::Vector{Function}, addr::String, ctx::ZMQ.Con
     api
 end
 
+
+
 function arm_procs(procs, reference::Reference,  backend::MayBeString, level::String)
     here = dirname(@__FILE__)
     @everywhere procs begin
         include(joinpath($here, "annotate_genomes.jl"))
         include(joinpath($here, "ZMQLogger.jl"))
+        include(joinpath($here, "tasks.jl"))
+        set_global_logger($backend, $level; topic="annotator")
+        global REFERENCE = $reference
     end
     # Send reference object to nlisteners (as Main.REFERENCE).
     # Call wait on the task so we effectively wait
     # for all the data transfer to complete.
     # sendto(procs, REFERENCE=reference) .|> wait
-    [ @spawnat p begin
+    # [ @spawnat p begin
+    #     set_global_logger(backend, level; topic="annotator")
+    #     global REFERENCE = reference
+    #     nothing
 
-        set_global_logger(backend, level; topic="annotator")
-        global REFERENCE = reference
-
-    end for p in procs] .|> wait  
+    # end for p in procs] .|> wait  
 end
+
 function arm_procs(procs, backend::MayBeString, level::String;
-        refsdir="reference_1116", template="optimised_templates.v2.tsv")
-    # need to do @everywhere first because it
-    # doesn't work in the @spwanat block below!
+    refsdir=DEFAULT_REFS, template=DEFAULT_TEMPLATE)
+
     here = dirname(@__FILE__)
     @everywhere procs begin
         include(joinpath($here, "annotate_genomes.jl"))
         include(joinpath($here, "ZMQLogger.jl"))
+        include(joinpath($here, "tasks.jl"))
+
+        set_global_logger($backend, $level; topic="annotator")
+        global REFERENCE = readReferences($refsdir, $template)
     end
-    [ @spawnat p begin
-
-        set_global_logger(backend, level; topic="annotator")
-        global REFERENCE = readReferences(refsdir, template)
-
-    end for p in procs] .|> wait
+    # [ @spawnat p begin
+    #     set_global_logger(backend, level; topic="annotator")
+    #     global REFERENCE = readReferences(refsdir, template)
+    #     nothing
+    # end for p in procs] .|> wait
 
 end
 
-function verify_refs(refsdir, template)
-    if ~isfile(template) || ~isdir(refsdir) || ~isfile(joinpath(refsdir, "ReferenceOrganisms.json"))
-        @error "template: $(template) or refsdir: $(refsdir) is incorrect!"
-        Base.exit(1)
-    end
-    files = findall(x -> x.endswith(r"\.(gwsas|mmap)"), readdir(refsdir))
-    if length(files) == 0
-        @error "please run `julia chloe.jl mmap $(refsdir)/*.fa`"
-        Base.exit(1)
-    end
-    
-end
 
-function chloe_distributed(;refsdir="reference_1116", address=ZMQ_WORKER,
-    template="optimised_templates.v2.tsv", level="warn", workers=3,
+function chloe_distributed(;refsdir=DEFAULT_REFS, address=ZMQ_WORKER,
+    template=DEFAULT_TEMPLATE, level="warn", workers=3,
     backend::MayBeString=nothing, broker::MayBeString=nothing)
 
+    thisdir = dirname(@__FILE__)
+    project = joinpath(thisdir, "..")
+
+    success = crayon"bold green"
+
     set_global_logger(backend, level; topic="annotator")
+
+    if refsdir == "default"
+        refsdir = joinpath(thisdir, "..", DEFAULT_REFS)
+    end
+    if template == "default"
+        template = joinpath(thisdir, "..", DEFAULT_TEMPLATE)
+    end  
 
     # don't wait for workers to find the wrong directory
     verify_refs(refsdir, template)
@@ -138,7 +147,7 @@ function chloe_distributed(;refsdir="reference_1116", address=ZMQ_WORKER,
     n = nworkers()
     toadd = workers - (n == 1 ? 0 : n)
     if toadd > 0
-        addprocs(toadd; topology=:master_worker)
+        addprocs(toadd; topology=:master_worker, exeflags="--project=$(project)")
     end
     procs = Distributed.workers()
 
@@ -344,19 +353,19 @@ function chloe_distributed(;refsdir="reference_1116", address=ZMQ_WORKER,
 
 end
 
-function args()
+function get_distributed_args()
     distributed_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
 
     @add_arg_table! distributed_args begin
         "--reference", "-r"
         arg_type = String
-        default = "reference_1116"
+        default = DEFAULT_REFS
         dest_name = "refsdir"
         metavar = "DIRECTORY"
         help = "reference directory"
         "--template", "-t"
         arg_type = String
-        default = "optimised_templates.v2.tsv"
+        default = DEFAULT_TEMPLATE
         metavar = "TSV"
         dest_name = "template"
         help = "template tsv"
@@ -412,27 +421,33 @@ function run_broker(worker, client)
     # open(pipeline(cmd))
 end
 
-function run_broker2(worker, client)
-    # ugh! `@spawnat :any annotate...` will block on this process... which
-    # will never return.
-    procs = addprocs(1; topology=:master_worker)
-    @everywhere procs include("src/broker.jl")
-    @async fetch(@spawnat procs[1] run_broker(worker, client))
-end
+# function run_broker2(worker, client)
+#     # ugh! `@spawnat :any annotate...` will block on this process... which
+#     # will never return.
+#     procs = addprocs(1; topology=:master_worker)
+#     @everywhere procs include("src/broker.jl")
+#     @async fetch(@spawnat procs[1] run_broker(worker, client))
+# end
 
-function find_endpoint()
-    endpoint = tmplt = "/tmp/chloe-worker"
-    n = 0
-    while isfile(endpoint)
-        n += 1
-        endpoint = "$(tmplt)$(n)"
-    end
-    "ipc://$(endpoint)"
-end 
-function main()
+
+function distributed_main()
     # exit_on_sigint(false)
+    function exit_on_sigint(on::Bool)
+        # from https://github.com/JuliaLang/julia/pull/29383
+        # and https://github.com/JuliaLang/julia/pull/29411
+        ccall(:jl_exit_on_sigint, Cvoid, (Cint,), on)
+    end
+    function find_endpoint()
+        endpoint = tmplt = "/tmp/chloe-worker"
+        n = 0
+        while isfile(endpoint)
+            n += 1
+            endpoint = "$(tmplt)$(n)"
+        end
+        "ipc://$(endpoint)"
+    end 
     Sys.set_process_title("chloe-distributed")
-    distributed_args = args()
+    distributed_args = get_distributed_args()
     client_url = get(distributed_args, :broker, nothing)
 
     if client_url !== nothing
@@ -457,7 +472,4 @@ function main()
     chloe_distributed(;distributed_args...)
 
 end
-
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+# end
