@@ -28,7 +28,9 @@ include("globals.jl")
 
 function git_version()
     try
-        strip(read(pipeline(`git -C "$HERE" rev-parse HEAD`, stderr=devnull), String))
+        # older version of git don't have -C
+        # strip(read(pipeline(`git -C "$HERE" rev-parse HEAD`, stderr=devnull), String))
+        strip(read(pipeline(`sh -c 'cd "$HERE" && git rev-parse HEAD'`, stderr=devnull), String))
     catch e
         "unknown"
     end
