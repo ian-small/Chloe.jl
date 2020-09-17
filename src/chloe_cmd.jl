@@ -14,10 +14,10 @@ import ..SuffixArray
 function chloe(;refsdir=DEFAULT_REFS, fasta_files=String[],
     template=DEFAULT_TEMPLATE, output::Union{Nothing,String}=nothing)
     if refsdir == "default"
-        refdir = joinpath(HERE, DEFAULT_REFS)
+        refsdir = joinpath(HERE, "..", DEFAULT_REFS)
     end
     if template == "default"
-        template = joinpath(HERE, DEFAULT_TEMPLATE)
+        template = joinpath(HERE, "..", DEFAULT_TEMPLATE)
     end
     Annotator.annotate(refsdir, template, fasta_files, output)
 
