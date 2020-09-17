@@ -285,23 +285,29 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     return target_strand_models, strand_feature_stacks
 end
 
+# MayBeIO: write to file (String), IO buffer or create filename based on fasta filename
+# Union{IO,String}: read fasta from IO buffer or a file (String)
+MayBeIO = Union{String,IO,Nothing}
+
 """
-    annotate_one(references, fasta_file [,output_sff_file])
+    annotate_one(references::Reference, fasta_file::Union{String,IO} [,output_sff_file])
 
 Annotate a single fasta file containting a *single* circular
 DNA entry
 
-writes an .sff file to `output_sff_file` or uses that id in the
+writes an .sff file to `output_sff_file` or uses the sequence id in the
 fasta file to write `{target_id}.sff` in the current directory.
 
-If output_sff_file is a *directory* write `{target_id}.sff` into that
+If `output_sff_file` is a *directory* write `{target_id}.sff` into that
 directory.
+
+returns a 2-tuple: (ultimate sff output filename, sequence id)
+
+If `output_sff_file` is an IOBuffer then that buffer will be returned
+with the annotation within it
 
 `reference` are the reference annotations (see `readReferences`)
 """
-# MayBeIO: write to file (String), IO buffer or create filename based on fasta filename
-# Union{IO,String}: read fasta from IO buffer or a file (String)
-MayBeIO = Union{String,IO,Nothing}
 function annotate_one(reference::Reference, fasta::Union{String,IO}, output::MayBeIO)
 
     num_refs = length(reference.refsrc)
@@ -414,7 +420,14 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
     return fname, target_id
 
 end
+"""
+    annotate_one(reference::Reference, fasta::Union{String,IO})
 
+Annotate a fasta file. Maybe a file name or an IOBuffer
+returns a 2-tuple (sff annotation as an IOBuffer, sequence id)
+
+`reference` are the reference annotations (see `readReferences`)
+"""
 function annotate_one(reference::Reference, fasta::Union{String,IO})
     annotate_one(reference, fasta, IOBuffer())
 end
