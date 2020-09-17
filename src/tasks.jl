@@ -12,7 +12,7 @@ function annotate_one_task(fasta::MayBeString, output::MayBeIO, task_id::MayBeSt
         # the global REFERENCE should have been
         # sent to the worker process by main process
         @debug "using $(Main.REFERENCE)"
-        annotate_one(Main.REFERENCE::Reference, fasta, output)
+        annotate_one(Main.REFERENCE, fasta, output)
     finally
         annotation_local_storage(TASK_KEY, nothing)
     end
@@ -25,7 +25,7 @@ function annotate_one_task(fasta::Union{String,IO}, task_id::MayBeString)
         # the global REFERENCE should have been
         # sent to the worker process by main process
         @debug "using $(Main.REFERENCE)"
-        annotate_one(Main.REFERENCE::Reference, fasta, IOBuffer())
+        annotate_one(Main.REFERENCE, fasta, IOBuffer())
     finally
         annotation_local_storage(TASK_KEY, nothing)
     end

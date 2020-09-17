@@ -1,11 +1,32 @@
 module Broker
 
-export broker_main
+export broker_main, test_bind
 
 import ZMQ
 import ZeroMQ_jll
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 
+function test_bind(worker_url::String, client_url::String)
+    # this doesn't seem to work
+    # a test bind to an already bound
+    # ipc:///named-socket seems to stuff
+    # everything up.....
+    router = ZMQ.Socket(ZMQ.ROUTER)
+    dealer = ZMQ.Socket(ZMQ.DEALER)
+    try
+        ZMQ.bind(router, client_url)
+        ZMQ.bind(dealer, worker_url)
+        return nothing
+    catch e
+        return e.msg
+    finally
+        ZMQ.set_linger(router, 0)
+        ZMQ.set_linger(dealer, 0)
+        ZMQ.close(router)
+        ZMQ.close(dealer)
+    end
+
+end
 function start_broker(worker_url::String, client_url::String)
 
     # ctx = Context()

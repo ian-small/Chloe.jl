@@ -8,3 +8,4 @@ const DEFAULT_REFS = "reference_1116"
 const DEFAULT_TEMPLATE = "optimised_templates.v2.tsv"
 # change this if you change the API!
 const VERSION = "1.0"
+const HERE = dirname(@__FILE__)
