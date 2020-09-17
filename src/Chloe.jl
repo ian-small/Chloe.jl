@@ -1,11 +1,12 @@
 module Chloe
 
-export annotate_one, annotate, readReferences, Reference, MayBeString, MayBeIO
+export annotate_one, annotate, readReferences, readDefaultReferences, Reference
+export MayBeIO, MayBeString
 export create_mmaps, writesuffixarray
 export writeallGFF3
 export cmd_main
 export distributed_main, chloe_distributed, run_broker, get_distributed_args, maybe_launch_broker
-export set_global_logger, readDefaultReferences
+export set_global_logger
 export annotate_one_task
 
 include("ZMQLogger.jl")
@@ -22,7 +23,7 @@ include("chloe_distributed.jl")
 import .SuffixArray: create_mmaps, writesuffixarray
 import .Sff2Gff: writeallGFF3
 # import .ChloeDistributed: distributed_main, chloe_distributed, run_broker, get_distributed_args, maybe_launch_broker
-import .Annotator: annotate, annotate_one, readReferences, Reference, MayBeIO, MayBeString, human
+import .Annotator: annotate, annotate_one, readReferences, MayBeIO, MayBeString
 import .CmdLine: cmd_main
 import .ZMQLogging: set_global_logger
 

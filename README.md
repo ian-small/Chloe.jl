@@ -39,11 +39,14 @@ This will make an entry for Chloe in the Manifest for julia. More
 importantly it will install all the dependencies.
 Now get julia to compile it by typing `import Chloe` at the *julia* prompt.
 
-You can remove Chloe with:
+You can easily remove Chloe as a package with:
 
 ```
 (@v1.5) pkg> rm Chloe
 ```
+
+Installing Chloe as a (local) package allows you to take
+advantage of julia's precompilation.
 
 
 ## Chloë Server
@@ -54,6 +57,7 @@ Running the chloe server. In a terminal type:
 JULIA_NUM_THREADS=8 julia distributed.jl --level=info --workers=4 \
      --broker=ipc:///tmp/chloe-client
 ```
+
 (Julia as of 1.4 refuses to use more threads that the number of CPUs on your machine:
 `Sys.CPU_THREADS` or `python -c 'import multiprocessing as m; print(m.cpu_count())'`)
 
@@ -92,7 +96,8 @@ to the same DEALER.
 
 **Update**: you can now run a broker with julia as `julia src/broker.jl`
 *or* specify `--broker=URL` to `distrbuted.jl`. No
-python required.
+python required. (best to use `-b default` to select
+this projects default endpoint (`ipc:///tmp/chloe-client`))
 
 The worker process can be made to share the reference Data using memory mapped data files.
 You can create these by running:
@@ -118,11 +123,11 @@ Now you can type:
 using Distributed
 # just read reference Data on remote workers
 @everywhere workers() begin
-    global REFS = readReferences("reference_1116", "optimised_templates.v2.tsv")
+    global REFS = readDefaultReferences()
 end
 # get a fasta file
 fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
-# note that REFS is not defined locally!
+# note that REFS is not defined locally in the REPL!
 r = @spawnat :any annotate_one(REFS, fasta)
 io, uid = fetch(r)
 sff = String(take!(io))
@@ -138,7 +143,7 @@ using Distrbuted
 addprocs(3)
 @everywhere workers() begin
     include("src/remote.jl")
-    REFS = readReferences("reference_1116", "optimised_templates.v2.tsv")
+    REFS = readDefaultReferences()
 end
 fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
 io, uid = fetch(@spawnat :any annotate_one(REFS, fasta))
@@ -151,7 +156,24 @@ sff_filename, uid = fetch(@spawnat :any annotate_one(REFS, "testfa/NC_020019.1.f
 # instead of `nothing` specify an actual filename.
 ```
 
-The
+If you have installed Chloe as a (local) package the you can use:
+
+```julia
+using Distributed
+addprocs(4)
+@everywhere workers() begin
+    using Chloe
+    global REFS = readDefaultReferences()
+end
+# Note that neither REFS nor annotate_one is defined in the REPL
+# ...but all is still good.
+r = @spawnat :any annotate_one(REFS, "testfa/NC_020019.1.fa")
+# etc...
+```
+
+This takes advantage of the precompilation of julia packages.
+Also you don't need to be in the repo directory!
+
 
 ## Running Remotely
 
@@ -209,6 +231,27 @@ Possibly useful REPL packages
 * add OhMyREPL: pretty print code
 * `@code_warntype f()` check type system
 * add ProfileView: https://github.com/timholy/ProfileView.jl
+
+from [stackoverflow](https://stackoverflow.com/questions/38825626/julia-transferring-methods-between-workers/39216340#39216340): 
+
+
+There is no way to send a subset of the methods in a package to another machine.
+Very often methods refer to other types and functions in the same module, so the
+system would have to at least send all dependencies as well. That could work, but
+the bigger problem is deciding whose responsibility it is to distribute code,
+and when. For example, initially your library might decide to send itself
+(or parts of itself) to other nodes, but then the user might later want to do a
+parallel map of your library functions, such that the whole library is needed on
+every node. This gets very complex, so it is far simpler for everybody just to load all needed code on all nodes as early as possible.
+
+---
+
+This only really is of interest with using the `add_worker` method that tries to add new workers
+to the running server. If the server was
+started by loading `Chloe` as a package then
+you can't add new workers by just sending
+the required code: The new worker seems
+to be expecting a Chloe module.
 
 
 ### Authors

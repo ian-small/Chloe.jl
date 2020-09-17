@@ -399,6 +399,14 @@ def terminate(timeout, address):
     )
 
 
+def display(code, data):
+    if code != 200:
+        resp = extract_exc(data)
+    else:
+        resp = str(data)
+    click.secho(resp, fg="green" if code == 200 else "red", bold=True)
+
+
 @cli.command(name="exit")
 @addresses
 def exitit(timeout, address):
@@ -418,7 +426,7 @@ the annotator is down may kill it as soon as it starts up again.
     )
     socket = Socket(address, timeout)
     code, data = socket.msg(cmd="exit", args=[address])
-    click.secho(str(data), fg="green" if code == 200 else "red", bold=True)
+    display(code, data)
 
 
 @cli.command()
@@ -427,7 +435,7 @@ def ping(timeout, address):
     """Ping the server."""
     socket = Socket(address, timeout)
     code, data = socket.msg(cmd="ping")
-    click.secho(str(data), fg="green" if code == 200 else "red", bold=True)
+    display(code, data)
 
 
 @cli.command()
@@ -436,7 +444,7 @@ def workers(timeout, address):
     """Number of service workers"""
     socket = Socket(address, timeout)
     code, data = socket.msg(cmd="nconn")
-    click.secho(str(data), fg="green" if code == 200 else "red", bold=True)
+    display(code, data)
 
 
 @cli.command()
@@ -452,7 +460,7 @@ def add_workers(timeout, address, workers):
     """add or remove service workers"""
     socket = Socket(address, timeout)
     code, data = socket.msg(cmd="add_workers", args=[workers, address])
-    click.secho(str(data), fg="green" if code == 200 else "red", bold=True)
+    display(code, data)
 
 
 if __name__ == "__main__":

@@ -1,30 +1,53 @@
 module Broker
 
-export broker_main, test_bind
+export broker_main, check_endpoints, remove_endpoints
 
 import ZMQ
 import ZeroMQ_jll
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 
-function test_bind(worker_url::String, client_url::String)
+function remove_endpoints(endpoints::String...)
     # this doesn't seem to work
     # a test bind to an already bound
     # ipc:///named-socket seems to stuff
     # everything up.....
-    router = ZMQ.Socket(ZMQ.ROUTER)
-    dealer = ZMQ.Socket(ZMQ.DEALER)
-    try
-        ZMQ.bind(router, client_url)
-        ZMQ.bind(dealer, worker_url)
-        return nothing
-    catch e
-        return e.msg
-    finally
-        ZMQ.set_linger(router, 0)
-        ZMQ.set_linger(dealer, 0)
-        ZMQ.close(router)
-        ZMQ.close(dealer)
+    function cleanup(fname)
+        atexit(() -> rm(fname; force=true))
     end
+    for endpoint in endpoints
+        if startswith(endpoint, "ipc:///")
+            cleanup(endpoint[7:end])
+        end
+    end
+end
+
+function check_endpoints(endpoints::String...)
+    # this doesn't seem to work
+    # a test bind to an already bound
+    # ipc:///named-socket seems to stuff
+    # everything up.....
+    for endpoint in endpoints
+        if startswith(endpoint, "ipc:///")
+            fname = endpoint[7:end]
+            if isfile(fname)
+                return "$(endpoint) in use"
+            else
+                continue
+            end
+        end
+        router = ZMQ.Socket(ZMQ.ROUTER)
+
+        try
+            ZMQ.bind(router, endpoint)
+            continue
+        catch e
+            return "$endpoint $(e.msg)"
+        finally
+            ZMQ.set_linger(router, 0)
+            ZMQ.close(router)
+        end
+    end
+    nothing
 
 end
 function start_broker(worker_url::String, client_url::String)

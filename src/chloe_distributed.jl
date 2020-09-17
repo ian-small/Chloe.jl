@@ -1,5 +1,5 @@
 # can't seem to turn this into a module
-# without work processes complaining that they
+# without worker processes complaining that they
 # can't find module ChloeDistributed
 
 # module ChloeDistributed
@@ -21,7 +21,7 @@ import ZMQ
 import .WebAPI: TerminatingJSONMsgFormat
 import .Annotator: readReferences, Reference, MayBeString, verify_refs
 import .ZMQLogging: set_global_logger
-# import .Broker: test_bind
+import .Broker: check_endpoints, remove_endpoints
 
 include("globals.jl")
 
@@ -110,7 +110,6 @@ function arm_procs(procs, backend::MayBeString=nothing, level::String="info";
     # use when toplevel has already done
     # @everywhere using Chloe
     @everywhere procs begin
-
         set_global_logger($level, $backend; topic="annotator")
         global REFERENCE = readReferences($refsdir, $template)
     end
@@ -140,30 +139,36 @@ function chloe_distributed(full::Bool=true;refsdir="default", address=ZMQ_WORKER
 
     # user may have added run with 
     # julia command -p2 etc.
-    n = nworkers()
-    toadd = workers - (n == 1 ? 0 : n)
+    # don't send to process 1
+    procs = filter(w -> w != 1, Distributed.workers())
+    toadd = workers - length(procs)
     if toadd > 0
         addprocs(toadd; topology=:master_worker)
     end
+
+    procs = filter(w -> w != 1, Distributed.workers())
     # with MMAPped files we prefer to
     # allow the workers to read the data
 
     # arm_procs(procs, reference, backend, level)
     if full
-        arm_procs_full(Distributed.workers(), backend, level, refsdir=refsdir, template=template)
+        arm_procs_full(procs, backend, level, refsdir=refsdir, template=template)
     else
-        arm_procs(Distributed.workers(), backend, level, refsdir=refsdir, template=template)
+        arm_procs(procs, backend, level, refsdir=refsdir, template=template)
     end
     
     function arm(new_procs)
         arm_procs_full(new_procs, backend, level, refsdir=refsdir, template=template)
     end
-        
-    chloe_listen(address, broker, arm)
+
+    # it seems impossible to add new workers after the fact
+    # if we have use the Chloe module....
+    # see 
+    chloe_listen(address, broker, full ? arm : nothing)
 end
 
 function chloe_listen(address::String, broker::MayBeString=nothing, 
-    arm_procs::Union{Function,Nothing}=nothing)
+    arm_new_procs::Union{Function,Nothing}=nothing)
     success = crayon"bold green"
     procs = Distributed.workers()
 
@@ -294,10 +299,11 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
 
         elseif n > 0
             # add workers
-            if arm_procs === nothing
+            if arm_new_procs === nothing
                 error("can't create new workers!")
             end
             @async begin
+                # ensure topology is the same
                 added = addprocs(n, topology=:master_worker)
                 arm_procs(added)
                 @info "added $(added) processes"
@@ -427,14 +433,16 @@ function run_broker(worker::String=ZMQ_WORKER, client::String=ZMQ_CLIENT)
     if !Sys.isexecutable(julia)
         error("Can't find julia executable to run broker, best guess: $julia")
     end
-    # msg = test_bind(worker, client)
-    # if msg !== nothing
-    #     error("$worker or $client: $msg")
-    # end
+    msg = check_endpoints(worker, client)
+    if msg !== nothing
+        @error "$(msg). Only need one broker running"
+        Base.exit(1) # can we throw....
+    end
     cmd = `$julia -q --startup-file=no "$src/broker.jl" --worker=$worker --client=$client`
     # wait = false means stdout,stderr are connected to /dev/null
     task = run(cmd; wait=false)
     atexit(() -> kill(task))
+    remove_endpoints(worker, client)
     task
     # open(pipeline(cmd))
 end
@@ -488,6 +496,5 @@ function distributed_main(full::Bool=false)
     distributed_args = maybe_launch_broker(distributed_args)
 
     chloe_distributed(full;distributed_args...)
-
 end
 # end # module
