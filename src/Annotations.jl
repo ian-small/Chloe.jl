@@ -290,7 +290,6 @@ function getModelID!(model_ids::Dict{String,Int32}, model::AFeature)
     return model_id
 end
 
-
 function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::AnnotationArray)::Int8
     matching_annotations = findall(x -> x.path == feat.path, annotations.annotations)
     phases = Int8[]
@@ -329,10 +328,10 @@ end
 
 # uses weighted mode, weighting by alignment length and distance from boundary
 function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationArray, 
-            target_length::Integer, coverages::Dict{String,Float32})::Tuple{Feature,Vector{Int32},Vector{Float32}}
+            target_length::Integer, coverages::Dict{String,Float32})  # Tuple{Feature,Vector{Int32},Vector{Float32}}
     # grab all the matching features
     matching_annotations = findall(x -> x.path == feat.path, annotations.annotations)
-    isempty(matching_annotations) && return feat, [], []
+    isempty(matching_annotations) && return #  feat, [], []
     overlapping_annotations = []
     minstart = target_length
     maxend = 1
@@ -374,11 +373,8 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationA
     end
     feat.start = genome_wrap(target_length, left)
     feat.length = right - left + 1
-    return feat, end5s, end5ws
+    # return feat # , end5s, end5ws
 end
-
-
-
 
 function groupFeaturesIntoGeneModels(features::FeatureArray)::AAFeature
     gene_models = AAFeature()
