@@ -13,7 +13,12 @@ import ..SuffixArray
  
 function chloe(;refsdir=DEFAULT_REFS, fasta_files=String[],
     template=DEFAULT_TEMPLATE, output::Union{Nothing,String}=nothing)
-
+    if refsdir == "default"
+        refdir = joinpath(HERE, DEFAULT_REFS)
+    end
+    if template == "default"
+        template = joinpath(HERE, DEFAULT_TEMPLATE)
+    end
     Annotator.annotate(refsdir, template, fasta_files, output)
 
 end
@@ -33,7 +38,7 @@ function getargs()
             help = "generate suffix arrays from fasta files"
             action = :command
         "mmap"
-            help = "generate mmap files from .gwsas files"
+            help = "generate mmap files from gwsas/fasta files"
             action = :command
         "--level", "-l"
             arg_type = String
@@ -87,16 +92,16 @@ function getargs()
             help = "output filename (or directory if multiple fasta files)"
         "--reference", "-r"
             arg_type = String
-            default = DEFAULT_REFS
+            default = "default"
             dest_name = "refsdir"
             metavar = "DIRECTORY"
-            help = "reference directory"
+            help = "reference directory [default: $(DEFAULT_REFS)]"
         "--template", "-t"
             arg_type = String
-            default = DEFAULT_TEMPLATE
+            default = "default"
             metavar = "TSV"
             dest_name = "template"
-            help = "template tsv"
+            help = "template tsv [default: $(DEFAULT_TEMPLATE)]"
     end
 
     # args.epilog = """

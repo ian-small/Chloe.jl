@@ -70,7 +70,7 @@ utf8_prevind(s::Vector{UInt8}, i::Int) = utf8_prevind(s, i, 1)
 function utf8_prevind(s::Vector{UInt8}, i::Int, n::Int)
     n < 0 && throw(Base.ArgumentError("n cannot be negative: $n"))
     z = utf8_ncodeunits(s) + 1
-    @boundscheck 0 < i ≤ z || throw(BoundsError(s, i))
+    @boundscheck 0 < i ≤ z || throw(Base.BoundsError(s, i))
     n == 0 && return utf8_thisind(s, i) == i ? i : Base.string_index_err(s, i)
     while n > 0 && 1 < i
         @inbounds n -= utf8_isvalid(s, i -= 1)

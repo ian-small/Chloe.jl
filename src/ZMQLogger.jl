@@ -88,7 +88,7 @@ function Logging.catch_exceptions(logger::ZMQLogger)
 end
 
 
-function set_global_logger(logfile::MayBeString, level::String="warn"; quiet::Bool=true, topic="")
+function set_global_logger(level::String="warn", endpoint::MayBeString=nothing; quiet::Bool=true, topic="")
     
     # don't add any line number guff even for debugging
     function quiet_metafmt(level, _module, group, id, file, line)
@@ -99,10 +99,10 @@ function set_global_logger(logfile::MayBeString, level::String="warn"; quiet::Bo
     end
     llevel = get(LOGLEVELS, level, Logging.Warn)
 
-    if logfile === nothing
+    if endpoint === nothing
         logger = Logging.ConsoleLogger(stderr, llevel, meta_formatter=quiet ? quiet_metafmt : Logging.default_metafmt)
     else
-        logger = ZMQLogger(logfile::String, llevel; topic=topic)
+        logger = ZMQLogger(endpoint::String, llevel; topic=topic)
     end
     Logging.global_logger(logger) 
 end

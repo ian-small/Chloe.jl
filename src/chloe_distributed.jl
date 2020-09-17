@@ -1,3 +1,7 @@
+# can't seem to turn this into a module
+# without work processes complaining that they
+# can't find module ChloeDistributed
+
 # module ChloeDistributed
 
 # export distributed_main, chloe_distributed, run_broker, get_distributed_args, maybe_launch_broker
@@ -86,7 +90,7 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
         include(joinpath($HERE, "ZMQLogger.jl"))
         include(joinpath($HERE, "tasks.jl"))
 
-        set_global_logger($backend, $level; topic="annotator")
+        set_global_logger($level, $backend; topic="annotator")
         global REFERENCE = readReferences($refsdir, $template)
     end
     # [ @spawnat p begin
@@ -94,7 +98,7 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
     #     include(joinpath(HERE, "ZMQLogger.jl"))
     #     include(joinpath(HERE, "chloe_distributed.jl"))
     #     include(joinpath(HERE, "tasks.jl"))        
-    #     set_global_logger(backend, level; topic="annotator")
+    #     set_global_logger(level, backend; topic="annotator")
     #     global REFERENCE = readReferences(refsdir, template)
     #     nothing
     # end for p in procs] .|> wait
@@ -103,26 +107,26 @@ end
 function arm_procs(procs, backend::MayBeString=nothing, level::String="info";
     refsdir=DEFAULT_REFS, template=DEFAULT_TEMPLATE)
 
-    # use when toplevel as already done
+    # use when toplevel has already done
     # @everywhere using Chloe
     @everywhere procs begin
 
-        set_global_logger($backend, $level; topic="annotator")
+        set_global_logger($level, $backend; topic="annotator")
         global REFERENCE = readReferences($refsdir, $template)
     end
     # [ @spawnat p begin
-    #     set_global_logger(backend, level; topic="annotator")
+    #     set_global_logger(level, backend; topic="annotator")
     #     global REFERENCE = readReferences(refsdir, template)
     #     nothing
     # end for p in procs] .|> wait
 end
 
-function chloe_distributed(full::Bool=true;refsdir=DEFAULT_REFS, address=ZMQ_WORKER,
-    template=DEFAULT_TEMPLATE, level="warn", workers=3,
+function chloe_distributed(full::Bool=true;refsdir="default", address=ZMQ_WORKER,
+    template="default", level="warn", workers=3,
     backend::MayBeString=nothing, broker::MayBeString=nothing)
 
 
-    set_global_logger(backend, level; topic="annotator")
+    set_global_logger(level, backend; topic="annotator")
 
     if refsdir == "default"
         refsdir = joinpath(HERE, "..", DEFAULT_REFS)
@@ -372,13 +376,13 @@ function get_distributed_args()
         default = "default"
         dest_name = "refsdir"
         metavar = "DIRECTORY"
-        help = "reference directory"
+        help = "reference directory [default: $(DEFAULT_REFS)]"
         "--template", "-t"
         arg_type = String
         default = "default"
         metavar = "TSV"
         dest_name = "template"
-        help = "template tsv"
+        help = "template tsv [default: $(DEFAULT_TEMPLATE)]"
         "--address", "-a"
         arg_type = String
         metavar = "URL"
@@ -479,13 +483,6 @@ function maybe_launch_broker(distributed_args)
 end
 
 function distributed_main(full::Bool=false)
-    # exit_on_sigint(false)
-    function exit_on_sigint(on::Bool)
-        # from https://github.com/JuliaLang/julia/pull/29383
-        # and https://github.com/JuliaLang/julia/pull/29411
-        ccall(:jl_exit_on_sigint, Cvoid, (Cint,), on)
-    end
-
     Sys.set_process_title("chloe-distributed")
     distributed_args = get_distributed_args()
     distributed_args = maybe_launch_broker(distributed_args)
@@ -493,4 +490,4 @@ function distributed_main(full::Bool=false)
     chloe_distributed(full;distributed_args...)
 
 end
-# end
+# end # module
