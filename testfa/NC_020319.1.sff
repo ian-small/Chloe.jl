@@ -20,9 +20,9 @@ matK/1/CDS/1	+	110544	1560	0	1.022	0.271	0.951
 ndhA/1/CDS/1	+	149360	559	0	1.011	0.524	0.998	
 ndhA/1/intron/1	+	149919	971	0	0.906	0.254	0.917	
 ndhA/1/CDS/2	+	150890	548	2	1.017	0.614	1.000	
-ndhB/1/CDS/1	+	13095	798	0	1.027	0.813	0.980	possible pseudogene, premature stop codon 
-ndhB/1/intron/1	+	13893	721	0	1.056	0.412	0.990	possible pseudogene, premature stop codon 
-ndhB/1/CDS/2	+	14614	762	0	1.008	0.693	1.000	possible pseudogene, premature stop codon 
+ndhB/1/CDS/1	+	13095	798	0	1.027	0.813	0.980	possible pseudogene, premature stop codon
+ndhB/1/intron/1	+	13893	721	0	1.056	0.412	0.990	possible pseudogene, premature stop codon
+ndhB/1/CDS/2	+	14614	762	0	1.008	0.693	1.000	possible pseudogene, premature stop codon
 ndhC/1/CDS/1	+	63188	363	0	1.000	0.595	1.000	
 ndhD/1/CDS/1	+	154240	1503	0	0.999	0.552	0.989	
 ndhE/1/CDS/1	+	153094	303	0	0.990	0.635	1.000	

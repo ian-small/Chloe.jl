@@ -80,11 +80,11 @@ atpF/1/intron/1	-	146973	822	0	1.102	0.461	0.936
 atpF/1/CDS/2	-	147795	410	2	1.000	0.689	1.000	
 atpH/1/CDS/1	-	146080	246	0	1.000	0.844	1.000	
 atpI/1/CDS/1	-	144062	744	0	1.000	0.836	1.000	
-clpP1/1/CDS/1	-	84359	71	0	1.000	0.819	1.000	possible pseudogene, premature stop codon 
-clpP1/1/intron/1	-	84430	824	0	1.016	0.409	0.913	possible pseudogene, premature stop codon 
-clpP1/1/CDS/2	-	85254	292	1	1.000	0.755	1.000	possible pseudogene, premature stop codon 
-clpP1/1/intron/2	-	85546	641	0	1.013	0.494	0.961	possible pseudogene, premature stop codon 
-clpP1/1/CDS/3	-	86187	253	0	1.110	0.701	1.000	possible pseudogene, premature stop codon 
+clpP1/1/CDS/1	-	84359	71	0	1.000	0.819	1.000	possible pseudogene, premature stop codon
+clpP1/1/intron/1	-	84430	824	0	1.016	0.409	0.913	possible pseudogene, premature stop codon
+clpP1/1/CDS/2	-	85254	292	1	1.000	0.755	1.000	possible pseudogene, premature stop codon
+clpP1/1/intron/2	-	85546	641	0	1.013	0.494	0.961	possible pseudogene, premature stop codon
+clpP1/1/CDS/3	-	86187	253	0	1.110	0.701	1.000	possible pseudogene, premature stop codon
 infA/1/CDS/1	-	76271	234	0	1.000	0.608	1.000	
 matK/1/CDS/1	-	158511	1536	0	1.006	0.397	0.980	
 ndhA/1/CDS/1	-	32854	553	0	1.000	0.683	0.996	
