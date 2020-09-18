@@ -64,7 +64,8 @@ struct Reference
     # any open memory mapped files...
     # _mmaps::Vector{Union{Nothing,IOStream}}
     # from .tsv file
-    feature_templates::Vector{FeatureTemplate}
+    # feature_templates::Vector{FeatureTemplate}
+    feature_templates::Dict{String,FeatureTemplate}
     gene_exons::Dict{String,Int32}
     # referenceOrganisms::Dict{String,String}
 end
@@ -244,44 +245,45 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
         push!(annotations, findOverlaps(ref_feature_array.reverse, blocks.reverse)...)
     end
     sort!(annotations, by=x -> x.path)
-    strand_annotations = AnnotationArray(target_id, strand, annotations)
 
     t4 = time_ns()
     @info "[$target_id]$strand overlapping ref annotations ($(length(annotations))): $(ns(t4 - start_ns))"
 
-    strand_feature_stacks, shadow = fillFeatureStack(target_length, strand_annotations, reference.feature_templates)
+    # strand_feature_stacks is basically grouped by annotations.path
+    strand_feature_stacks, shadow = fillFeatureStack(target_length, annotations, reference.feature_templates)
 
     t5 = time_ns()
     @info "[$target_id]$strand ref features stacks ($(length(strand_feature_stacks))): $(ns(t5 - t4))"
 
-    fa = AFeature()
-    sizehint!(fa, length(strand_feature_stacks))
-    target_strand_features = FeatureArray(target_id, target_length, strand, fa)
+    features = Vector{Feature}()
+    # sizehint!(fa, length(strand_feature_stacks))
 
+    # so... features will be ordered by annotations.path
     for stack in strand_feature_stacks
         left_border, length = alignTemplateToStack(stack, shadow)
         left_border == 0 && continue
         depth, coverage = getDepthAndCoverage(stack, left_border, length)
         if ((depth >= stack.template.threshold_counts) && (coverage >= stack.template.threshold_coverage))
-            push!(target_strand_features.features, Feature(stack.path, left_border, length, 0))
+            push!(features, Feature(stack.path, left_border, length, 0))
         else
             @debug "[$target_id]$strand Below threshold: $(stack.path)"
         end
     end
 
     t6 = time_ns()
-    @info "[$target_id]$strand aligning templates ($(length(target_strand_features.features))): $(ns(t6 - t5))"
+    @info "[$target_id]$strand aligning templates ($(length(features))): $(ns(t6 - t5))"
 
-    for feat in target_strand_features.features
-        refineMatchBoundariesByOffsets!(feat, strand_annotations, target_length, coverages)
+    for feat in features
+        refineMatchBoundariesByOffsets!(feat, annotations, target_length, coverages)
     end
 
     t7 = time_ns()
     @info "[$target_id]$strand refining match boundaries: $(ns(t7 - t6))"
 
-
-    target_strand_models = groupFeaturesIntoGeneModels(target_strand_features)
-    target_strand_models = refineGeneModels!(target_strand_models, target_length, targetloop, strand_annotations, strand_feature_stacks)
+    # group by feature name on **ordered** features getFeatureName()
+    target_strand_models = groupFeaturesIntoGeneModels(features)
+    # this toys with the feature start, phase etc....
+    target_strand_models = refineGeneModels!(target_strand_models, target_length, targetloop, annotations, strand_feature_stacks)
 
     t8 = time_ns()
     @info "[$target_id]$strand refining gene models: $(ns(t8 - t7))"
@@ -415,8 +417,10 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
     else
         fname = "$(target_id).sff"
     end
-    writeSFF(fname, target_id, target_fstrand_models, target_rstrand_models,
-        reference.gene_exons, fstrand_feature_stacks, rstrand_feature_stacks,
+    writeSFF(fname, target_id, target_length, 
+        target_fstrand_models, target_rstrand_models,
+        reference.gene_exons,
+        fstrand_feature_stacks, rstrand_feature_stacks,
         targetloopf, targetloopr, ir)
 
     @info "[$target_id] Overall: $(ns(time_ns() - t1))"

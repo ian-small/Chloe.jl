@@ -117,15 +117,18 @@ end
 datasize(s::FeatureTemplate) = sizeof(FeatureTemplate) + sizeof(s.path)
 
 
-function readTemplates(file::String)::Tuple{Vector{FeatureTemplate},Dict{String,Int32}}
-    templates = FeatureTemplate[]
-    gene_exons = String[]
+function readTemplates(file::String)::Tuple{Dict{String,FeatureTemplate},Dict{String,Int32}}
+
     if !isfile(file)
         error("\"$(file)\" is not a file")
     end
     if filesize(file) === 0
         error("no data in \"$(file)!\"")
     end
+
+    gene_exons = String[]
+    # templates = FeatureTemplate[]
+    templates = Dict{String,FeatureTemplate}()
 
     open(file) do f
         header = readline(f)
@@ -139,20 +142,15 @@ function readTemplates(file::String)::Tuple{Vector{FeatureTemplate},Dict{String,
                 parse(Float32, fields[2]),
                 parse(Float32, fields[3]),
                 parse(Int32, fields[4]))
-            push!(templates, template)
+            if haskey(templates, template.path)
+                error("duplicate path: $(template.path) in \"$file\"")
+            end
+            templates[template.path] = template
+            # push!(templates, template)
         end
     end
-  
-    return sort!(templates, by=x -> x.path), StatsBase.addcounts!(Dict{String,Int32}(), gene_exons)
-end
-
-struct AnnotationArray
-    genome_id::String
-    strand::Char
-    annotations::Vector{Annotation}
-end
-datasize(s::AnnotationArray) = begin
-    sizeof(AnnotationArray) + sizeof(s.genome_id) + datasize(s.annotations)
+    # sort!(templates, by=x -> x.path)
+    return templates, StatsBase.addcounts!(Dict{String,Int32}(), gene_exons)
 end
 
 function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
@@ -166,27 +164,36 @@ function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlo
 end
 
 struct FeatureStack
-    path::String
+    path::String # == template.path
     stack::Vector{Int32}
     template::FeatureTemplate
 end
 
 AFeatureStack = Vector{FeatureStack}
+# AFeatureStack = Dict{String,FeatureStack}
 ShadowStack = Vector{Int32}
 
-function fillFeatureStack(target_length::Int32, annotations::AnnotationArray,
-    templates::Vector{FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
+function fillFeatureStack(target_length::Int32, annotations::Vector{Annotation},
+    feature_templates::Dict{String,FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
+
+    # assumes annotations is ordered by path
+    # so that each stacks[idx] array has the same annotation.path
     stacks = AFeatureStack()
+    sizehint!(stacks, length(feature_templates))
+    indexmap = Dict{String,Int}()
     shadowstack::ShadowStack = fill(Int32(-1), target_length) # will be negative image of all stacks combined,
     # initialised to small negative number; acts as prior expectation for feature-finding
-    for annotation in annotations.annotations
-        template_index = findfirst(x -> x.path == annotation.path, templates)
-        if template_index === nothing
+    for annotation in annotations
+        template = get(feature_templates, annotation.path, nothing)
+        # emplate_index = findfirst(x -> x.path == annotation.path, templates)
+        if template === nothing
             error("Can't find template for $(annotation.path)")
         end
-        if isempty(stacks) || (index = findfirst(x -> x.path == annotation.path, stacks)) === nothing
-            stack = FeatureStack(annotation.path, zeros(Int32, target_length), templates[template_index])
+        if isempty(stacks) || (index = get(indexmap, annotation.path, nothing)) === nothing
+            stack = FeatureStack(annotation.path, zeros(Int32, target_length), template)
             push!(stacks, stack)
+            indexmap[annotation.path] = length(stacks)
+            # stacks[annotation.path] = stack
         else
             stack = stacks[index]
         end
@@ -196,7 +203,7 @@ function fillFeatureStack(target_length::Int32, annotations::AnnotationArray,
             shadowstack[gw] -= 1
         end
     end
-    @debug "found $(length(stacks)) FeatureStacks from $(length(annotations.annotations)) annotations"
+    @debug "found $(length(stacks)) FeatureStacks from $(length(annotations)) annotations"
     return stacks, shadowstack
 end
 
@@ -258,17 +265,15 @@ function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowSt
     glen = length(stack)
     tlen = feature_stack.template.median_length
     score = 0
-    best_hit = 1
     for nt = 1:tlen
-        count = stack[genome_wrap(glen, nt)] + shadowstack[genome_wrap(glen, nt)]
-        score += count
+        score += stack[genome_wrap(glen, nt)] + shadowstack[genome_wrap(glen, nt)]
     end
     max_score = score
+    best_hit = 1
+
     for nt = 2:glen
-        count = stack[genome_wrap(glen, nt - 1)] + shadowstack[genome_wrap(glen, nt)]
-        score -= count
-        count = stack[genome_wrap(glen, nt + tlen - 1)] + shadowstack[genome_wrap(glen, nt)]
-        score += count
+        score -= stack[genome_wrap(glen, nt - 1)] + shadowstack[genome_wrap(glen, nt)]
+        score += stack[genome_wrap(glen, nt + tlen - 1)] + shadowstack[genome_wrap(glen, nt)]
         if score > max_score
             max_score = score
             best_hit = nt
@@ -278,22 +283,10 @@ function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowSt
     return best_hit, tlen
 end
 
-function getModelID!(model_ids::Dict{String,Int32}, model::AFeature)
-    gene_name = getFeatureName(first(model))
-    instance_count = 1
-    model_id = gene_name * "/" * string(instance_count)
-    while get(model_ids, model_id, 0) ≠ 0
-        instance_count += 1
-        model_id = gene_name * "/" * string(instance_count)
-    end
-    push!(model_ids, model_id => instance_count)
-    return model_id
-end
-
-function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::AnnotationArray)::Int8
-    matching_annotations = findall(x -> x.path == feat.path, annotations.annotations)
+function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Vector{Annotation})::Int8
+    matching_annotations = findall(x -> x.path == feat.path, annotations)
     phases = Int8[]
-    for annotation in annotations.annotations[matching_annotations]
+    for annotation in annotations[matching_annotations]
         if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
             # estimating feature phase from annotation phase
             phase = phaseCounter(annotation.phase, feat.start - annotation.start)
@@ -327,15 +320,15 @@ function weightedMode(values::Vector{Int32}, weights::Vector{Float32})::Int32
 end
 
 # uses weighted mode, weighting by alignment length and distance from boundary
-function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationArray, 
+function refineMatchBoundariesByOffsets!(feat::Feature, annotations::Vector{Annotation}, 
             target_length::Integer, coverages::Dict{String,Float32})  # Tuple{Feature,Vector{Int32},Vector{Float32}}
     # grab all the matching features
-    matching_annotations = findall(x -> x.path == feat.path, annotations.annotations)
+    matching_annotations = findall(x -> x.path == feat.path, annotations)
     isempty(matching_annotations) && return #  feat, [], []
     overlapping_annotations = []
     minstart = target_length
     maxend = 1
-    for annotation in annotations.annotations[matching_annotations]
+    for annotation in annotations[matching_annotations]
         annotation.offset5 >= feat.length && continue
         annotation.offset3 >= feat.length && continue
         if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
@@ -377,10 +370,10 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationA
     # return feat # , end5s, end5ws
 end
 
-function groupFeaturesIntoGeneModels(features::FeatureArray)::AAFeature
+function groupFeaturesIntoGeneModels(features::AFeature)::AAFeature
     gene_models = AAFeature()
     current_model = Feature[]
-    for feature in features.features
+    for feature in features
         if isempty(current_model)
             push!(current_model, feature)
         elseif getFeatureName(current_model[1]) == getFeatureName(feature)
@@ -645,8 +638,9 @@ function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, stacks::Vector
 end
 
 function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetloop::DNAString,
-                          annotations::AnnotationArray,
+                          annotations::Vector{Annotation},
                           feature_stacks::AFeatureStack)::AAFeature
+    last_cds_examined = nothing
     for model in gene_models
         isempty(model) && continue
         # sort features in model by mid-point to avoid cases where long intron overlaps short exon
@@ -662,7 +656,8 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
             end
             last_cds_examined = last_exon
         end
-        for i in length(model) - 1:-1:1
+        
+        @inbounds for i in length(model) - 1:-1:1
             feature = model[i]
             # check adjacent to last exon, if not...
             gap = model[i + 1].start - (feature.start + feature.length)
@@ -673,11 +668,10 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
             if gap ≠ 0
                 @warn "Non-adjacent boundaries for $(feature.path) $(model[i + 1].path)"
             end
-            # @debug "feature" feature
             # if CDS, check phase is compatible
             if isType(feature, "CDS")
                 feature.phase = getFeaturePhaseFromAnnotationOffsets(feature, annotations)
-                if (@isdefined last_cds_examined) && phaseCounter(feature.phase, feature.length % Int32(3)) != last_cds_examined.phase
+                if last_cds_examined !== nothing && phaseCounter(feature.phase, feature.length % Int32(3)) != last_cds_examined.phase
                     @warn "Incompatible phases for $(feature.path) $(last_cds_examined.path)"
                     # refine boundaries (how?)
                 end
@@ -689,7 +683,7 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
         if isType(first_exon, "CDS")
             first_exon.phase = getFeaturePhaseFromAnnotationOffsets(first_exon, annotations)
             if !isFeatureName(last_exon, "rps12B")
-                first_exon = findStartCodon!(first_exon, genome_length, targetloop)
+                findStartCodon!(first_exon, genome_length, targetloop)
                 # first_exon = findStartCodon2!(first_exon,genome_length,targetloop)
             end
         end
@@ -697,28 +691,28 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
     return gene_models
 end
 
-MaybeFeature = Union{Feature,Nothing}
-MaybeAFeature = Union{AFeature,Nothing}
-function getFeatureByName(fname::String, features::FeatureArray)::MaybeFeature
-    for feat in features.features
-        if isFeatureName(feat, fname)
-            return feat
-        end
-    end
-    return nothing
-end
+# MaybeFeature = Union{Feature,Nothing}
+# MaybeAFeature = Union{AFeature,Nothing}
+# function getFeatureByName(fname::String, features::FeatureArray)::MaybeFeature
+#     for feat in features.features
+#         if isFeatureName(feat, fname)
+#             return feat
+#         end
+#     end
+#     return nothing
+# end
 
-function getGeneModelByName(gm_name::String, gene_models::AAFeature)::MaybeAFeature
-    for model in gene_models
-        if isempty(model)
-            continue
-        end
-        if isFeatureName(model[1], gm_name)
-            return model::AFeature
-        end
-    end
-    return nothing
-end
+# function getGeneModelByName(gm_name::String, gene_models::AAFeature)::MaybeAFeature
+#     for model in gene_models
+#         if isempty(model)
+#             continue
+#         end
+#         if isFeatureName(model[1], gm_name)
+#             return model::AFeature
+#         end
+#     end
+#     return nothing
+# end
 
 # ChloeIO = Union{IOStream,IOBuffer,GZipStream}
 function writeModelToSFF(outfile::IO, model::AFeature, model_id::String,
@@ -788,10 +782,13 @@ function writeModelToSFF(outfile::IO, model::AFeature, model_id::String,
     end
 end
 
-function calc_maxlengths(fstrand_models::AAFeature,
-    rstrand_models::AAFeature)::Dict{String,Int32}
+function calc_maxlengths(fstrand_models::AAFeature, rstrand_models::AAFeature)::Dict{String,Int32}
     maxlengths = Dict{String,Int32}()
-    for (fmodel, rmodel) in zip(fstrand_models, rstrand_models)
+    if length(fstrand_models) != length(rstrand_models) 
+        @warn "forward=$(length(fstrand_models)) != reverse=$(length(rstrand_models))"
+    end
+    m = min(length(fstrand_models), length(rstrand_models))
+    for fmodel in fstrand_models[1:m]
         if isempty(fmodel)
             @warn "forward model has no features"
         else
@@ -802,6 +799,9 @@ function calc_maxlengths(fstrand_models::AAFeature,
                 maxlengths[gene] = gene_length
             end
         end
+    end
+
+    for rmodel in rstrand_models[1:m]
         if isempty(rmodel)
             @warn "reverse model has no features"
         else
@@ -818,7 +818,8 @@ end
 
 MaybeIR = Union{AlignedBlock,Nothing}
 
-function writeSFF(outfile::Union{String,IO}, id::String, 
+function writeSFF(outfile::Union{String,IO}, id::String,
+                genome_length::Int32,
                 fstrand_models::AAFeature,
                 rstrand_models::AAFeature,
                 gene_exons::Dict{String,Int32},
@@ -826,6 +827,21 @@ function writeSFF(outfile::Union{String,IO}, id::String,
                 rstrand_feature_stacks::AFeatureStack, 
                 targetloopf::DNAString, targetloopr::DNAString, ir::MaybeIR=nothing)
 
+
+    function getModelID!(model_ids::Dict{String,Int32}, model::AFeature)
+        gene_name = getFeatureName(first(model))
+        instance_count = 1
+        # model_id = gene_name * "/" * string(instance_count)
+        model_id = "$(gene_name)/$(instance_count)"
+        while get(model_ids, model_id, 0) ≠ 0
+            instance_count += 1
+            model_id = "$(gene_name)/$(instance_count)"
+        end
+        # push!(model_ids, model_id => instance_count)
+        model_ids[model_id] = instance_count
+        return model_id
+    end
+    
     n = length(fstrand_feature_stacks)
     if n == 0
         @warn "$(id): zero length feature stack!"
@@ -834,7 +850,7 @@ function writeSFF(outfile::Union{String,IO}, id::String,
 
     maxlengths = calc_maxlengths(fstrand_models, rstrand_models)
 
-    genome_length = length(fstrand_feature_stacks[1].stack)
+    @assert  length(fstrand_feature_stacks[1].stack) == genome_length
 
 
     function out(outfile::IO)
