@@ -8,10 +8,11 @@ export ascii_getindex, ascii_isvalid, ascii_length, ascii_iterate
 export ascii_nextind, ascii_prevind, ascii_thisind
 
 import Base
+import Base: @propagate_inbounds
 
 utf8_ncodeunits(s::Vector{UInt8}) = length(s)
 utf8_codeunit(s::Vector{UInt8}) = UInt8
-@inline utf8_codeunit(s::Vector{UInt8}, i::Int) = s[i]
+@propagate_inbounds utf8_codeunit(s::Vector{UInt8}, i::Int) = s[i]
 
 # Ugh! I had to copy and paste this from julia/base/strings/string.jl
 # why didn't they put the UTF8 logic on a Vector{UInt8}? (which
@@ -19,7 +20,7 @@ utf8_codeunit(s::Vector{UInt8}) = UInt8
 
 ## thisind, nextind ##
 
-Base.@propagate_inbounds utf8_thisind(s::Vector{UInt8}, i::Int) = thisind_mm(s, i)
+@propagate_inbounds utf8_thisind(s::Vector{UInt8}, i::Int) = thisind_mm(s, i)
 
 @inline function thisind_mm(s::Vector{UInt8}, i::Int)
     i == 0 && return 0
@@ -39,7 +40,7 @@ Base.@propagate_inbounds utf8_thisind(s::Vector{UInt8}, i::Int) = thisind_mm(s, 
     return i
 end
 
-Base.@propagate_inbounds utf8_nextind(s::Vector{UInt8}, i::Int) = nextind_mm(s, i)
+@propagate_inbounds utf8_nextind(s::Vector{UInt8}, i::Int) = nextind_mm(s, i)
 
 @inline function nextind_mm(s::Vector{UInt8}, i::Int)
     i == 0 && return 1
@@ -65,9 +66,9 @@ Base.@propagate_inbounds utf8_nextind(s::Vector{UInt8}, i::Int) = nextind_mm(s, 
     ifelse(b & 0xc0 ≠ 0x80, i, i + 1)
 end
 
-utf8_prevind(s::Vector{UInt8}, i::Int) = utf8_prevind(s, i, 1)
+@propagate_inbounds utf8_prevind(s::Vector{UInt8}, i::Int) = utf8_prevind(s, i, 1)
 
-function utf8_prevind(s::Vector{UInt8}, i::Int, n::Int)
+@propagate_inbounds function utf8_prevind(s::Vector{UInt8}, i::Int, n::Int)
     n < 0 && throw(Base.ArgumentError("n cannot be negative: $n"))
     z = utf8_ncodeunits(s) + 1
     @boundscheck 0 < i ≤ z || throw(Base.BoundsError(s, i))
@@ -82,7 +83,7 @@ utf8_isvalid(s::Vector{UInt8}) = Base.isvalid(String, s)
 
 ## required core functionality ##
 
-Base.@propagate_inbounds function utf8_iterate(s::Vector{UInt8}, i::Int)
+@propagate_inbounds function utf8_iterate(s::Vector{UInt8}, i::Int)
     i > utf8_ncodeunits(s) && return nothing
     b = utf8_codeunit(s, i)
     u = UInt32(b) << 24
@@ -112,7 +113,7 @@ function iterate_continued_mm(s::Vector{UInt8}, i::Int, u::UInt32)
     return reinterpret(Char, u), i
 end
 
-Base.@propagate_inbounds function utf8_getindex(s::Vector{UInt8}, i::Int)
+@propagate_inbounds function utf8_getindex(s::Vector{UInt8}, i::Int)
     b = utf8_codeunit(s, i)
     u = UInt32(b) << 24
     Base.between(b, 0x80, 0xf7) || return reinterpret(Char, u)
@@ -160,7 +161,7 @@ end
     return ss
 end
 
-utf8_length(s::Vector{UInt8}) = length_continued(s, 1, utf8_ncodeunits(s), utf8_ncodeunits(s))
+@propagate_inbounds utf8_length(s::Vector{UInt8}) = length_continued(s, 1, utf8_ncodeunits(s), utf8_ncodeunits(s))
 
 @inline function utf8_length(s::Vector{UInt8}, i::Int, j::Int)
     @boundscheck begin
@@ -211,21 +212,21 @@ end
 
 # assuming ascii
 
-Base.@propagate_inbounds function ascii_iterate(s::Vector{UInt8}, i::Int)
+@propagate_inbounds function ascii_iterate(s::Vector{UInt8}, i::Int)
     i > utf8_ncodeunits(s) && return nothing
     b = utf8_codeunit(s, i)
     Char(b), i + 1
 end
 
 # step forward and back by one byte == one character
-Base.@propagate_inbounds function ascii_nextind(s::Vector{UInt8}, i::Int)
+@propagate_inbounds function ascii_nextind(s::Vector{UInt8}, i::Int)
     i == 0 && return 1
     n = utf8_ncodeunits(s)
     @boundscheck Base.between(i, 1, n) || throw(Base.BoundsError(s, i))
     i + 1
 end
 
-Base.@propagate_inbounds function ascii_thisind(s::Vector{UInt8}, i::Int)
+@propagate_inbounds function ascii_thisind(s::Vector{UInt8}, i::Int)
     i == 0 && return 0
     n = utf8_ncodeunits(s)
     i == n + 1 && return i
@@ -233,14 +234,14 @@ Base.@propagate_inbounds function ascii_thisind(s::Vector{UInt8}, i::Int)
     i
 end
 
-Base.@propagate_inbounds function ascii_prevind(s::Vector{UInt8}, i::Int)
+@propagate_inbounds function ascii_prevind(s::Vector{UInt8}, i::Int)
     i == 1 && return 0
     n = utf8_ncodeunits(s)
     @boundscheck Base.between(i, 1, n + 1) || throw(Base.BoundsError(s, i))
     i - 1
 end
 
-@inline function ascii_length(s::Vector{UInt8}, i::Int, j::Int)
+@propagate_inbounds function ascii_length(s::Vector{UInt8}, i::Int, j::Int)
     @boundscheck begin
         m = utf8_ncodeunits(s)
         0 < i ≤ m + 1 || throw(Base.BoundsError(s, i))
@@ -252,12 +253,12 @@ end
 
 ascii_isvalid(s::Vector{UInt8}, i::Int) = checkbounds(Bool, s, i)
 
-Base.@propagate_inbounds function ascii_getindex(s::Vector{UInt8}, i::Int)
+@propagate_inbounds function ascii_getindex(s::Vector{UInt8}, i::Int)
     b = utf8_codeunit(s, i)
     Char(b)
 end
 
-Base.@propagate_inbounds function ascii_getindex(s::Vector{UInt8}, r::UnitRange{Int})
+@propagate_inbounds function ascii_getindex(s::Vector{UInt8}, r::UnitRange{Int})
     isempty(r) && return ""
     return (@view s[r]) .|> Char |> String
 end
