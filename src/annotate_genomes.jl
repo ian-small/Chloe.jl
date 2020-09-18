@@ -1,6 +1,7 @@
 module Annotator
 
 export annotate, annotate_one, readReferences, Reference, MayBeIO, MayBeString
+export MMappedString, ASCII
 
 DNAString = AbstractString
 

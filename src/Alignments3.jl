@@ -1,5 +1,21 @@
 
 AlignedBlock = Tuple{Int32,Int32,Int32}
+# AlignedBlock = @NamedTuple begin
+#     src::Int32
+#     tgt::Int32
+#     length::Int32
+# end
+# import Base
+# Base.convert(::Type{AlignedBlock}, t::Tuple{Int32,Int32,Int32}) = AlignedBlock((t[1], t[2], t[3]))
+# Base.convert(::Type{AlignedBlock}, t::Tuple{Int32,Int32,Int64}) = AlignedBlock((t[1], t[2], t[3]))
+
+# @inline src_end(b::AlignedBlock) = b.src + b.length
+# @inline tgt_end(b::AlignedBlock) = b.tgt + b.length
+
+const Two = Int32(2)
+const Three = Int32(3)
+
+
 AlignedBlocks = Vector{AlignedBlock}
 
 
@@ -17,7 +33,7 @@ end
 function alignSAs(a::DNAString, saa::SuffixArray, b::DNAString, sab::SuffixArray)::AlignedBlocks
     lcps = AlignedBlocks(undef, length(saa))
     bpointer = 1
-    zerot = (Int32(0), Int32(0), Int32(0))
+    zerot = (zero(Int32), zero(Int32), zero(Int32))
     @inbounds for apointer = 1:length(saa)
         ssa = SubString(a, saa[apointer])
         oldtuple = zerot
@@ -97,32 +113,33 @@ end
 
 function fillGap(block1::AlignedBlock, block2::AlignedBlock, 
         refloop::DNAString, refSA::SuffixArray, refRA::SuffixArray, 
-        targetloop::DNAString, targetSA::SuffixArray, targetRA::SuffixArray)::AlignedBlocks
+        tgtloop::DNAString, tgtSA::SuffixArray, tgtRA::SuffixArray)::AlignedBlocks
 
     ref_gap = block2[1] - block1[1] - block1[3]
-    target_gap = block2[2] - block1[2] - block1[3]
+    tgt_gap = block2[2] - block1[2] - block1[3]
 
     ref_gap < 5 && return []
-    target_gap < 5 && return []
+    tgt_gap < 5 && return []
     ref_gap_range = block1[1] + block1[3]:block2[1] - 1
-    target_gap_range = block1[2] + block1[3]:block2[2] - 1
+    tgt_gap_range = block1[2] + block1[3]:block2[2] - 1
 
     # make gap SAs from genome SAs
-    ref_ranks_slice = sort(refRA[ref_gap_range])
-    target_ranks_slice = sort(targetRA[target_gap_range])
+    # REM: v[l:h] makes a *copy* so we can do an inplace sort
+    ref_ranks_slice = sort!(refRA[ref_gap_range])
+    tgt_ranks_slice = sort!(tgtRA[tgt_gap_range])
 
     ref_gap_SA = SuffixArray(undef, ref_gap)
-    target_gap_SA = SuffixArray(undef, target_gap)
-    for i = 1:ref_gap
+    tgt_gap_SA = SuffixArray(undef, tgt_gap)
+    @inbounds for i = 1:ref_gap
         ref_gap_SA[i] = refSA[ref_ranks_slice[i]]
     end
-    for i = 1:target_gap
-        target_gap_SA[i] = targetSA[target_ranks_slice[i]]
+    @inbounds for i = 1:tgt_gap
+        tgt_gap_SA[i] = tgtSA[tgt_ranks_slice[i]]
     end
  
     # align gap SAs to get lcps
-    gap_lcps = alignSAs(refloop, ref_gap_SA, targetloop, target_gap_SA)
-    gap_blocks = lcps2AlignmentBlocks(gap_lcps, false, matchLengthThreshold(ref_gap, target_gap))
+    gap_lcps = alignSAs(refloop, ref_gap_SA, tgtloop, tgt_gap_SA)
+    gap_blocks = lcps2AlignmentBlocks(gap_lcps, false, matchLengthThreshold(ref_gap, tgt_gap))
     return gap_blocks
 end
 
@@ -141,10 +158,10 @@ function mergeBlocks(block1::AlignedBlock, block2::AlignedBlock)::Tuple{AlignedB
 end
 
 # this is the killer....
-# most of it spent in fillGap
+# most of Chloë is spent in fillGap
 function fillAllGaps!(aligned_blocks::AlignedBlocks, 
     refloop::DNAString, refSA::SuffixArray, refRA::SuffixArray, 
-    targetloop::DNAString, targetSA::SuffixArray, targetRA::SuffixArray)::AlignedBlocks
+    tgtloop::DNAString, tgtSA::SuffixArray, tgtRA::SuffixArray)::AlignedBlocks
     block1_pointer = 1
     block2_pointer = 2
     @inbounds while block2_pointer <= length(aligned_blocks)
@@ -159,8 +176,10 @@ function fillAllGaps!(aligned_blocks::AlignedBlocks,
             block2 = aligned_blocks[block2_pointer]
             block1, block2 = mergeBlocks(block1, block2)
         end
-        new_blocks = fillGap(aligned_blocks[block1_pointer], aligned_blocks[block2_pointer], 
-                refloop, refSA, refRA, targetloop, targetSA, targetRA)
+        new_blocks = fillGap(aligned_blocks[block1_pointer],
+                             aligned_blocks[block2_pointer], 
+                             refloop, refSA, refRA,
+                             tgtloop, tgtSA, tgtRA)
         if (isempty(new_blocks))
             block1_pointer += 1
             block2_pointer += 1
@@ -173,9 +192,12 @@ end
 
 function revCompBlocks(blocks::AlignedBlocks, a_length::Integer, b_length::Integer)::AlignedBlocks
     rev_blocks = AlignedBlocks(undef, length(blocks))
-    for i = 1:length(blocks)
+    two, a_length, b_length = Two, Int32(a_length), Int32(b_length)
+    @inbounds for i = 1:length(blocks)
         block = blocks[i]
-        rev_blocks[i] = (a_length - block[3] - block[1] + 2, b_length - block[3] - block[2] + 2, block[3])
+        rev_blocks[i] = (a_length - block[3] - block[1] + two, 
+                         b_length - block[3] - block[2] + two,
+                         block[3])
     end
     return rev_blocks
 end
@@ -183,11 +205,15 @@ end
 function mergeBlockArrays(blocks1::AlignedBlocks, blocks2::AlignedBlocks)::AlignedBlocks
     # assume sorted arrays
     merged_array = AlignedBlocks()
+
     blocks1_pointer = 1
     blocks2_pointer = 1
     blocks1_len = length(blocks1)
     blocks2_len = length(blocks2)
-    while blocks1_pointer <= blocks1_len && blocks2_pointer <= blocks2_len
+
+    sizehint!(merged_array, blocks1_len + blocks2_len)
+
+    @inbounds while blocks1_pointer <= blocks1_len && blocks2_pointer <= blocks2_len
         block1 = blocks1[blocks1_pointer]
         block2 = blocks2[blocks2_pointer]
         if block1[1] == block2[2] && block1[2] == block2[1] && block1[3] == block2[3] # both the same, only add one of them
@@ -215,55 +241,52 @@ function mergeBlockArrays(blocks1::AlignedBlocks, blocks2::AlignedBlocks)::Align
             blocks2_pointer += 1
         end
     end
-    while blocks1_pointer <= blocks1_len
+    @inbounds while blocks1_pointer <= blocks1_len
         push!(merged_array, blocks1[blocks1_pointer])
         blocks1_pointer += 1
     end
-    while blocks2_pointer <= blocks2_len
+    @inbounds while blocks2_pointer <= blocks2_len
         block2 = blocks2[blocks2_pointer]
         push!(merged_array, (block2[2], block2[1], block2[3]))
         blocks2_pointer += 1
     end
+    @debug "mergeBlockArrays: $(length(merged_array)) ≅ $(blocks1_len + blocks2_len)"
     return merged_array
 end
 
-function alignLoops(ref_loop::DNAString, 
-                    ref_SA::SuffixArray, ref_RA::SuffixArray, 
-                    target_loop::DNAString,
-                    target_SA::SuffixArray, target_RA::SuffixArray)::Tuple{AlignedBlocks,AlignedBlocks}
+function alignLoops(ref_loop::DNAString, ref_SA::SuffixArray, ref_RA::SuffixArray, 
+                    tgt_loop::DNAString, tgt_SA::SuffixArray, tgt_RA::SuffixArray)::Tuple{AlignedBlocks,AlignedBlocks}
     # check if sequences are identical, allowing for rotation
-    if length(ref_loop) == length(target_loop)
-        match = findfirst(SubString(ref_loop, 1, floor(Int, (length(ref_loop) + 1) / 2)), target_loop)
+    if length(ref_loop) == length(tgt_loop)
+        match = findfirst(SubString(ref_loop, 1, floor(Int, (length(ref_loop) + 1) / 2)), tgt_loop)
         if !isnothing(match)
-            aligned_blocks = [(Int32(1), Int32(match[1]), Int32(length(ref_loop)))]
-            return aligned_blocks, revCompBlocks(aligned_blocks, length(ref_SA), length(target_SA))
+            aligned_blocks = [(one(Int32), Int32(match[1]), Int32(length(ref_loop)))]
+            return aligned_blocks, revCompBlocks(aligned_blocks, length(ref_SA), length(tgt_SA))
         end
     end
-    function align(src::DNAString, src_SA::SuffixArray, src_RA::SuffixArray, tgt::DNAString, tgt_SA::SuffixArray, tgt_RA::SuffixArray)
+    function align(src::DNAString, srcSA::SuffixArray, srcRA::SuffixArray,
+                   tgt::DNAString, tgtSA::SuffixArray, tgtRA::SuffixArray)
         # ~30% for alignSAs and 60% for fillAllGaps!
-        lcps = alignSAs(src, src_SA, tgt, tgt_SA)
+        lcps = alignSAs(src, srcSA, tgt, tgtSA)
         @debug "align[$(Threads.threadid())]" lcps = length(lcps)
-        aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(src_SA), length(tgt_SA)))
-        aligned_blocks = fillAllGaps!(aligned_blocks, src, src_SA, src_RA, tgt, tgt_SA, tgt_RA)
+        aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(srcSA), length(tgtSA)))
+        aligned_blocks = fillAllGaps!(aligned_blocks, src, srcSA, srcRA, tgt, tgtSA, tgtRA)
         aligned_blocks
     end
     block = Vector{AlignedBlocks}(undef, 2)
     function rt()
-        block[1] = align(ref_loop, ref_SA, ref_RA, target_loop, target_SA, target_RA)
+        block[1] = align(ref_loop, ref_SA, ref_RA, tgt_loop, tgt_SA, tgt_RA)
     end
     function tr()
-        block[2] = align(target_loop, target_SA, target_RA, ref_loop, ref_SA, ref_RA)
+        block[2] = align(tgt_loop, tgt_SA, tgt_RA, ref_loop, ref_SA, ref_RA)
     end
 
     Threads.@threads for worker in [rt, tr]
         worker()
     end
 
-    rt_aligned_blocks = block[1]
-    tr_aligned_blocks = block[2]
+    merged_blocks = mergeBlockArrays(block[1], block[2])
 
-    merged_blocks = mergeBlockArrays(rt_aligned_blocks, tr_aligned_blocks)
-
-    rev_blocks = revCompBlocks(merged_blocks, length(ref_SA), length(target_SA))
+    rev_blocks = revCompBlocks(merged_blocks, length(ref_SA), length(tgt_SA))
     return merged_blocks, rev_blocks
 end

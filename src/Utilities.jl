@@ -1,5 +1,6 @@
 
 import CodecZlib: GzipDecompressorStream, GzipCompressorStream
+import Base
 
 function gbff2fasta(infile::String)
     open(infile) do f
@@ -93,36 +94,29 @@ function revComp(dna::AbstractString)::String # where {T <: AbstractString}
     reverse(map(x -> get(COMP, x, 'N'), dna))
 end
 
-function frameCounter(base::T, addition::T) where {T <: Integer}
+@inline function frameCounter(base::T, addition::T) where {T <: Integer}
     result = (base - addition) % 3
     if result <= 0
         result = 3 + result
     end
-    return result
+    result
 end
 
-function phaseCounter(base::Int8, addition::Int32)::Int8
+@inline function phaseCounter(base::Int8, addition::Int32)::Int8
     result = (base - addition) % 3
     if result < 0
         result = 3 + result
     end
-    return result
+    result
 end
 
-function rangesOverlap(start1::T, length1::T, start2::T, length2::T)::Bool where {T <: Integer}
+@inline function rangesOverlap(start1::T, length1::T, start2::T, length2::T)::Bool where {T <: Integer}
     if start1 >= start2 + length2 || start2 >= start1 + length1
         return false
-    else
-        return true
     end
+    true
 end
 
-# wraps to genome length
-# function genome_wrap(genome_length::T, position::T)::T where {T <: Integer}
-#     0 < position <= genome_length && return position
-#     position <= 0 && return genome_length + position
-#     position > genome_length && return position - genome_length
-# end
 
 @inline function genome_wrap(genome_length::T, position::T)::T where {T <: Integer}
     if 0 < position <= genome_length
@@ -137,36 +131,28 @@ end
     position
 end
 
-# wraps to loop length, i.e. allows position to exceed genome length
-# function loop_wrap(genome_length::T, position::T)::T where {T <: Integer}
-#     0 < position <= genome_length + genome_length - 1 && return position
-#     position <= 0 && return genome_length + position
-#     return position - genome_length
-# end
-
 # wraps range within genome loop
-function range_wrap(genome_length::T, range::UnitRange{T})::UnitRange{T} where {T <: Integer}
-    @assert range.start <= range.stop
+Base.@propagate_inbounds function range_wrap!(range::UnitRange{T}, genome_length::T)::UnitRange{T} where {T <: Integer}
+    @boundscheck range.start <= range.stop  && genome_length > 0 || throw(BoundError("start after stop"))
     loop_length = genome_length + genome_length - 1
     # if start of range is negative, move range to end of genome
-    if range.start <= 0
+    while range.start <= 0
         lengthminus1 = range.stop - range.start
-        range.start = genome_length + range.start
+        range.start += genome_length
         range.stop = range.start + lengthminus1
     end
     # if end of range is beyond end of loop, move range to beginning of loop
-    if range.stop > loop_length
-        range.start = range.start - genome_length
-        range.stop = range.stop - genome_length
+    while range.stop > loop_length
+        range.start -= genome_length
+        range.stop -= genome_length
     end
     # if start of range is beyond end of genome, move range to beginning of genome
-    if range.start > genome_length
-        range.start = range.start - genome_length
-        range.stop = range.stop - genome_length
+    while range.start > genome_length
+        range.start -= genome_length
+        range.stop -= genome_length
     end
-    @assert 0 < range.start <= genome_length
-    @assert 0 < range.stop <= loop_length
-    return range::UnitRange{Integer}
+    @boundscheck 0 < range.start <= genome_length &&  0 < range.stop <= loop_length || throw(BoundsError("out of range"))
+    return range
 end
 
 function isStartCodon(codon::AbstractString, allow_editing::Bool, allow_GTG::Bool)::Bool
@@ -188,7 +174,7 @@ function isStopCodon(codon::AbstractString, allow_editing::Bool)::Bool
     return false
 end
 
-const genetic_code = Dict{String,Char}(
+const GENETIC_CODE = Dict{String,Char}(
     "TTT" => 'F',"TTC" => 'F',"TTA" => 'L',"TTG" => 'L',
     "CTT" => 'L',"CTC" => 'L',"CTA" => 'L',"CTG" => 'L',
     "ATT" => 'I',"ATC" => 'I',"ATA" => 'I',"ATG" => 'M',
@@ -207,12 +193,5 @@ const genetic_code = Dict{String,Char}(
     "GGT" => 'G',"GGC" => 'G',"GGA" => 'G',"GGG" => 'G')
 
 function translateDNA(dna::AbstractString)::String
-    peptide_length = fld(length(dna), 3)
-    peptide = Vector{Char}(undef, peptide_length)
-    aa = 0
-    for i = 1:3:length(dna) - 2
-        aa += 1
-        peptide[aa] = get(genetic_code, SubString(dna, i, i + 2), 'X')
-    end
-    return String(peptide)
+    return @inbounds String([get(GENETIC_CODE, SubString(dna, i, i + 2), 'X') for i in 1:3:length(dna) - 2])
 end

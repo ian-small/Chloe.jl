@@ -14,7 +14,10 @@ end
 
 datasize(f::Feature) = sizeof(Feature) + sizeof(f.path) + sum(sizeof(p) for p in f._path_components)
 
-const featurePath(feature::Feature) = feature._path_components # split(feat.path, '/')
+const annotationPath(feature::Feature) = begin
+    pc = feature._path_components
+    join([pc[1],"?",pc[3], pc[4]], "/")
+end
 function getFeatureName(feature::Feature)
     feature._path_components[1]
 end
@@ -80,6 +83,7 @@ datasize(a::Annotation) = sizeof(Annotation) + sizeof(a.genome_id)
 # checks all blocks for overlap so could be speeded up by using an interval tree
 function addOverlapBlocks(genome_id::String, feature::Feature, blocks::AlignedBlocks)::Vector{Annotation}
     pushed_features = Vector{Annotation}()
+    # sizehint!(pushed_features, length(blocks))
     feature_type = getFeatureType(feature)
     for block in blocks
         if rangesOverlap(feature.start, feature.length, block[1], block[3])
@@ -92,8 +96,7 @@ function addOverlapBlocks(genome_id::String, feature::Feature, blocks::AlignedBl
             else
                 phase = 0
             end
-            path_components = featurePath(feature)
-            annotation_path = join([path_components[1],"?",path_components[3],path_components[4]], "/")
+            annotation_path = annotationPath(feature)
             pushed_feature = Annotation(genome_id, annotation_path, 
                                         startA - block[1] + block[2],
                                         flength, offset5, feature.length - (startA - feature.start) - flength, phase)
@@ -179,18 +182,15 @@ function fillFeatureStack(target_length::Int32, annotations::AnnotationArray,
     for annotation in annotations.annotations
         template_index = findfirst(x -> x.path == annotation.path, templates)
         if template_index === nothing
-            @error "Can't find template for $(annotation.path)"
+            error("Can't find template for $(annotation.path)")
         end
         if isempty(stacks) || (index = findfirst(x -> x.path == annotation.path, stacks)) === nothing
-            if template_index === nothing
-                error("need template index")
-            end
             stack = FeatureStack(annotation.path, zeros(Int32, target_length), templates[template_index])
             push!(stacks, stack)
         else
             stack = stacks[index]
         end
-        for i = annotation.start:annotation.start + annotation.length - Int32(1)
+        for i = annotation.start:annotation.start + annotation.length - one(Int32)
             gw = genome_wrap(target_length, i)
             stack.stack[gw] += 3 # +1 to counteract shadowstack initialisation, +1 to counteract addition to shadowstack
             shadowstack[gw] -= 1
@@ -344,23 +344,24 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::AnnotationA
             push!(overlapping_annotations, annotation)
         end
     end
-    end5s = Vector{Int32}()
-    end5ws = Vector{Float32}()
-    end3s = Vector{Int32}()
-    end3ws = Vector{Float32}()
+    n = length(overlapping_annotations)
+    end5s = Vector{Int32}(undef, n)
+    end5ws = Vector{Float32}(undef, n)
+    end3s = Vector{Int32}(undef, n)
+    end3ws = Vector{Float32}(undef, n)
 
-    for annotation in overlapping_annotations
+    @inbounds for (i, annotation) in enumerate(overlapping_annotations)
         # predicted 5' end is annotation start - offset5
-        push!(end5s, annotation.start - annotation.offset5)
+        end5s[i] = annotation.start - annotation.offset5
         # weights
         coverage = coverages[annotation.genome_id]
         weight = ((feat.length - (annotation.start - minstart)) / feat.length) * coverage
-        push!(end5ws, weight * weight)
+        end5ws[i] =  weight * weight
         # predicted 3' end is feature start + feature length + offset3 - 1
-        push!(end3s, annotation.start + annotation.length + annotation.offset3 - 1)
+        end3s[i] = annotation.start + annotation.length + annotation.offset3 - 1
         # weights
         weight = ((feat.length - (maxend - (annotation.start + annotation.length - 1))) / feat.length) * coverage
-        push!(end3ws, weight * weight)
+        end3ws[i] = weight * weight
     end
     left = feat.start
     right = feat.start + feat.length - 1
@@ -400,25 +401,18 @@ function translateFeature(genome::DNAString, feat::Feature)
     @assert feat.start > 0
     feat.length < 3 && return ""
 
-    peptide = Vector{Char}(undef, fld(feat.length, 3))
-
-    aa = 0
     fend = feat.start + feat.length - 3
-    if fend > length(genome) - 3
-        fend = length(genome) - 3
+    if fend > length(genome) - 2
+        fend = length(genome) - 2
         @warn "translateFeature: feature points past genome"
     end
 
-    for i = (feat.start + feat.phase):3:fend
-        aa += 1
-        peptide[aa] = get(genetic_code, SubString(genome, i, i + 2), 'X')
-    end
-    return String(peptide)
+    @inbounds String([get(GENETIC_CODE, SubString(genome, i, i + 2), 'X') for i in (feat.start + feat.phase):3:fend])
 end
 
 function translateModel(genome::DNAString, model::AFeature)::String
-
     DNA = Vector{String}()
+    sizehint!(DNA, length(model))
     for (i, feat) in enumerate(model)
         getFeatureType(feat) ≠ "CDS" && continue
         start = feat.start
@@ -430,14 +424,7 @@ function translateModel(genome::DNAString, model::AFeature)::String
     
     dna = join(DNA, "")
 
-    peptide = Vector{Char}(undef, fld(length(dna), 3))
-
-    aa = 0
-    for i = 1:3:length(dna) - 2
-        aa += 1
-        peptide[aa] = get(genetic_code, SubString(dna, i, i + 2), 'X')
-    end
-    return String(peptide)
+    @inbounds String([get(GENETIC_CODE, SubString(dna, i, i + 2), 'X') for i in 1:3:length(dna) - 2])
 end
 
 # define parameter weights
@@ -485,7 +472,9 @@ function findStartCodon2!(cds::Feature, genome_length::Integer, genomeloop::DNAS
     for nt in search_range
         codon = SubString(genomeloop, nt, nt + 2)
         codons[i] = startScore(cds, codon)
-        if i % 3 == 1; phase[i] = 1.0; end
+        if i % 3 == 1
+            phase[i] = 1.0
+        end
         if feature_stack[nt] > 0
             stack_coverage += 1
         elseif shadowstack[nt] < 0

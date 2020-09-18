@@ -8,6 +8,7 @@ export cmd_main
 export distributed_main, chloe_distributed, run_broker, get_distributed_args, maybe_launch_broker
 export set_global_logger
 export annotate_one_task
+export MMappedString, ASCII
 
 include("ZMQLogger.jl")
 include("annotate_genomes.jl")
@@ -26,5 +27,6 @@ import .Sff2Gff: writeallGFF3
 import .Annotator: annotate, annotate_one, readReferences, MayBeIO, MayBeString
 import .CmdLine: cmd_main
 import .ZMQLogging: set_global_logger
+import .Annotator: MMappedString, ASCII
 
 end
