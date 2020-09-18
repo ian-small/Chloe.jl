@@ -12,6 +12,7 @@ export Unicode, ASCII, MMappedString
 using ..UInt8Utf8
 
 import Base
+import Base: @propagate_inbounds
 
 struct Unicode end
 struct ASCII end
@@ -45,9 +46,9 @@ Base.cmp(a::String, b::MMappedString) = begin
     c < 0 ? -1 : c > 0 ? +1 : Base.cmp(al, bl)
 end
 
-Base.cmp(a::MMappedString, b::String) = -Base.cmp(b, a)
+@inline Base.cmp(a::MMappedString, b::String) = -Base.cmp(b, a)
 
-Base.hash(s::MMappedString, h::UInt) = Base.hash(s.ptr, h)
+@inline Base.hash(s::MMappedString, h::UInt) = Base.hash(s.ptr, h)
 
 Base.show(io::IO, s::MMappedString) = begin
     print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr)) of type $(Base.codeunit(s))")
@@ -58,37 +59,37 @@ Base.pointer(s::MMappedString) = pointer(s.ptr)
 
 Base.pointer(s::MMappedString, i::Integer) = pointer(s.ptr, i)
 
-Base.ncodeunits(s::MMappedString) = utf8_ncodeunits(s.ptr)
+@propagate_inbounds Base.ncodeunits(s::MMappedString) = utf8_ncodeunits(s.ptr)
 
-Base.codeunit(s::MMappedString) = utf8_codeunit(s.ptr)
+@propagate_inbounds Base.codeunit(s::MMappedString) = utf8_codeunit(s.ptr)
 
-Base.codeunit(s::MMappedString, i::Int) = utf8_codeunit(s.ptr, i)
+@propagate_inbounds Base.codeunit(s::MMappedString, i::Int) = utf8_codeunit(s.ptr, i)
 
-Base.thisind(s::MMappedString, i::Int) = utf8_thisind(s.ptr, i)
+@propagate_inbounds Base.thisind(s::MMappedString, i::Int) = utf8_thisind(s.ptr, i)
 
-Base.nextind(s::MMappedString, i::Int) = utf8_nextind(s.ptr, i)
+@propagate_inbounds Base.nextind(s::MMappedString, i::Int) = utf8_nextind(s.ptr, i)
 
-Base.isvalid(s::MMappedString) = utf8_isvalid(s.ptr)
+@propagate_inbounds Base.isvalid(s::MMappedString) = utf8_isvalid(s.ptr)
 
 ## required core functionality ##
 
-Base.iterate(s::MMappedString, i::Int=firstindex(s)) = utf8_iterate(s.ptr, i)
+@propagate_inbounds Base.iterate(s::MMappedString, i::Int=firstindex(s)) = utf8_iterate(s.ptr, i)
 
-Base.getindex(s::MMappedString, i::Int) = utf8_getindex(s.ptr, i)
+@propagate_inbounds Base.getindex(s::MMappedString, i::Int) = utf8_getindex(s.ptr, i)
 
-Base.getindex(s::MMappedString, r::UnitRange{<:Integer}) = s[Int(first(r)):Int(last(r))]
+@propagate_inbounds Base.getindex(s::MMappedString, r::UnitRange{<:Integer}) = s[Int(first(r)):Int(last(r))]
 
-Base.getindex(s::MMappedString, r::UnitRange{Int}) = utf8_getindex(s.ptr, r)
+@propagate_inbounds Base.getindex(s::MMappedString, r::UnitRange{Int}) = utf8_getindex(s.ptr, r)
 
-Base.length(s::MMappedString) = utf8_length(s.ptr)
+@propagate_inbounds Base.length(s::MMappedString) = utf8_length(s.ptr)
 
-Base.length(s::MMappedString, i::Int, j::Int) = utf8_length(s.ptr, i, j)
+@propagate_inbounds Base.length(s::MMappedString, i::Int, j::Int) = utf8_length(s.ptr, i, j)
 
 ## overload methods for efficiency ##
 
-Base.isvalid(s::MMappedString, i::Int) = utf8_isvalid(s.ptr, i)
+@propagate_inbounds Base.isvalid(s::MMappedString, i::Int) = utf8_isvalid(s.ptr, i)
 
-Base.isascii(s::MMappedString) = utf8_isascii(s.ptr)
+@propagate_inbounds Base.isascii(s::MMappedString) = utf8_isascii(s.ptr)
 
 
 # specializations
@@ -100,28 +101,28 @@ Base.show(io::IO, s::MMappedString{ASCII}) = begin
     print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr)) of type $(Base.codeunit(s)) ASCII only")
 end
 
-Base.iterate(s::MMappedString{ASCII}, i::Int=firstindex(s)) = ascii_iterate(s.ptr, i)
+@propagate_inbounds Base.iterate(s::MMappedString{ASCII}, i::Int=firstindex(s)) = ascii_iterate(s.ptr, i)
 
-Base.nextind(s::MMappedString{ASCII}, i::Int) = ascii_nextind(s.ptr, i)
+@propagate_inbounds Base.nextind(s::MMappedString{ASCII}, i::Int) = ascii_nextind(s.ptr, i)
 
-Base.thisind(s::MMappedString{ASCII}, i::Int) = ascii_thisind(s.ptr, i)
+@propagate_inbounds Base.thisind(s::MMappedString{ASCII}, i::Int) = ascii_thisind(s.ptr, i)
 
-Base.prevind(s::MMappedString{ASCII}, i::Int) = ascii_prevind(s.ptr, i)
+@propagate_inbounds Base.prevind(s::MMappedString{ASCII}, i::Int) = ascii_prevind(s.ptr, i)
 
-Base.length(s::MMappedString{ASCII}, i::Int, j::Int) = ascii_length(s.ptr, i, j)
+@propagate_inbounds Base.length(s::MMappedString{ASCII}, i::Int, j::Int) = ascii_length(s.ptr, i, j)
 
-Base.isvalid(s::MMappedString{ASCII}, i::Int) = ascii_isvalid(s.ptr, i)
+@propagate_inbounds Base.isvalid(s::MMappedString{ASCII}, i::Int) = ascii_isvalid(s.ptr, i)
 
-Base.length(s::MMappedString{ASCII}) = length(s.ptr)
+@propagate_inbounds Base.length(s::MMappedString{ASCII}) = length(s.ptr)
 
-Base.firstindex(s::MMappedString{ASCII}) = 1
+@inline Base.firstindex(s::MMappedString{ASCII}) = 1
 
-Base.lastindex(s::MMappedString{ASCII}) = length(s.ptr)
+@propagate_inbounds Base.lastindex(s::MMappedString{ASCII}) = length(s.ptr)
 
-Base.getindex(s::MMappedString{ASCII}, i::Int) = ascii_getindex(s.ptr, i)
+@propagate_inbounds Base.getindex(s::MMappedString{ASCII}, i::Int) = ascii_getindex(s.ptr, i)
 
-Base.isvalid(s::MMappedString{ASCII}) = utf8_isascii(s.ptr)
+@propagate_inbounds Base.isvalid(s::MMappedString{ASCII}) = utf8_isascii(s.ptr)
 
-Base.getindex(s::MMappedString{ASCII}, r::UnitRange{Int}) = ascii_getindex(s.ptr, r)
+@propagate_inbounds Base.getindex(s::MMappedString{ASCII}, r::UnitRange{Int}) = ascii_getindex(s.ptr, r)
 
 end
