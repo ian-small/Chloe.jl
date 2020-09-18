@@ -253,7 +253,9 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     t5 = time_ns()
     @info "[$target_id]$strand ref features stacks ($(length(strand_feature_stacks))): $(ns(t5 - t4))"
 
-    target_strand_features = FeatureArray(target_id, target_length, strand, AFeature())
+    fa = AFeature()
+    sizehint!(fa, length(strand_feature_stacks))
+    target_strand_features = FeatureArray(target_id, target_length, strand, fa)
 
     for stack in strand_feature_stacks
         left_border, length = alignTemplateToStack(stack, shadow)
