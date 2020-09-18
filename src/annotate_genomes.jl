@@ -231,7 +231,7 @@ end
 const ns(td) = @sprintf("%.3fs", td / 1e9)
 
 MayBeString = Union{Nothing,String}
-Strand = Tuple{AAFeature,AFeatureStack}
+Strand = Tuple{AAFeature,DFeatureStack}
 AAlignedBlocks = Vector{FwdRev{AlignedBlocks}}
 
 function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
@@ -257,7 +257,7 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
 
     features = Vector{Feature}()
     # sizehint!(fa, length(strand_feature_stacks))
-
+    path_to_stack = Dict{String,FeatureStack}()
     # so... features will be ordered by annotations.path
     for stack in strand_feature_stacks
         left_border, length = alignTemplateToStack(stack, shadow)
@@ -265,6 +265,10 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
         depth, coverage = getDepthAndCoverage(stack, left_border, length)
         if ((depth >= stack.template.threshold_counts) && (coverage >= stack.template.threshold_coverage))
             push!(features, Feature(stack.path, left_border, length, 0))
+            if haskey(path_to_stack, stack.path)
+                @error "duplicate feature path: $(stack.path)"
+            end
+            path_to_stack[stack.path] = stack
         else
             @debug "[$target_id]$strand Below threshold: $(stack.path)"
         end
@@ -287,7 +291,7 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
 
     t8 = time_ns()
     @info "[$target_id]$strand refining gene models: $(ns(t8 - t7))"
-    return target_strand_models, strand_feature_stacks
+    return target_strand_models, path_to_stack
 end
 
 # MayBeIO: write to file (String), IO buffer or create filename based on fasta filename
@@ -417,11 +421,11 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
     else
         fname = "$(target_id).sff"
     end
-    writeSFF(fname, target_id, target_length, 
+    writeSFF(fname, target_id, target_length, reference.gene_exons,
         target_fstrand_models, target_rstrand_models,
-        reference.gene_exons,
         fstrand_feature_stacks, rstrand_feature_stacks,
-        targetloopf, targetloopr, ir)
+        targetloopf, targetloopr,
+        ir)
 
     @info "[$target_id] Overall: $(ns(time_ns() - t1))"
     return fname, target_id

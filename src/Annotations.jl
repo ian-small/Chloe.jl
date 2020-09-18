@@ -21,6 +21,10 @@ end
 function getFeatureName(feature::Feature)
     feature._path_components[1]
 end
+function getFeatureSuffix(feature::Feature)
+    pc = feature._path_components
+    join([pc[3], pc[4]], "/")
+end
 function getFeatureType(feature::Feature)
     feature._path_components[3]
 end
@@ -189,11 +193,11 @@ function fillFeatureStack(target_length::Int32, annotations::Vector{Annotation},
         if template === nothing
             error("Can't find template for $(annotation.path)")
         end
-        if isempty(stacks) || (index = get(indexmap, annotation.path, nothing)) === nothing
+        index = get(indexmap, annotation.path, nothing)
+        if index === nothing
             stack = FeatureStack(annotation.path, zeros(Int32, target_length), template)
             push!(stacks, stack)
             indexmap[annotation.path] = length(stacks)
-            # stacks[annotation.path] = stack
         else
             stack = stacks[index]
         end
@@ -385,8 +389,10 @@ function groupFeaturesIntoGeneModels(features::AFeature)::AAFeature
             push!(current_model, feature)
         end
     end
-    sort!(current_model, by=x -> x.start)
-    push!(gene_models, current_model)
+    if length(current_model) > 0
+        sort!(current_model, by=x -> x.start)
+        push!(gene_models, current_model)
+    end
     return gene_models
 end
 
@@ -714,14 +720,28 @@ end
 #     return nothing
 # end
 
-# ChloeIO = Union{IOStream,IOBuffer,GZipStream}
-function writeModelToSFF(outfile::IO, model::AFeature, model_id::String,
-                        targetloop::DNAString,
-                        gene_exons::Dict{String,Int32},
-                        maxlengths::Dict{String,Int32},
-                        feature_stacks::AFeatureStack, strand::Char)
-    gene = getFeatureName(first(model))
-    expected_exons = gene_exons[gene]
+struct SFF
+    gene::String
+    feature::Feature
+    gene_length::Int
+    exon_count::Int
+    avg::Float64
+    depth::Float64
+    coverage::Float64
+    hasStart::Bool
+    hasPrematureStop::Bool
+end
+
+
+DFeatureStack = Dict{String,FeatureStack}
+
+gene_length(model::AFeature) = begin
+    last(model).start + last(model).length - first(model).start
+end
+function toSFF(model::AFeature, targetloop::DNAString, feature_stacks::DFeatureStack)::Vector{SFF}
+    first_model = first(model)
+    gene = getFeatureName(first_model)
+    ret = []
     exon_count = 0
     cds = false
     for f in model
@@ -737,7 +757,7 @@ function writeModelToSFF(outfile::IO, model::AFeature, model_id::String,
     hasPrematureStop = false
     if cds
         protein = translateModel(targetloop, model)
-        if gene ≠ "rps12B" && !isStartCodon(SubString(targetloop, first(model).start, first(model).start + 2), true, true)
+        if gene ≠ "rps12B" && !isStartCodon(SubString(targetloop, first_model.start, first_model.start + 2), true, true)
             hasStart = false
         end
         stop_position = findfirst(isequal('*'), protein)
@@ -745,30 +765,57 @@ function writeModelToSFF(outfile::IO, model::AFeature, model_id::String,
             hasPrematureStop = true
         end
     end
-    gene_length = last(model).start + last(model).length - first(model).start
-    gene_length <= 0 && return
-    for f in model
-        stack = feature_stacks[findfirst(x -> x.path == f.path, feature_stacks)]
-        depth, coverage = getDepthAndCoverage(stack, f.start, f.length)
+    genelength = gene_length(model)
+    genelength <= 0 && return ret
+    
+    for feature in model
+        # stack = feature_stacks[findfirst(x -> x.path == f.path, feature_stacks)]
+        stack = get(feature_stacks, feature.path, nothing)
+        if stack === nothing
+            @error "$(gene): no stack for path $(f.path)"
+            continue
+        end
+
+        depth, coverage = getDepthAndCoverage(stack, feature.start, feature.length)
         depth == 0 && continue
         coverage == 0 && continue
+        avg = feature.length / stack.template.median_length
+        push!(ret, SFF(gene, feature, genelength, exon_count, avg, depth, coverage, hasStart, hasPrematureStop))
+    end
+    return ret
+end
+
+# ChloeIO = Union{IOStream,IOBuffer,GZipStream}
+
+function writeModelToSFF(outfile::IO, model::AFeature, model_id::String,
+                        targetloop::DNAString,
+                        gene_exons::Dict{String,Int32},
+                        maxlengths::Dict{String,Int32},
+                        feature_stacks::DFeatureStack, strand::Char)
+    
+    for sff in toSFF(model, targetloop, feature_stacks)
+        # stack = feature_stacks[findfirst(x -> x.path == f.path, feature_stacks)]
+        feature = sff.feature
         write(outfile, model_id)
-        write(outfile, f.path[findall(isequal('/'), f.path)[2]:end])
+        write(outfile, "/")
+        write(outfile, getFeatureSuffix(feature))
         write(outfile, "\t")
-        write(outfile, join([strand,string(f.start),string(f.length),string(f.phase)], "\t"))
+        write(outfile, join([strand,string(feature.start),string(feature.length),string(feature.phase)], "\t"))
         write(outfile, "\t")
-        write(outfile, join([@sprintf("%.3f",f.length / stack.template.median_length),@sprintf("%.3f",depth),@sprintf("%.3f",coverage)], "\t"))
+        write(outfile, join([@sprintf("%.3f",sff.avg),@sprintf("%.3f",sff.depth),@sprintf("%.3f",sff.coverage)], "\t"))
         write(outfile, "\t")
-        if gene_length - get(maxlengths, gene, 0) < -10
+
+        if sff.gene_length - get(maxlengths, sff.gene, 0) < -10
             write(outfile, "possible pseudogene, shorter than 2nd copy ")
         end
-        if exon_count < expected_exons
+        expected_exons = get(gene_exons, sff.gene, 0)
+        if sff.exon_count < expected_exons
             write(outfile, "possible pseudogene, missing exon(s) ")
         end
-        if !hasStart
+        if !sff.hasStart
             write(outfile, "possible pseudogene, no start codon ")
         end
-        if hasPrematureStop
+        if sff.hasPrematureStop
             write(outfile, "possible pseudogene, premature stop codon ")
         end
 
@@ -787,70 +834,49 @@ function calc_maxlengths(fstrand_models::AAFeature, rstrand_models::AAFeature)::
     if length(fstrand_models) != length(rstrand_models) 
         @warn "forward=$(length(fstrand_models)) != reverse=$(length(rstrand_models))"
     end
+    # FIXME XXXX TODO
     m = min(length(fstrand_models), length(rstrand_models))
-    for fmodel in fstrand_models[1:m]
-        if isempty(fmodel)
-            @warn "forward model has no features"
-        else
-            gene = getFeatureName(first(fmodel))
-            gene_length = last(fmodel).start + last(fmodel).length - first(fmodel).start
-            maxlen = get(maxlengths, gene, 0)
-            if gene_length > maxlen
-                maxlengths[gene] = gene_length
+    
+    function add_model(models)
+        for model in models[1:m]
+            if !isempty(model)
+                gene = getFeatureName(first(model))
+                maxlengths[gene] = max(gene_length(model), get(maxlengths, gene, 0))
             end
         end
     end
 
-    for rmodel in rstrand_models[1:m]
-        if isempty(rmodel)
-            @warn "reverse model has no features"
-        else
-            gene = getFeatureName(first(rmodel))
-            gene_length = last(rmodel).start + last(rmodel).length - first(rmodel).start
-            maxlen = get(maxlengths, gene, 0)
-            if gene_length > maxlen
-                maxlengths[gene] = gene_length
-            end
-        end
-    end
+    add_model(fstrand_models)
+    add_model(rstrand_models)
     maxlengths
 end
 
 MaybeIR = Union{AlignedBlock,Nothing}
 
 function writeSFF(outfile::Union{String,IO}, id::String,
-                genome_length::Int32,
+                genome_length::Int32, gene_exons::Dict{String,Int32},
                 fstrand_models::AAFeature,
                 rstrand_models::AAFeature,
-                gene_exons::Dict{String,Int32},
-                fstrand_feature_stacks::AFeatureStack, 
-                rstrand_feature_stacks::AFeatureStack, 
-                targetloopf::DNAString, targetloopr::DNAString, ir::MaybeIR=nothing)
+                fstrand_feature_stacks::DFeatureStack, 
+                rstrand_feature_stacks::DFeatureStack, 
+                targetloopf::DNAString, targetloopr::DNAString,
+                ir::MaybeIR=nothing)
 
 
     function getModelID!(model_ids::Dict{String,Int32}, model::AFeature)
         gene_name = getFeatureName(first(model))
         instance_count = 1
-        # model_id = gene_name * "/" * string(instance_count)
         model_id = "$(gene_name)/$(instance_count)"
         while get(model_ids, model_id, 0) ≠ 0
             instance_count += 1
             model_id = "$(gene_name)/$(instance_count)"
         end
-        # push!(model_ids, model_id => instance_count)
         model_ids[model_id] = instance_count
         return model_id
     end
     
-    n = length(fstrand_feature_stacks)
-    if n == 0
-        @warn "$(id): zero length feature stack!"
-        return
-    end
 
     maxlengths = calc_maxlengths(fstrand_models, rstrand_models)
-
-    @assert  length(fstrand_feature_stacks[1].stack) == genome_length
 
 
     function out(outfile::IO)
