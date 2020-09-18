@@ -19,8 +19,11 @@ import Base
 import Printf: @sprintf
 import JSON
 import Mmap
+import Crayons: @crayon_str
 
 import .MappedString: MMappedString, ASCII
+
+const success = crayon"bold green"
 
 # can be any of String, MMappedString, MappedPtrString{ASCII}
 # If you have memory mapped files (see julia chloe.jl mmap *.fa)
@@ -427,7 +430,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
         targetloopf, targetloopr,
         ir)
 
-    @info "[$target_id] Overall: $(ns(time_ns() - t1))"
+    @info success("[$target_id] Overall: $(ns(time_ns() - t1))")
     return fname, target_id
 
 end

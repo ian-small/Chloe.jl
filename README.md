@@ -11,7 +11,6 @@ julia chloe.jl --help
 # or for a specific command e.g.
 julia chloe.jl annotate --help
 ```
-Of if you have added Chloe as a package: `julia -e 'using Chloe; cmd_main()' -- annotate --help`
 
 (See installing dependencies below)
 
@@ -30,81 +29,37 @@ This annotator is available online at: https://chloe.plantenergy.edu.au
 There is a `Project.toml` file that contains all the project
 dependencies.
 
+To actually add these dependencies type
+`julia bin/deps.jl`.
+
+*or* run
+
+```julia
+import Pkg; 
+(open("Project.toml") |> Pkg.TOML.parse)["deps"] |> keys |> collect |> Pkg.add
+```
+
+I really don't know why there isn't a command for this... :(
+
+You can install Chloe as a julia
+package too.
 Start julia and type `]` to get the package manager prompt. Then type:
 
 ```
 (@v1.5) pkg> dev {path/to/chloe/repo/directory}
 ```
-This will make an entry for Chloe in the Manifest for julia. More
-importantly it will install all the dependencies.
+This will make an entry for Chloë in the Manifest for julia.
 Now get julia to compile it by typing `import Chloe` at the *julia* prompt.
 
-You can easily remove Chloe as a package with:
+You can easily remove Chloë as a package with:
 
 ```
 (@v1.5) pkg> rm Chloe
 ```
 
-Installing Chloe as a (local) package allows you to take
+Installing Chloë as a (local) package allows you to take
 advantage of julia's precompilation.
 
-
-## Chloë Server
-
-Running the chloe server. In a terminal type:
-
-```bash
-JULIA_NUM_THREADS=8 julia distributed.jl --level=info --workers=4 \
-     --broker=ipc:///tmp/chloe-client
-```
-
-(Julia as of 1.4 refuses to use more threads that the number of CPUs on your machine:
-`Sys.CPU_THREADS` or `python -c 'import multiprocessing as m; print(m.cpu_count())'`)
-
-In another terminal start julia:
-
-```julia
-using JuliaWebAPI
-
-i = APIInvoker("ipc:///tmp/chloe-client");
-apicall(i, "ping") # ping the server to see if is listening.
-
-# fasta and output should be relative to the server'
-# working directory, or specify absolute path names! yes "chloe" 
-# should be "annotate" but...
-ret = apicall(i, "chloe", fastafile, outputfile) # outputfile is optional
-code, data = ret["code"], ret["data"]
-@assert code === 200
-# actual filename written and total elapsed
-# time in ms to annotate
-sff_fname, elapsed_ms = data["filename"], data["elapsed"]
-# to terminate the server cleanly (after finishing any work)
-apicall(i, "exit")
-
-```
-
-The *actual* production configuration uses `distributed.jl` 
-(for threading issues) and runs
-the server as a client of a DEALER/ROUTER server
-(see `bin/broker.py` or `src/broker.jl` and the `Makefile`). It *connects* to the
-DEALER end on `tcp://127.0.0.1:9467`. The
-[chloe website](https://chloe.plantenergy.edu.au)
-connects to `ipc:///tmp/chloe-client` which
-is the ROUTER end of broker. In this setup
-you can run multiple chloe servers connecting
-to the same DEALER.
-
-**Update**: you can now run a broker with julia as `julia src/broker.jl`
-*or* specify `--broker=URL` to `distrbuted.jl`. No
-python required. (best to use `-b default` to select
-this projects default endpoint (`ipc:///tmp/chloe-client`))
-
-The worker process can be made to share the reference Data using memory mapped data files.
-You can create these by running:
-
-```sh
-julia chloe.jl mmap reference_1116/*.fa
-```
 
 
 ## Distributed
@@ -175,6 +130,64 @@ This takes advantage of the precompilation of julia packages.
 Also you don't need to be in the repo directory!
 
 
+## Chloë Server
+
+Running the chloe server. In a terminal type:
+
+```bash
+JULIA_NUM_THREADS=8 julia distributed.jl --level=info --workers=4 \
+     --broker=ipc:///tmp/chloe-client
+```
+
+(Julia as of 1.4 refuses to use more threads that the number of CPUs on your machine:
+`Sys.CPU_THREADS` or `python -c 'import multiprocessing as m; print(m.cpu_count())'`)
+
+In another terminal start julia:
+
+```julia
+using JuliaWebAPI
+
+i = APIInvoker("ipc:///tmp/chloe-client");
+apicall(i, "ping") # ping the server to see if is listening.
+
+# fasta and output should be relative to the server'
+# working directory, or specify absolute path names! yes "chloe" 
+# should be "annotate" but...
+ret = apicall(i, "chloe", fastafile, outputfile) # outputfile is optional
+code, data = ret["code"], ret["data"]
+@assert code === 200
+# actual filename written and total elapsed
+# time in ms to annotate
+sff_fname, elapsed_ms = data["filename"], data["elapsed"]
+# to terminate the server cleanly (after finishing any work)
+apicall(i, "exit")
+
+```
+
+The *actual* production configuration uses `distributed.jl` 
+(for threading issues) and runs
+the server as a client of a DEALER/ROUTER server
+(see `bin/broker.py` or `src/broker.jl` and the `Makefile`). It *connects* to the
+DEALER end on `tcp://127.0.0.1:9467`. The
+[chloe website](https://chloe.plantenergy.edu.au)
+connects to `ipc:///tmp/chloe-client` which
+is the ROUTER end of broker. In this setup
+you can run multiple chloe servers connecting
+to the same DEALER.
+
+**Update**: you can now run a broker with julia as `julia src/broker.jl`
+*or* specify `--broker=URL` to `distrbuted.jl`. No
+python required. (best to use `-b default` to select
+this projects default endpoint (`ipc:///tmp/chloe-client`))
+
+The worker process can be made to share the reference Data using memory mapped data files.
+You can create these by running:
+
+```sh
+julia chloe.jl mmap reference_1116/*.fa
+```
+
+
 ## Running Remotely
 
 The Chloë server can be run remotely through a ssh tunnel.
@@ -212,7 +225,11 @@ sff = data["sff"] # sff file as a string
 apicall(i, "exit")
 ```
 
+---
+
 ### Developer Notes:
+
+Nothing interesting beyond here....
 
 To stop julia vomiting unhelpful stacktraces when `^Ctrl-C`ing 
 run julia with `--handle-signals=no`. Don't know what it does
@@ -251,7 +268,8 @@ to the running server. If the server was
 started by loading `Chloe` as a package then
 you can't add new workers by just sending
 the required code: The new worker seems
-to be expecting a Chloe module.
+to be expecting a Chloe module. Use `distributed.jl` if you want to expand
+workers dynamically.
 
 
 ### Authors

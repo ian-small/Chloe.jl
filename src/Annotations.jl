@@ -29,12 +29,11 @@ function getFeatureType(feature::Feature)
     feature._path_components[3]
 end
 
-function isType(feature::Feature, gene::String)
-    gene == getFeatureType(feature)
-end
-function isFeatureName(feature::Feature, name::String)
-    name == getFeatureName(feature)
-end
+isType(feature::Feature, gene::String) = gene == getFeatureType(feature)
+
+isFeatureName(feature::Feature, name::String) = name == getFeatureName(feature)
+
+include("it.jl")
 
 AFeature = Vector{Feature}
 AAFeature = Vector{AFeature}
@@ -44,6 +43,8 @@ struct FeatureArray
     genome_length::Int32
     strand::Char
     features::AFeature
+    interval_tree::IntervalTree{Int32,FeatureInterval}
+
 end
 datasize(f::FeatureArray) = begin
     sizeof(FeatureArray) + sizeof(f.genome_id) + sum(datasize(a) for a in f.features)
@@ -52,18 +53,21 @@ end
 function readFeatures(file::String)::Tuple{FeatureArray,FeatureArray}
     open(file) do f
         header = split(readline(f), '\t')
+        genome_id = header[1]
         genome_length = parse(Int32, header[2])
-        f_strand_features = FeatureArray(header[1], genome_length, '+', AFeature())
-        r_strand_features = FeatureArray(header[1], genome_length, '-', AFeature())
+        r_features = AFeature()
+        f_features = AFeature()
         while !eof(f)
             fields = split(readline(f), '\t')
             feature = Feature(fields[1], parse(Int, fields[3]), parse(Int, fields[4]), parse(Int, fields[5]))
             if fields[2][1] == '+'
-                push!(f_strand_features.features, feature)
+                push!(f_features, feature)
             else
-                push!(r_strand_features.features, feature)
+                push!(r_features, feature)
             end
         end
+        f_strand_features = FeatureArray(genome_id, genome_length, '+', f_features, toIntervalTree(f_features))
+        r_strand_features = FeatureArray(genome_id, genome_length, '-', r_features, toIntervalTree(r_features))
         return f_strand_features, r_strand_features
     end
 end
@@ -84,28 +88,34 @@ struct Annotation
 end
 datasize(a::Annotation) = sizeof(Annotation) + sizeof(a.genome_id)
 
+function addAnnotation(genome_id::String, feature::Feature, block::AlignedBlock)::Union{Nothing,Annotation}
+    startA = max(feature.start, block[1])
+    flength = min(feature.start + feature.length, block[1] + block[3]) - startA
+    flength <= 0 && return
+    feature_type = getFeatureType(feature)
+    offset5 = startA - feature.start
+    if (feature_type == "CDS")
+        phase = phaseCounter(feature.phase, offset5)
+    else
+        phase = 0
+    end
+    annotation_path = annotationPath(feature)
+    Annotation(genome_id, annotation_path, 
+                                startA - block[1] + block[2],
+                                flength, offset5, feature.length - (startA - feature.start) - flength, phase)
+end
+
 # checks all blocks for overlap so could be speeded up by using an interval tree
 function addOverlapBlocks(genome_id::String, feature::Feature, blocks::AlignedBlocks)::Vector{Annotation}
     pushed_features = Vector{Annotation}()
     # sizehint!(pushed_features, length(blocks))
-    feature_type = getFeatureType(feature)
+
     for block in blocks
         if rangesOverlap(feature.start, feature.length, block[1], block[3])
-            startA = max(feature.start, block[1])
-            flength = min(feature.start + feature.length, block[1] + block[3]) - startA
-            flength <= 0 && continue
-            offset5 = startA - feature.start
-            if (feature_type == "CDS")
-                phase = phaseCounter(feature.phase, offset5)
-            else
-                phase = 0
+            pushed_feature = addAnnotation(genome_id, feature, block)
+            if pushed_feature !== nothing
+                push!(pushed_features, pushed_feature)
             end
-            annotation_path = annotationPath(feature)
-            pushed_feature = Annotation(genome_id, annotation_path, 
-                                        startA - block[1] + block[2],
-                                        flength, offset5, feature.length - (startA - feature.start) - flength, phase)
-
-            push!(pushed_features, pushed_feature)
         end
     end
     return pushed_features
@@ -157,12 +167,29 @@ function readTemplates(file::String)::Tuple{Dict{String,FeatureTemplate},Dict{St
     return templates, StatsBase.addcounts!(Dict{String,Int32}(), gene_exons)
 end
 
-function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
+function findOverlaps2(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
     annotations = Vector{Annotation}()
     for feature in ref_featurearray.features
         new_annotations = addOverlapBlocks(ref_featurearray.genome_id, feature, aligned_blocks)
         push!(annotations, new_annotations...)
 
+    end
+    annotations
+end
+function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
+    annotations = Vector{Annotation}()
+    for block in aligned_blocks
+        for feat_interval in intersect(ref_featurearray.interval_tree, block[1], block[1] + block[3] - one(Int32))
+            feature = feat_interval.feature
+            if ~rangesOverlap(feature.start, feature.length, block[1], block[3])
+                @error "$(feature.start) $(feature.length) $(block[1]) $(block[3])"
+                Base.exit(1)
+            end
+            anno = addAnnotation(ref_featurearray.genome_id, feature, block)
+            if anno !== nothing
+                push!(annotations, anno)
+            end
+        end
     end
     annotations
 end
@@ -267,9 +294,9 @@ end
 function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowStack)::Tuple{Int32,Int32}
     stack = feature_stack.stack
     glen = length(stack)
-    tlen = feature_stack.template.median_length
+    median_length = feature_stack.template.median_length
     score = 0
-    for nt = 1:tlen
+    for nt = 1:median_length
         score += stack[genome_wrap(glen, nt)] + shadowstack[genome_wrap(glen, nt)]
     end
     max_score = score
@@ -277,14 +304,14 @@ function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowSt
 
     for nt = 2:glen
         score -= stack[genome_wrap(glen, nt - 1)] + shadowstack[genome_wrap(glen, nt)]
-        score += stack[genome_wrap(glen, nt + tlen - 1)] + shadowstack[genome_wrap(glen, nt)]
+        score += stack[genome_wrap(glen, nt + median_length - 1)] + shadowstack[genome_wrap(glen, nt)]
         if score > max_score
             max_score = score
             best_hit = nt
         end
     end
     max_score <= 0 && return 0, 0
-    return best_hit, tlen
+    return best_hit, median_length
 end
 
 function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Vector{Annotation})::Int8
@@ -805,18 +832,22 @@ function writeModelToSFF(outfile::IO, model::AFeature, model_id::String,
         write(outfile, join([@sprintf("%.3f",sff.avg),@sprintf("%.3f",sff.depth),@sprintf("%.3f",sff.coverage)], "\t"))
         write(outfile, "\t")
 
+        pseudo = "possible pseudogene"
         if sff.gene_length - get(maxlengths, sff.gene, 0) < -10
-            write(outfile, "possible pseudogene, shorter than 2nd copy ")
+            write(outfile, "$(pseudo), shorter than 2nd copy")
+            pseudo = ""
         end
         expected_exons = get(gene_exons, sff.gene, 0)
         if sff.exon_count < expected_exons
-            write(outfile, "possible pseudogene, missing exon(s) ")
+            write(outfile, "$(pseudo), missing exon(s)")
+            pseudo = ""
         end
         if !sff.hasStart
-            write(outfile, "possible pseudogene, no start codon ")
+            write(outfile, "$(pseudo), no start codon")
+            pseudo = ""
         end
         if sff.hasPrematureStop
-            write(outfile, "possible pseudogene, premature stop codon ")
+            write(outfile, "$(pseudo), premature stop codon")
         end
 
         # if #too short compared to template
@@ -831,14 +862,14 @@ end
 
 function calc_maxlengths(fstrand_models::AAFeature, rstrand_models::AAFeature)::Dict{String,Int32}
     maxlengths = Dict{String,Int32}()
-    if length(fstrand_models) != length(rstrand_models) 
-        @warn "forward=$(length(fstrand_models)) != reverse=$(length(rstrand_models))"
-    end
+    # if length(fstrand_models) != length(rstrand_models) 
+    #     @warn "forward=$(length(fstrand_models)) != reverse=$(length(rstrand_models))"
+    # end
     # FIXME XXXX TODO
-    m = min(length(fstrand_models), length(rstrand_models))
+    # m = min(length(fstrand_models), length(rstrand_models))
     
     function add_model(models)
-        for model in models[1:m]
+        for model in models# [1:m]
             if !isempty(model)
                 gene = getFeatureName(first(model))
                 maxlengths[gene] = max(gene_length(model), get(maxlengths, gene, 0))

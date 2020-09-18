@@ -124,7 +124,7 @@ function fillGap(block1::AlignedBlock, block2::AlignedBlock,
     tgt_gap_range = block1[2] + block1[3]:block2[2] - 1
 
     # make gap SAs from genome SAs
-    # REM: v[l:h] makes a *copy* so we can do an inplace sort
+    # REM: v[l:h] makes a *copy* so we can do an inplace sort (of the copy)
     ref_ranks_slice = sort!(refRA[ref_gap_range])
     tgt_ranks_slice = sort!(tgtRA[tgt_gap_range])
 
