@@ -167,24 +167,23 @@ function readTemplates(file::String)::Tuple{Dict{String,FeatureTemplate},Dict{St
     return templates, StatsBase.addcounts!(Dict{String,Int32}(), gene_exons)
 end
 
-function findOverlaps2(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
+function findOverlaps_linear(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
     annotations = Vector{Annotation}()
     for feature in ref_featurearray.features
         new_annotations = addOverlapBlocks(ref_featurearray.genome_id, feature, aligned_blocks)
         push!(annotations, new_annotations...)
-
     end
     annotations
 end
 function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
+    if ref_featurearray.interval_tree === nothing
+        return findOverlaps_linear(ref_featurearray, aligned_blocks)
+    end 
     annotations = Vector{Annotation}()
     for block in aligned_blocks
         for feat_interval in intersect(ref_featurearray.interval_tree, block[1], block[1] + block[3] - one(Int32))
             feature = feat_interval.feature
-            if ~rangesOverlap(feature.start, feature.length, block[1], block[3])
-                @error "$(feature.start) $(feature.length) $(block[1]) $(block[3])"
-                Base.exit(1)
-            end
+            # @assert rangesOverlap(feature.start, feature.length, block[1], block[3])
             anno = addAnnotation(ref_featurearray.genome_id, feature, block)
             if anno !== nothing
                 push!(annotations, anno)
