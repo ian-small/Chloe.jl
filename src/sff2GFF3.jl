@@ -96,13 +96,13 @@ function writeallGFF3(;sff_files=String[], directory=nothing)
         fstrand_features, rstrand_features = readFeatures(infile)
         # for each strand
         # group into gene models
-        fstrand_models = groupFeaturesIntoGeneModels(fstrand_features)
+        fstrand_models = groupFeaturesIntoGeneModels(fstrand_features.features)
         models_as_feature_arrays = Vector{FeatureArray}()
         for model in fstrand_models
             push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome_id, fstrand_features.genome_length, '+', model))
         end
 
-        rstrand_models = groupFeaturesIntoGeneModels(rstrand_features)
+        rstrand_models = groupFeaturesIntoGeneModels(rstrand_features.features)
         for model in rstrand_models
             push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome_id, fstrand_features.genome_length, '-', model))
         end
