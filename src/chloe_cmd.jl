@@ -12,14 +12,16 @@ import ..SuffixArray
 
  
 function chloe(;refsdir=DEFAULT_REFS, fasta_files=String[],
-    template=DEFAULT_TEMPLATE, output::Union{Nothing,String}=nothing)
+    template=DEFAULT_TEMPLATE, output::Union{Nothing,String}=nothing,
+    forward_only::Bool=false, verbose::Bool=true)
     if refsdir == "default"
-        refsdir = joinpath(HERE, "..", DEFAULT_REFS)
+        refsdir = normpath(joinpath(HERE, "..", DEFAULT_REFS))
     end
     if template == "default"
-        template = joinpath(HERE, "..", DEFAULT_TEMPLATE)
+        template = normpath(joinpath(HERE, "..", DEFAULT_TEMPLATE))
     end
-    Annotator.annotate(refsdir, template, fasta_files, output)
+    Annotator.annotate(refsdir, template, fasta_files, output; forward_only=forward_only,
+        verbose=verbose)
 
 end
 
@@ -77,7 +79,9 @@ function getargs()
             required = true
             action = :store_arg
             help = "gwsas/fasta files to process"
-
+        "--forward-only", "-o"
+            action = :store_true
+            help = "only save forward"
     end
 
     @add_arg_table! cmd_args["annotate"]  begin
@@ -102,6 +106,9 @@ function getargs()
             metavar = "TSV"
             dest_name = "template"
             help = "template tsv [default: $(DEFAULT_TEMPLATE)]"
+        "--forward-only"
+            action = :store_true
+            help = "only use forward sequences"
     end
 
     # args.epilog = """

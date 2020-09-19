@@ -27,7 +27,7 @@ function writesuffixarray(;fasta_files=String[], directory=Union{String,Nothing}
     end
 end
 
-function one_mmap_from_gwsas(infile::String)
+function one_mmap_from_gwsas(infile::String, forward_only::Bool=false)
 
     _, f = splitpath(infile)
     seqid = splitext(f)[1]
@@ -35,64 +35,75 @@ function one_mmap_from_gwsas(infile::String)
 
     fwd = gwsas.sequence
     fwd = uppercase(fwd)
-    rev = revComp(fwd)
     fwds = fwd * fwd[1:end - 1]
-    revs = rev * rev[1:end - 1]
-
     ufwd = Vector{UInt8}(fwds)
-    urev = Vector{UInt8}(revs)
+    
+    function dorev()
+        rev = revComp(fwd)
+        revs = rev * rev[1:end - 1]
+        Vector{UInt8}(revs)
+    end
+    
     n = length(gwsas.forwardSA)
     d = splitpath(infile)
     outfile = joinpath(d[1:end - 1]..., "$(seqid).mmap")
-    @info "writing mmap array from gwsas: $outfile"
+    f = forward_only ? "[forward-only]" : ""
+    @info "writing mmap array$f from gwsas: $outfile"
     open(outfile, "w") do f
         write(f, gwsas.forwardSA)
-        write(f, gwsas.reverseSA)
+        !forward_only && write(f, gwsas.reverseSA)
         write(f, makeSuffixArrayRanksArray(gwsas.forwardSA))
-        write(f, makeSuffixArrayRanksArray(gwsas.reverseSA))
+        !forward_only && write(f, makeSuffixArrayRanksArray(gwsas.reverseSA))
         write(f, ufwd)
-        write(f, urev)
+        !forward_only && write(f, dorev())
     end
-    @assert filesize(outfile) === 20 * n - 2
+    @assert filesize(outfile) === (!forward_only ? 20 * n - 2 : 10 * n - 1)
 
 end
 
 
-function one_mmap_from_fasta(infile::String)
+function one_mmap_from_fasta(infile::String, forward_only::Bool=false)
     seqid, fwd = readFasta(infile)
     fwd = uppercase(fwd)
-    rev = revComp(fwd)
+
     fwds = fwd * fwd[1:end - 1]
-    revs = rev * rev[1:end - 1]
-    saf = makeSuffixArray(fwds, true)
-    sar = makeSuffixArray(revs, true)
-
-    @assert length(saf) === length(sar)
-
     ufwd = Vector{UInt8}(fwds)
+
+    saf = makeSuffixArray(fwds, true)
+
+    if !forward_only
+        rev = revComp(fwd)
+        revs = rev * rev[1:end - 1]
+    else
+        rev = revs = ""
+    end
+    sar = makeSuffixArray(revs, true)
     urev = Vector{UInt8}(revs)
+
+    
     n = length(saf)
     d = splitpath(infile)
     outfile = joinpath(d[1:end - 1]..., "$(seqid).mmap")
-    @info "writing mmap array from fasta to: $outfile"
+    f = forward_only ? "[forward-only]" : ""
+    @info "writing mmap array$f from fasta to: $outfile"
     open(outfile, "w") do f
         write(f, saf)
-        write(f, sar)
+        !forward_only && write(f, sar)
         write(f, makeSuffixArrayRanksArray(saf))
-        write(f, makeSuffixArrayRanksArray(sar))
+        !forward_only && write(f, makeSuffixArrayRanksArray(sar))
         write(f, ufwd)
-        write(f, urev)
+        !forward_only && write(f, urev)
     end
-    @assert filesize(outfile) === 20 * n - 2
+    @assert filesize(outfile) === (!forward_only ? 20 * n - 2 : 10 * n - 1)
 
 end
 
-function create_mmaps(;gwsas_fasta=String[])
+    function create_mmaps(;gwsas_fasta=String[], forward_only::Bool=false)
     for infile in gwsas_fasta
         if endswith(infile, ".gwsas")
-            one_mmap_from_gwsas(infile)
+            one_mmap_from_gwsas(infile, forward_only)
         elseif endswith(infile, r"\.(fasta|fa)")
-            one_mmap_from_fasta(infile)
+            one_mmap_from_fasta(infile, forward_only)
         else
             @warn "unknown file type $infile"
         end

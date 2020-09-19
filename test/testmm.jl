@@ -34,6 +34,10 @@ function randindex(m::Int, n::Int)
 end
 
 function run_ascii(n=2000)
+
+    m = MMappedString{ASCII}("")
+    @test length(m) == 0
+
     m = gen_ascii(n)
 
     s = String(m)
@@ -104,6 +108,10 @@ function run_ascii(n=2000)
 end
 
 function run_unicode(n=2000)
+
+    m = MMappedString("")
+    @test length(m) == 0
+
     s = gen_unicode(n)
     m = MMappedString(s)
     

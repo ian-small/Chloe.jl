@@ -1,7 +1,8 @@
 import Printf: @sprintf
 import StatsBase
+import IntervalTrees: IntervalBTree, AbstractInterval, Interval
 
-mutable struct Feature
+mutable struct Feature <: AbstractInterval{Int32}
     path::String
     start::Int32
     length::Int32
@@ -11,8 +12,15 @@ mutable struct Feature
     _path_components::Vector{String}
     Feature(path, start, length, phase) = new(path, start, length, phase, split(path, '/'))
 end
+# number of features we need to scan
+RefTree = IntervalBTree{Int32,Feature,64}
+
+Base.first(f::Feature) = f.start
+Base.last(f::Feature) = f.start + f.length - one(Int32)
+Base.intersect(i::RefTree, lo::Integer, hi::Integer) = intersect(i, Interval{Int32}(lo, hi))
 
 datasize(f::Feature) = sizeof(Feature) + sizeof(f.path) + sum(sizeof(p) for p in f._path_components)
+datasize(i::RefTree) = sum([datasize(f) for f in i])
 
 const annotationPath(feature::Feature) = begin
     pc = feature._path_components
@@ -21,6 +29,7 @@ end
 function getFeatureName(feature::Feature)
     feature._path_components[1]
 end
+# for writing .sff files
 function getFeatureSuffix(feature::Feature)
     pc = feature._path_components
     join([pc[3], pc[4]], "/")
@@ -33,8 +42,6 @@ isType(feature::Feature, gene::String) = gene == getFeatureType(feature)
 
 isFeatureName(feature::Feature, name::String) = name == getFeatureName(feature)
 
-include("it.jl")
-
 AFeature = Vector{Feature}
 AAFeature = Vector{AFeature}
 # entire set of Features for one strand of one genome
@@ -42,12 +49,12 @@ struct FeatureArray
     genome_id::String
     genome_length::Int32
     strand::Char
-    features::AFeature
-    interval_tree::IntervalTree{Int32,FeatureInterval}
+    # features::AFeature
+    interval_tree::RefTree
 
 end
 datasize(f::FeatureArray) = begin
-    sizeof(FeatureArray) + sizeof(f.genome_id) + sum(datasize(a) for a in f.features)
+    sizeof(FeatureArray) + sizeof(f.genome_id)  + datasize(f.interval_tree)
 end
 
 function readFeatures(file::String)::Tuple{FeatureArray,FeatureArray}
@@ -66,8 +73,10 @@ function readFeatures(file::String)::Tuple{FeatureArray,FeatureArray}
                 push!(r_features, feature)
             end
         end
-        f_strand_features = FeatureArray(genome_id, genome_length, '+', f_features, toIntervalTree(f_features))
-        r_strand_features = FeatureArray(genome_id, genome_length, '-', r_features, toIntervalTree(r_features))
+        sort!(f_features)
+        sort!(r_features)
+        f_strand_features = FeatureArray(genome_id, genome_length, '+', RefTree(f_features))
+        r_strand_features = FeatureArray(genome_id, genome_length, '-', RefTree(r_features))
         return f_strand_features, r_strand_features
     end
 end
@@ -101,24 +110,48 @@ function addAnnotation(genome_id::String, feature::Feature, block::AlignedBlock)
     end
     annotation_path = annotationPath(feature)
     Annotation(genome_id, annotation_path, 
-                                startA - block[1] + block[2],
-                                flength, offset5, feature.length - (startA - feature.start) - flength, phase)
+                            startA - block[1] + block[2],
+                            flength, offset5,
+                            feature.length - (startA - feature.start) - flength,
+                            phase)
 end
 
 # checks all blocks for overlap so could be speeded up by using an interval tree
-function addOverlapBlocks(genome_id::String, feature::Feature, blocks::AlignedBlocks)::Vector{Annotation}
-    pushed_features = Vector{Annotation}()
-    # sizehint!(pushed_features, length(blocks))
+# function addOverlapBlocks(genome_id::String, feature::Feature, blocks::AlignedBlocks)::Vector{Annotation}
+#     annotations = Vector{Annotation}()
+#     # sizehint!(pushed_features, length(blocks))
 
-    for block in blocks
-        if rangesOverlap(feature.start, feature.length, block[1], block[3])
-            pushed_feature = addAnnotation(genome_id, feature, block)
-            if pushed_feature !== nothing
-                push!(pushed_features, pushed_feature)
+#     for block in blocks
+#         if rangesOverlap(feature.start, feature.length, block[1], block[3])
+#             anno = addAnnotation(genome_id, feature, block)
+#             if anno !== nothing
+#                 push!(annotations, anno)
+#             end
+#         end
+#     end
+#     annotations
+# end
+
+# function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
+#     annotations = Vector{Annotation}()
+#     for feature in ref_featurearray.features
+#         new_annotations = addOverlapBlocks(ref_featurearray.genome_id, feature, aligned_blocks)
+#         push!(annotations, new_annotations...)
+#     end
+#     annotations
+# end
+function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
+    annotations = Vector{Annotation}()
+    for block in aligned_blocks
+        for feature in intersect(ref_featurearray.interval_tree, block[1], block[1] + block[3] - one(Int32))
+            # @assert rangesOverlap(feature.start, feature.length, block[1], block[3])
+            anno = addAnnotation(ref_featurearray.genome_id, feature, block)
+            if anno !== nothing
+                push!(annotations, anno)
             end
         end
     end
-    return pushed_features
+    annotations
 end
 
 struct FeatureTemplate
@@ -167,32 +200,6 @@ function readTemplates(file::String)::Tuple{Dict{String,FeatureTemplate},Dict{St
     return templates, StatsBase.addcounts!(Dict{String,Int32}(), gene_exons)
 end
 
-function findOverlaps_linear(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
-    annotations = Vector{Annotation}()
-    for feature in ref_featurearray.features
-        new_annotations = addOverlapBlocks(ref_featurearray.genome_id, feature, aligned_blocks)
-        push!(annotations, new_annotations...)
-    end
-    annotations
-end
-function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
-    if ref_featurearray.interval_tree === nothing
-        return findOverlaps_linear(ref_featurearray, aligned_blocks)
-    end 
-    annotations = Vector{Annotation}()
-    for block in aligned_blocks
-        for feat_interval in intersect(ref_featurearray.interval_tree, block[1], block[1] + block[3] - one(Int32))
-            feature = feat_interval.feature
-            # @assert rangesOverlap(feature.start, feature.length, block[1], block[3])
-            anno = addAnnotation(ref_featurearray.genome_id, feature, block)
-            if anno !== nothing
-                push!(annotations, anno)
-            end
-        end
-    end
-    annotations
-end
-
 struct FeatureStack
     path::String # == template.path
     stack::Vector{Int32}
@@ -215,7 +222,7 @@ function fillFeatureStack(target_length::Int32, annotations::Vector{Annotation},
     # initialised to small negative number; acts as prior expectation for feature-finding
     for annotation in annotations
         template = get(feature_templates, annotation.path, nothing)
-        # emplate_index = findfirst(x -> x.path == annotation.path, templates)
+        # template_index = findfirst(x -> x.path == annotation.path, templates)
         if template === nothing
             error("Can't find template for $(annotation.path)")
         end

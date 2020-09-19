@@ -5,6 +5,7 @@ export MMappedString, ASCII
 
 DNAString = AbstractString
 
+import Base
 
 include("UInt8Utf8.jl")
 include("MMappedString.jl")
@@ -13,9 +14,8 @@ include("SuffixArrays.jl")
 include("Alignments3.jl")
 include("Annotations.jl")
 
-
 # import Dates: Time, Nanosecond
-import Base
+
 import Printf: @sprintf
 import JSON
 import Mmap
@@ -39,24 +39,6 @@ end
 
 Base.:(==)(x::FwdRev{T}, y::FwdRev{T}) where T = x.forward == y.forward && x.reverse == y.reverse
 
-function read_mmap_suffix(filename::String)
-    size = filesize(filename)
-    nelem = floor(Int, (size + 2) / 20)
-    
-    nbytes = 4 * nelem
-    sbytes = 2 * nelem - 1
-
-    f = open(filename)
-    # zero offset???
-    saf = Mmap.mmap(f, SuffixArray, nelem, 0 + 0 * nbytes)
-    sar = Mmap.mmap(f, SuffixArray, nelem, 0 + 1 * nbytes)
-    raf = Mmap.mmap(f, SuffixArray, nelem, 0 + 2 * nbytes)
-    rar = Mmap.mmap(f, SuffixArray, nelem, 0 + 3 * nbytes)
-    sf =  Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes)
-    sr  = Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes + sbytes)
-    msf, msr = MappedPtrString(sf),  MappedPtrString(sr)
-    return FwdRev(saf, sar), FwdRev(raf, rar), FwdRev(msf, msr)
-end
 struct Reference
     # length(ReferenceOrganisms) from directory reference_1116
     refsrc::Vector{String}
@@ -70,6 +52,7 @@ struct Reference
     # feature_templates::Vector{FeatureTemplate}
     feature_templates::Dict{String,FeatureTemplate}
     gene_exons::Dict{String,Int32}
+    forward_only::Bool
     # referenceOrganisms::Dict{String,String}
 end
 
@@ -80,7 +63,7 @@ datasize(t::Dict{K,V}) where {K,V} = sum(datasize(e.first) + datasize(e.second) 
 datasize(m::MMappedString) = length(m.ptr)
 datasize(r::Reference) = begin
     (sizeof(Reference)
-    + datasize(r.refsrc) 
+    + datasize(r.refsrc)
     + datasize(r.refloops)
     + datasize(r.refSAs)
     + datasize(r.refRAs)
@@ -114,29 +97,75 @@ function Base.show(io::IO, reference::Reference)
     
     t1 = "#templates=$(reference.feature_templates |> length)"
     t2 = "#gene_exons=$(reference.gene_exons |> length)[$(reference.gene_exons |> values |> sum)]"
-    t3 = "#seq=$(2 * (reference.refloops |> length))[$(human(bp)) bp]"
-    print(io, "Reference: $t1, $t2, $t3, suffix=$(human(sabytes)), total=$(human(sabytes + bp))")
+    t3 = "#refs=$(reference.refloops |> length)[$(human(bp)) bp]"
+    f = reference.forward_only ? "[forward]" : ""
+    print(io, "Reference$(f): $t1, $t2, $t3, suffix=$(human(sabytes)), total=$(human(sabytes + bp))")
 
 end
 
+function read_mmap_suffix(filename::String; forward_only::Bool=false)
+    size = filesize(filename)
+    if isodd(size) && !forward_only
+        error("memory mapped file \"$(filename)\" has been generated with forward sequences only (run with --forward-only)!")
+    end
+    if isodd(size) && forward_only
+        return read_mmap_suffix_forward_only(filename)
+    end
+    # may as well mmap everything even thou we don't need it....
 
+    nelem = floor(Int, (size + 2) / 20)
 
-function read_gwsas(gwsas::String, id::String)
-    
+    nbytes = 4 * nelem
+    sbytes = 2 * nelem - 1
+
+    f = open(filename)
+    # zero offset???
+    saf = Mmap.mmap(f, SuffixArray, nelem, 0 + 0 * nbytes)
+    sar = Mmap.mmap(f, SuffixArray, nelem, 0 + 1 * nbytes)
+    raf = Mmap.mmap(f, SuffixArray, nelem, 0 + 2 * nbytes)
+    rar = Mmap.mmap(f, SuffixArray, nelem, 0 + 3 * nbytes)
+    sf =  Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes)
+    sr  = Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes + sbytes)
+    msf, msr = MappedPtrString(sf),  MappedPtrString(sr)
+    return FwdRev(saf, sar), FwdRev(raf, rar), FwdRev(msf, msr)
+end
+function read_mmap_suffix_forward_only(filename::String)
+    size = filesize(filename)
+    nelem = floor(Int, (size + 1) / 10)
+
+    nbytes = 4 * nelem
+    sbytes = 2 * nelem - 1
+    zsa = SuffixArray()
+
+    f = open(filename)
+    # zero offset???
+    saf = Mmap.mmap(f, SuffixArray, nelem, 0 + 0 * nbytes)
+    # sar = Mmap.mmap(f, SuffixArray, nelem, 0 + 1 * nbytes)
+    raf = Mmap.mmap(f, SuffixArray, nelem, 0 + 1 * nbytes)
+    # rar = Mmap.mmap(f, SuffixArray, nelem, 0 + 3 * nbytes)
+    sf =  Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 2 * nbytes)
+    # sr  = Mmap.mmap(f, Vector{UInt8}, sbytes, 0 + 4 * nbytes + sbytes)
+    msf, msr = MappedPtrString(sf), MappedPtrString(Vector{UInt8}())
+    return FwdRev(saf, zsa), FwdRev(raf, zsa), FwdRev(msf, msr)
+end
+
+function read_gwsas(gwsas::String, id::String; forward_only::Bool=false)
+    zsa = SuffixArray()   
     function FwdRevSA(gwsas::GenomeWithSAs)
-        FwdRev(gwsas.forwardSA, gwsas.reverseSA)
+        FwdRev(gwsas.forwardSA, forward_only ? zsa : gwsas.reverseSA)
     end
     function FwdRevRA(gwsas::GenomeWithSAs)
-        FwdRev(makeSuffixArrayRanksArray(gwsas.forwardSA), makeSuffixArrayRanksArray(gwsas.reverseSA))
+        FwdRev(makeSuffixArrayRanksArray(gwsas.forwardSA), forward_only ? zsa : makeSuffixArrayRanksArray(gwsas.reverseSA))
     end
     function FwdRevMap(fwd::String, rev::String)
         # makes a copy unfortuately...
-        FwdRev(MappedPtrString(fwd), MappedPtrString(rev))
+        FwdRev(MappedPtrString(fwd), MappedPtrString(forward_only ? "" : rev))
     end
          
     refgwsas = readGenomeWithSAs(gwsas, id)
     fwd = refgwsas.sequence
-    rev = revComp(fwd)
+    rev = revComp(refgwasas.sequence)
+    
     fwd = fwd * fwd[1:end - 1]
     rev = rev * rev[1:end - 1]
 
@@ -164,7 +193,8 @@ end
 
 creates a Reference object to feed into `annotate_one`
 """
-function readReferences(refsdir::String, templates::String)::Reference
+function readReferences(refsdir::String, templates::String; verbose::Bool=true, 
+    forward_only::Bool=false)::Reference
 
     if !isdir(refsdir)
         error("$(refsdir) is not a directory")
@@ -201,16 +231,23 @@ function readReferences(refsdir::String, templates::String)::Reference
         mmap = joinpath(refsdir, ref.first * ".mmap")
         
         if isfile(mmap)
-            refSAs[i], refRAs[i], refloops[i] = read_mmap_suffix(mmap)
-            @info "found mmap file for: $(ref.first)"
+            refSAs[i], refRAs[i], refloops[i] = read_mmap_suffix(mmap; forward_only=forward_only)
+            if verbose
+                @info "found mmap file for: $(ref.first)"
+            end
             mmaps += 1
         elseif isfile(gwsas)
-            refSAs[i], refRAs[i], refloops[i] = read_gwsas(gwsas, ref.first)
-            @info "found gwsas file for: $(ref.first)"
+            refSAs[i], refRAs[i], refloops[i] = read_gwsas(gwsas, ref.first; forward_only=forward_only)
+            if verbose
+                @info "found gwsas file for: $(ref.first)"
+            end
         else
             error("no data file for $(ref.first)")
         end
         idx = findfirst(x -> startswith(x, ref.second), sff_files)
+        if idx === nothing
+            idx = findfirst(x -> startswith(x, ref.first))
+        end
         if idx === nothing
             # TODO check for fasta files
             error("no sff file for $(ref.first) -> $(ref.second)")
@@ -226,7 +263,11 @@ function readReferences(refsdir::String, templates::String)::Reference
         @info "better to use memory mapped files use: `julia chloe.jl mmap $(refsdir)/*.fa`"
     end
     feature_templates, gene_exons = readTemplates(templates)
-    return Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons)
+    ret = Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons, forward_only)
+    
+    @info ret
+    
+    return ret
 end
 
 
@@ -280,8 +321,8 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     t6 = time_ns()
     @info "[$target_id]$strand aligning templates ($(length(features))): $(ns(t6 - t5))"
 
-    for feat in features
-        refineMatchBoundariesByOffsets!(feat, annotations, target_length, coverages)
+    for feature in features
+        refineMatchBoundariesByOffsets!(feature, annotations, target_length, coverages)
     end
 
     t7 = time_ns()
@@ -353,15 +394,17 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
     function alignit(refcount::Int)
         start = time_ns()
         refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
-        
+
         ff, fr = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopf, target_saf, target_raf) 
-        rf, rr = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
-        # *OR* use only forward
-        # rr, rf = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
+        if !reference.forward_only
+            rf, rr = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
+        else
+            rr, rf = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
+        end
         # note cross ...
         blocks_aligned_to_targetf[refcount] = FwdRev(ff, rf)
         blocks_aligned_to_targetr[refcount] = FwdRev(rr, fr)
-        
+    
         @info "[$target_id]± aligned $(reference.refsrc[refcount]) ($(length(ff)),$(length(rf))) $(ns(time_ns() - start))"
 
     end
@@ -446,9 +489,10 @@ function annotate_one(reference::Reference, fasta::Union{String,IO})
     annotate_one(reference, fasta, IOBuffer())
 end
 
-function annotate(refsdir::String, templates::String, fa_files::Vector{String}, output::MayBeString)
+function annotate(refsdir::String, templates::String, fa_files::Vector{String}, output::MayBeString;
+    verbose::Bool=true, forward_only::Bool=false)
 
-    reference = readReferences(refsdir, templates)
+    reference = readReferences(refsdir, templates; verbose=verbose, forward_only=forward_only)
 
     for infile in fa_files
         annotate_one(reference, infile, output)

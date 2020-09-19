@@ -21,7 +21,9 @@ Base.:(==)(x::GenomeWithSAs, y::GenomeWithSAs) = begin
 end
 
 function makeSuffixArray(source::AbstractString, circular::Bool)::SuffixArray
-
+    if length(source) == 0
+        return SuffixArray()
+    end
     if circular
 		last = Int((length(source) + 1) / 2)
     else
@@ -41,7 +43,9 @@ function makeSuffixArray(source::AbstractString, circular::Bool)::SuffixArray
 end
 
 function makeSuffixArrayT(seqloop::AbstractString)::SuffixArray # assumes seqloop is circular
-
+    if length(source) == 0
+        return SuffixArray()
+    end
 	last::Int32 = trunc(Int32, cld((length(seqloop) + 1) / 2, 3))
 	suffixes = Vector{SubString}(undef, last * 3)
 
@@ -63,7 +67,9 @@ function makeSuffixArrayT(seqloop::AbstractString)::SuffixArray # assumes seqloo
 end
 
 function makeSuffixArray(suffixes::Vector{SubString})::SuffixArray
-
+    if length(suffixes) == 0
+        return SuffixArray()
+    end
     suffixArray = SuffixArray(undef, length(suffixes))
     suffixArray = sortperm!(suffixArray, suffixes)
 

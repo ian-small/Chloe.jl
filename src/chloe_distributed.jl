@@ -68,10 +68,10 @@ end
 #     [tsk for p in ps for tsk in sendto(p; args...) ]
 # end
 
-function readDefaultReferences()
-    refsdir = joinpath(HERE, "..", DEFAULT_REFS)
-    template = joinpath(HERE, "..", DEFAULT_TEMPLATE)
-    readReferences(refsdir, template)
+function readDefaultReferences(;verbose::Bool=true, forward_only::Bool=false)
+    refsdir = normpath(joinpath(HERE, "..", DEFAULT_REFS))
+    template = normpath(joinpath(HERE, "..", DEFAULT_TEMPLATE))
+    readReferences(refsdir, template; verbose=verbose, forward_only=forward_only)
 end
 
 
@@ -85,7 +85,8 @@ end
 
 
 function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info";
-    refsdir=DEFAULT_REFS, template=DEFAULT_TEMPLATE)
+    refsdir=DEFAULT_REFS, template=DEFAULT_TEMPLATE, verbose::Bool=true,
+    forward_only::Bool=false)
 
     @everywhere procs begin
         include(joinpath($HERE, "annotate_genomes.jl"))
@@ -93,7 +94,8 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
         include(joinpath($HERE, "tasks.jl"))
 
         set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = readReferences($refsdir, $template)
+        global REFERENCE = readReferences($refsdir, $template; 
+                    verbose=$verbose, forward_only=$forward_only)
     end
     # [ @spawnat p begin
     #     include(joinpath(HERE, "annotate_genomes.jl"))
@@ -107,13 +109,13 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
 
 end
 function arm_procs(procs, backend::MayBeString=nothing, level::String="info";
-    refsdir=DEFAULT_REFS, template=DEFAULT_TEMPLATE)
+    refsdir=DEFAULT_REFS, template=DEFAULT_TEMPLATE, verbose::Bool=true, forward_only::Bool=false)
 
     # use when toplevel has already done
     # @everywhere using Chloe
     @everywhere procs begin
         set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = readReferences($refsdir, $template)
+        global REFERENCE = readReferences($refsdir, $template, verbose=$verbose, forward_only=$forward_only)
     end
     # [ @spawnat p begin
     #     set_global_logger(level, backend; topic="annotator")
@@ -124,16 +126,16 @@ end
 
 function chloe_distributed(full::Bool=true;refsdir="default", address=ZMQ_WORKER,
     template="default", level="warn", workers=3,
-    backend::MayBeString=nothing, broker::MayBeString=nothing)
+    backend::MayBeString=nothing, broker::MayBeString=nothing, forward_only::Bool=false)
 
 
     set_global_logger(level, backend; topic="annotator")
 
     if refsdir == "default"
-        refsdir = joinpath(HERE, "..", DEFAULT_REFS)
+        refsdir = normpath(joinpath(HERE, "..", DEFAULT_REFS))
     end
     if template == "default"
-        template = joinpath(HERE, "..", DEFAULT_TEMPLATE)
+        template = normpath(joinpath(HERE, "..", DEFAULT_TEMPLATE))
     end  
 
     # don't wait for workers to find the wrong directory
@@ -154,13 +156,14 @@ function chloe_distributed(full::Bool=true;refsdir="default", address=ZMQ_WORKER
 
     # arm_procs(procs, reference, backend, level)
     if full
-        arm_procs_full(procs, backend, level, refsdir=refsdir, template=template)
+        arm_procs_full(procs, backend, level, refsdir=refsdir, template=template; forward_only=forward_only)
     else
-        arm_procs(procs, backend, level, refsdir=refsdir, template=template)
+        arm_procs(procs, backend, level, refsdir=refsdir, template=template; forward_only=forward_only)
     end
     
     function arm(new_procs)
-        arm_procs_full(new_procs, backend, level, refsdir=refsdir, template=template)
+        arm_procs_full(new_procs, backend, level, refsdir=refsdir, template=template,
+            forward_only=forward_only)
     end
 
     # it seems impossible to add new workers after the fact
@@ -413,6 +416,9 @@ function get_distributed_args()
         arg_type = String
         metavar = "URL"
         help = "log to zmq endpoint"
+        "--forward-only"
+        action = :store_true
+        help = "only use forward sequences"
 
     end
 
