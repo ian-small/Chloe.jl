@@ -64,8 +64,8 @@ def diff(fa1, fa2, depth, coverage):
 
 
 @click.command()
-@click.option("--depth", default=0.2)
-@click.option("--coverage", default=0.05)
+@click.option("--depth", default=0.2, show_default=True, help="depth \"closeness\"")
+@click.option("--coverage", default=0.05, show_default=True, help="coverage \"closeness\"")
 def run(depth, coverage):
     for sff in os.listdir("testo"):
         if not sff.endswith(".sff"):
