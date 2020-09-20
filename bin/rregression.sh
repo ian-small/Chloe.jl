@@ -3,17 +3,19 @@
 # and compare the current sff output with the original
 TOTAL=3
 if [ $# -eq 0 ]; then
-    echo "expecting DIR [num]" 2>&1
+    echo "expecting DIR [num] [julia args]" 2>&1
     exit 1
 fi
 DIR=$1
+shift
 if [ ! -d $DIR ]; then
     echo "expecting directory" 2>&1
     exit 1
 fi
 
-if [ $# -gt 1 ]; then
-    TOTAL=$2
+if [ $# -gt 0 ]; then
+    TOTAL=$1
+    shift
 fi
 
 if [ ! -d testo ]; then
@@ -33,8 +35,8 @@ fafiles=($(ls $DIR/*.fa))
 # number
 n=${#fafiles[@]}
 if (($n == 0)); then
-        echo -e "$R no files!$O"
-        exit 1
+    echo -e "$R no files!$O"
+    exit 1
 fi
 # find random indexes
 index=($(shuf -i 0-$((n - 1)) -n $TOTAL))
@@ -47,7 +49,7 @@ done
 echo -e "index: ${index[@]}: $TOTAL/${C}$n${O}"
 echo "start annotations with: ${todo[@]}"
 
-JULIA_NUM_THREADS=8 time -p julia chloe.jl -l warn annotate -o testo "${todo[@]}"
+JULIA_NUM_THREADS=8 time -p julia "$@" chloe.jl -l warn annotate -o testo "${todo[@]}"
 
 for idx in ${index[@]}
 do
@@ -62,4 +64,3 @@ do
         echo -e "$R******** test FAILED *******$O"
     fi
 done
-# rm -rf testo
