@@ -1,7 +1,6 @@
 
 <img align="right" alt="Chloe" src="assets/logo-chloe-black.png">
 
-
 # Chloë: Organelle Annotator
 
 To run the annotator or write gff3 or create suffix array files type:
@@ -22,7 +21,7 @@ julia chloe.jl annotate testfa/*.fa
 
 Will create `.sff` files in the testfa directory.
 
-This annotator is available online at: https://chloe.plantenergy.edu.au
+This annotator is available online at: [https://chloe.plantenergy.edu.au](https://chloe.plantenergy.edu.au)
 
 ## Installing dependencies
 
@@ -35,7 +34,7 @@ To actually add these dependencies type
 *or* run
 
 ```julia
-import Pkg; 
+import Pkg
 (open("Project.toml") |> Pkg.TOML.parse)["deps"] |> keys |> collect |> Pkg.add
 ```
 
@@ -45,26 +44,25 @@ You can install Chloe as a julia
 package too.
 Start julia and type `]` to get the package manager prompt. Then type:
 
+```julia
+]dev {path/to/chloe/repo/directory}
 ```
-(@v1.5) pkg> dev {path/to/chloe/repo/directory}
-```
+
 This will make an entry for Chloë in the Manifest for julia.
 Now get julia to compile it by typing `import Chloe` at the *julia* prompt.
 
 You can easily remove Chloë as a package with:
 
-```
-(@v1.5) pkg> rm Chloe
+```julia
+]rm Chloe
 ```
 
 Installing Chloë as a (local) package allows you to take
 advantage of julia's precompilation.
 
-
-
 ## Distributed
 
-* https://docs.julialang.org/en/v1/stdlib/Distributed/index.html
+* [Distributed](https://docs.julialang.org/en/v1/stdlib/Distributed/index.html)
 
 You can of course use julia's Distributed package.
 
@@ -86,7 +84,7 @@ fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
 r = @spawnat :any annotate_one(REFS, fasta)
 io, uid = fetch(r)
 sff = String(take!(io))
-# this works too.., just tell Chloe the filename 
+# this works too.., just tell Chloe the filename
 r = @spawnat :any annotate_one(REFS, "testfa/NC_020019.1.fa")
 r = @spawnat :any annotate_one(REFS, "testfa/NC_020019.1.fa", "write_to_this_file.sff")
 ```
@@ -129,7 +127,6 @@ r = @spawnat :any annotate_one(REFS, "testfa/NC_020019.1.fa")
 This takes advantage of the precompilation of julia packages.
 Also you don't need to be in the repo directory!
 
-
 ## Chloë Server
 
 Running the chloe server. In a terminal type:
@@ -151,7 +148,7 @@ i = APIInvoker("ipc:///tmp/chloe-client");
 apicall(i, "ping") # ping the server to see if is listening.
 
 # fasta and output should be relative to the server'
-# working directory, or specify absolute path names! yes "chloe" 
+# working directory, or specify absolute path names! yes "chloe"
 # should be "annotate" but...
 ret = apicall(i, "chloe", fastafile, outputfile) # outputfile is optional
 code, data = ret["code"], ret["data"]
@@ -161,10 +158,9 @@ code, data = ret["code"], ret["data"]
 sff_fname, elapsed_ms = data["filename"], data["elapsed"]
 # to terminate the server cleanly (after finishing any work)
 apicall(i, "exit")
-
 ```
 
-The *actual* production configuration uses `distributed.jl` 
+The *actual* production configuration uses `distributed.jl`
 (for threading issues) and runs
 the server as a client of a DEALER/ROUTER server
 (see `bin/broker.py` or `src/broker.jl` and the `Makefile`). It *connects* to the
@@ -187,7 +183,6 @@ You can create these by running:
 julia chloe.jl mmap reference_1116/*.fa
 ```
 
-
 ## Running Remotely
 
 The Chloë server can be run remotely through a ssh tunnel.
@@ -203,6 +198,7 @@ ssh  you@bigserver -t -o ExitOnForwardFailure=yes -L 9476:127.0.0.1:9467 \
     'cd /path/to/chloe; JULIA_NUM_THREADS={BIGNUM} /path/to/bin/julia --startup-file=no --color=yes distributed.jl  
     --broker=tcp://127.0.0.1:9467 -l info --workers=4'
 ```
+
 The port `9467` is an entirely random (but hopefully unused both on
 the remote server and locally) port number. The broker port *must* match
 the ssh port specified by `-L`. `{BIGNUM}` is the enormous number
@@ -227,11 +223,11 @@ apicall(i, "exit")
 
 ---
 
-### Developer Notes:
+### Developer Notes
 
 Nothing interesting beyond here....
 
-To stop julia vomiting unhelpful stacktraces when `^Ctrl-C`ing 
+To stop julia vomiting unhelpful stacktraces when `^Ctrl-C`ing
 run julia with `--handle-signals=no`. Don't know what it does
 but `distributed.jl` will just exit on Ctrl-C.
 
@@ -240,17 +236,16 @@ broker (if it's running)
 
 See:
 
-* http://zguide.zeromq.org/py:all#Multithreading-with-ZeroMQ
+* [Multithreading in ZMQ](http://zguide.zeromq.org/py:all#Multithreading-with-ZeroMQ)
 
 Possibly useful REPL packages
 
 * add Revise: reload edited files within REPL
 * add OhMyREPL: pretty print code
 * `@code_warntype f()` check type system
-* add ProfileView: https://github.com/timholy/ProfileView.jl
+* add ProfileView: [ProfileView.jl](https://github.com/timholy/ProfileView.jl)
 
-from [stackoverflow](https://stackoverflow.com/questions/38825626/julia-transferring-methods-between-workers/39216340#39216340): 
-
+from [stackoverflow](https://stackoverflow.com/questions/38825626/julia-transferring-methods-between-workers/39216340#39216340):
 
 There is no way to send a subset of the methods in a package to another machine.
 Very often methods refer to other types and functions in the same module, so the
@@ -270,7 +265,6 @@ you can't add new workers by just sending
 the required code: The new worker seems
 to be expecting a Chloe module. Use `distributed.jl` if you want to expand
 workers dynamically.
-
 
 ### Authors
 

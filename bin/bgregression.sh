@@ -6,7 +6,7 @@ rm -rf testo/*
 O='\e[0m'
 G='\e[1;32m'
 R='\e[1;31m'
-echo "ensure: ${G}make run-chloe-broker$O"
+echo -e "ensure: ${G}make run-chloe-broker$O"
 fafiles=$(ls testfa/*.fa)
 python bin/chloe.py annotate -o testo --workers=4 $fafiles
 for f in $fafiles
@@ -22,4 +22,4 @@ do
     fi
 done
 # python bin/chloe.py terminate -a $A
-rm -rf testo
+# rm -rf testo

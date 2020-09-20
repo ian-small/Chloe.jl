@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os
+from os.path import isfile
 import click
 
 yellow = lambda s: click.style(s, fg="yellow")
@@ -26,7 +27,7 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
         return ", ".join(sorted(s))
 
     def ps(key, n, f1, f2):
-        return f'{prefix}{key} [{yellow(n)}]: "{f1}" {yellow("!=")} "{f2}"'
+        return f'{prefix}{key} [{yellow(n)}]: "{f1}" {yellow("!=")} "{f2}" [ref]'
 
     lines1 = open(fa1).readlines()
     lines2 = open(fa2).readlines()
@@ -48,12 +49,14 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
         if s:
             click.echo(red(f"{prefix}old: {ss(s)}"))
 
+    fields = ["name", "strand", "pos", "length", "phase"]
+    if not skip_comments:
+        fields.append("comment")
+
     for k in set(d1) & set(d2):
         dd1 = d1[k]
         dd2 = d2[k]
-        fields = ["name", "strand", "pos", "length", "phase"]
-        if not skip_comments:
-            fields.append("comment")
+
         for n in fields:
             f1, f2 = dd1[n], dd2[n]
             if not f1 == f2:
@@ -75,15 +78,24 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
 @click.option(
     "--coverage", default=0.05, show_default=True, help='coverage "closeness"'
 )
-@click.option("--src", default="testfa", help="source directory for .sff files")
+@click.option(
+    "--src",
+    default="testfa",
+    type=click.Path(file_okay=False, dir_okay=True),
+    help="source directory for .sff files",
+)
 @click.option("--skip-comments", is_flag=True, help="ignore comment differences")
 def run(depth, coverage, skip_comments, src):
+
     for sff in os.listdir("testo"):
         if not sff.endswith(".sff"):
             continue
 
         fa1 = os.path.join("testo", sff)
         fa2 = os.path.join(src, sff)
+        if not isfile(fa2):
+            click.secho(f"can't find ref file: {fa2}", fg="red")
+            continue
         click.echo(yellow(f"diffing {sff}"))
         diff(fa1, fa2, depth=depth, coverage=coverage, skip_comments=skip_comments)
 

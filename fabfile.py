@@ -6,12 +6,11 @@ from cryptography.utils import CryptographyDeprecationWarning
 
 filterwarnings("ignore", category=CryptographyDeprecationWarning)
 
-
 remote_dir = "/var/www/websites3/annotator"
 
-HOSTS = ["ianc@croppal"]
+HOSTS = ["croppal"]
 
-STILETTO = ["ianc@chloe-stiletto"]
+STILETTO = ["chloe-stiletto"]
 
 
 def git_uptodate(res):
