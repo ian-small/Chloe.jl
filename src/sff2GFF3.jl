@@ -1,9 +1,15 @@
 module Sff2Gff
 export writeallGFF3
 
-import ..Annotator: AFeature, getFeatureType, FeatureArray, readFeatures, groupFeaturesIntoGeneModels
+import ..Annotator: getFeatureType, Feature, readFeatures, groupFeaturesIntoGeneModels
 
-function mergeAdjacentFeaturesinModel!(genome_id, genome_length, strand, model::AFeature)
+struct ModelArray
+    genome_id::String
+    genome_length::Int32
+    strand::Char
+    features::Vector{Feature}
+end
+function mergeAdjacentFeaturesinModel!(model::Vector{Feature}, genome_id, genome_length, strand)
     f1_pointer = 1
     f2_pointer = 2
     while f2_pointer <= length(model)
@@ -18,10 +24,10 @@ function mergeAdjacentFeaturesinModel!(genome_id, genome_length, strand, model::
             f2_pointer += 1
         end
     end
-    return FeatureArray(genome_id, genome_length, strand, model)
+    return ModelArray(genome_id, genome_length, strand, model)
 end
 
-function writeGFF3(outfile, genemodel::FeatureArray)
+function writeGFF3(outfile, genemodel::ModelArray)
     features = genemodel.features
     path_components = split(first(features).path, '/')
     id = path_components[1]
@@ -92,20 +98,30 @@ function writeGFF3(outfile, genemodel::FeatureArray)
     write(outfile, "###\n")
 end
 function writeallGFF3(;sff_files=String[], directory=nothing)
+    
+    function add_models!(models_as_feature_arrays, features, strand)
+        # afeatures = collect(features.interval_tree, Vector{Feature}())
+        afeatures =  Vector{Feature}()
+        for feature in features.interval_tree
+            push!(afeatures, feature)
+        end
+        sort!(afeatures, by=f -> f.path)
+        models = groupFeaturesIntoGeneModels(afeatures)
+        for model in models
+            if isempty(model)
+                continue
+            end
+            push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(model, features.genome_id, features.genome_length, strand))
+        end
+    end
+    
     for infile in sff_files
         fstrand_features, rstrand_features = readFeatures(infile)
+        models_as_feature_arrays = Vector{ModelArray}()
         # for each strand
         # group into gene models
-        fstrand_models = groupFeaturesIntoGeneModels(fstrand_features.features)
-        models_as_feature_arrays = Vector{FeatureArray}()
-        for model in fstrand_models
-            push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome_id, fstrand_features.genome_length, '+', model))
-        end
-
-        rstrand_models = groupFeaturesIntoGeneModels(rstrand_features.features)
-        for model in rstrand_models
-            push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(fstrand_features.genome_id, fstrand_features.genome_length, '-', model))
-        end
+        add_models!(models_as_feature_arrays, fstrand_features, '+')
+        add_models!(models_as_feature_arrays, rstrand_features, '-')
 
         # interleave gene models from both strands
         sort!(models_as_feature_arrays, by=m -> m.features[1].start)

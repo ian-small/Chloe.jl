@@ -193,5 +193,5 @@ const GENETIC_CODE = Dict{String,Char}(
     "GGT" => 'G',"GGC" => 'G',"GGA" => 'G',"GGG" => 'G')
 
 function translateDNA(dna::AbstractString)::String
-    return @inbounds String([get(GENETIC_CODE, SubString(dna, i, i + 2), 'X') for i in 1:3:length(dna) - 2])
+    @inbounds String([get(GENETIC_CODE, SubString(dna, i, i + 2), 'X') for i in 1:3:length(dna) - 2])
 end
