@@ -1,23 +1,13 @@
 
 AlignedBlock = Tuple{Int32,Int32,Int32}
-# AlignedBlock = @NamedTuple begin
-#     src::Int32
-#     tgt::Int32
-#     length::Int32
-# end
-# import Base
-# Base.convert(::Type{AlignedBlock}, t::Tuple{Int32,Int32,Int32}) = AlignedBlock((t[1], t[2], t[3]))
-# Base.convert(::Type{AlignedBlock}, t::Tuple{Int32,Int32,Int64}) = AlignedBlock((t[1], t[2], t[3]))
+AlignedBlocks = Vector{AlignedBlock}
 
-# @inline src_end(b::AlignedBlock) = b.src + b.length
-# @inline tgt_end(b::AlignedBlock) = b.tgt + b.length
 
 const Two = Int32(2)
 const Three = Int32(3)
 
 import .MappedString: MMappedString, ASCII
 
-AlignedBlocks = Vector{AlignedBlock}
 
 @inline function compareSubStrings(a::SubString{MMappedString{ASCII}}, 
                                    b::SubString{MMappedString{ASCII}})::Tuple{Int32,Int}
@@ -25,6 +15,7 @@ AlignedBlocks = Vector{AlignedBlock}
     m = min(la, lb)
 
     count::Int32 = 0
+    one::Int32 = 1
     ia = a.string.ptr
     ib = b.string.ptr
     # compare bytes!
@@ -32,7 +23,7 @@ AlignedBlocks = Vector{AlignedBlock}
         c = ia[i + a.offset]
         d = ib[i + b.offset]
         c ≠ d && return c < d ? (count, -1) : (count, 1)
-        count += one(Int32)
+        count += one
     end
     la == 0 && return lb == 0 ? (count, 0) : (count, -1)
     return (count, 1)
@@ -41,9 +32,10 @@ end
 @inline function compareSubStrings(a::SubString, b::SubString)::Tuple{Int32,Int}
     # a, b = Iterators.Stateful(a), Iterators.Stateful(b)
     count::Int32 = 0
+    one::Int32 = 1
     for (c, d) in zip(a, b)
         c ≠ d && return c < d ? (count, -1) : (count, 1)
-        count += one(Int32)
+        count += one
     end
     isempty(a) && return isempty(b) ? (count, 0) : (count, -1)
     return (count, 1)
@@ -94,7 +86,8 @@ function matchLengthThreshold(m::T, n::T)::Int where {T <: Integer}
     return 26
 end
 
-function lcps2AlignmentBlocks(lcps::AlignedBlocks, circular::Bool, min_run_length::Integer)::AlignedBlocks
+function old_lcps2AlignmentBlocks(lcps::AlignedBlocks, circular::Bool, min_run_length::Integer)::AlignedBlocks
+    # misses check of last element of lcps
     seqlen = length(lcps)
     aligned_blocks = AlignedBlocks()
     a_start = lcps[1][1]
@@ -121,6 +114,37 @@ function lcps2AlignmentBlocks(lcps::AlignedBlocks, circular::Bool, min_run_lengt
             b_start = lcp[2]
             pointer = b_start
         end
+    end
+    return aligned_blocks
+end
+function lcps2AlignmentBlocks(lcps::AlignedBlocks, circular::Bool, min_run_length::Integer)::AlignedBlocks
+    aligned_blocks = AlignedBlocks()
+    b_start = -1
+
+    for lcp in lcps
+        if lcp[2] == b_start + 1
+            b_start += 1
+            continue
+        end
+
+        if lcp[3] >= min_run_length
+            if isempty(aligned_blocks)
+                push!(aligned_blocks, lcp)
+            else
+                # see if we overlap with last added block; if so, only keep longest block
+                p_start, _, p_run_length = aligned_blocks[end]
+                a_start, _, a_run_length = lcp
+                if rangesOverlap(a_start, a_run_length, p_start, p_run_length)
+                    if a_run_length > p_run_length
+                        aligned_blocks[end] = lcp
+                    end
+                else
+                    push!(aligned_blocks, lcp)
+                end
+            end
+        end
+        b_start = lcp[2]
+
     end
     return aligned_blocks
 end
@@ -158,8 +182,8 @@ function fillGap(block1::AlignedBlock, block2::AlignedBlock,
  
     # align gap SAs to get lcps
     gap_lcps = alignSAs(refloop, ref_gap_SA, tgtloop, tgt_gap_SA)
-    gap_blocks = lcps2AlignmentBlocks(gap_lcps, false, matchLengthThreshold(ref_gap, tgt_gap))
-    return gap_blocks
+
+    lcps2AlignmentBlocks(gap_lcps, false, matchLengthThreshold(ref_gap, tgt_gap))
 end
 
 
@@ -203,6 +227,7 @@ function fillAllGaps!(aligned_blocks::AlignedBlocks,
             block1_pointer += 1
             block2_pointer += 1
         else
+            # insert before block pointer 2
             splice!(aligned_blocks, block2_pointer:block2_pointer - 1, new_blocks)
         end
     end
