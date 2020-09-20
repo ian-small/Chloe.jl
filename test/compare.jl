@@ -24,6 +24,7 @@ end
     m = min(la, lb)
 
     count::Int32 = 0
+    one::Int32 = 1
     ia = a.string.ptr
     ib = b.string.ptr
     # compare bytes!
@@ -31,30 +32,33 @@ end
         c = ia[i + a.offset]
         d = ib[i + b.offset]
         c ≠ d && return c < d ? (count, -1) : (count, 1)
-        count += one(Int32)
+        count += one
     end
     la == 0 && return lb == 0 ? (count, 0) : (count, -1)
     return (count, 1)
 end
 
 @inline function compareSubStrings(a::SubString, b::SubString)::Tuple{Int32,Int}
-# a, b = Iterators.Stateful(a), Iterators.Stateful(b)
     count::Int32 = 0
+    one::Int32 = 1
     @inbounds for (c, d) in zip(a, b)
         c ≠ d && return c < d ? (count, -1) : (count, 1)
-        count += one(Int32)
+        count += one
     end
     isempty(a) && return isempty(b) ? (count, 0) : (count, -1)
     return (count, 1)
 end
 
 function timeit()
-    n = 1000000
-    s = String(gen_ascii(n))
-    m = MMappedString{ASCII}(s)
-    @test m == s
-    println("length: ", length(m))
-    ranges = [rrange(n) for i in 1:2000]
+    n = 200000
+    t = 4000
+    v = gen_ascii(n)
+    m = MMappedString{ASCII}(v)
+    s = String(copy(v)) # copy to stop setting v to 0
+
+    @test s == m
+    println("seq length: $(length(m)) with $(t)x$(t) comparisons")
+    ranges = [rrange(n) for i in 1:t]
     ss = map(r -> SubString(s, r...), ranges)
     mm = map(r -> SubString(m, r...), ranges)
 

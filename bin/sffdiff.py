@@ -2,8 +2,11 @@
 import os
 import click
 
+yellow = lambda s: click.style(s, fg="yellow")
+red = lambda s: click.style(s, fg="red", bold="true")
 
-def diff(fa1, fa2, depth, coverage):
+
+def diff(fa1, fa2, depth, coverage, skip_comments):
     def todict(l):
         # accD/1/CDS/1	+	59145	1491	0	1.010	0.537	0.999
         name, strand, pos, length, i1, f1, f2, f3, com = l[:-1].split("\t")
@@ -16,14 +19,14 @@ def diff(fa1, fa2, depth, coverage):
             avg=float(f1),
             depth=float(f2),
             coverage=float(f3),
-            comment=com,
+            comment=com.strip(),
         )
 
     def ss(s):
-        return ', '.join(sorted(s))
+        return ", ".join(sorted(s))
 
-    def ps(*s):
-        return prefix+ ' '.join(str(v) for v in s)
+    def ps(key, n, f1, f2):
+        return f'{prefix}{key} [{yellow(n)}]: "{f1}" {yellow("!=")} "{f2}"'
 
     lines1 = open(fa1).readlines()
     lines2 = open(fa2).readlines()
@@ -36,21 +39,25 @@ def diff(fa1, fa2, depth, coverage):
     d2 = {d["name"]: d for l in lines2[1:] for d in [todict(l)]}
     if d1 == d2:
         return
-    prefix = '\t'
+    prefix = "\t"
     if d1.keys() != d2.keys():
         s = set(d1) - set(d2)
         if s:
-            click.secho(f"{prefix}new: {ss(s)}", fg="red")
+            click.echo(red(f"{prefix}new: {ss(s)}"))
         s = set(d2) - set(d1)
         if s:
-            click.secho(f"{prefix}old: {ss(s)}", fg="red")
+            click.echo(red(f"{prefix}old: {ss(s)}"))
 
     for k in set(d1) & set(d2):
         dd1 = d1[k]
         dd2 = d2[k]
-        for n in ["name", "strand", "pos", "length", "phase", "comment"]:
-            if not dd1[n] == dd2[n]:
-                click.secho(ps(k, n, dd1[n], dd2[n]))
+        fields = ["name", "strand", "pos", "length", "phase"]
+        if not skip_comments:
+            fields.append("comment")
+        for n in fields:
+            f1, f2 = dd1[n], dd2[n]
+            if not f1 == f2:
+                click.secho(ps(k, n, f1, f2))
 
         for n in ["avg", "coverage"]:
             f1, f2 = dd1[n], dd2[n]
@@ -64,17 +71,21 @@ def diff(fa1, fa2, depth, coverage):
 
 
 @click.command()
-@click.option("--depth", default=0.2, show_default=True, help="depth \"closeness\"")
-@click.option("--coverage", default=0.05, show_default=True, help="coverage \"closeness\"")
-def run(depth, coverage):
+@click.option("--depth", default=0.2, show_default=True, help='depth "closeness"')
+@click.option(
+    "--coverage", default=0.05, show_default=True, help='coverage "closeness"'
+)
+@click.option("--src", default="testfa", help="source directory for .sff files")
+@click.option("--skip-comments", is_flag=True, help="ignore comment differences")
+def run(depth, coverage, skip_comments, src):
     for sff in os.listdir("testo"):
         if not sff.endswith(".sff"):
             continue
 
         fa1 = os.path.join("testo", sff)
-        fa2 = os.path.join("testfa", sff)
-        click.secho(f"diffing {sff}", fg="yellow")
-        diff(fa1, fa2, depth=depth, coverage=coverage)
+        fa2 = os.path.join(src, sff)
+        click.echo(yellow(f"diffing {sff}"))
+        diff(fa1, fa2, depth=depth, coverage=coverage, skip_comments=skip_comments)
 
 
 if __name__ == "__main__":

@@ -2,12 +2,15 @@
 if [ ! -d testo ]; then
     mkdir testo
 fi
+
+rm -rf testo/*
+
 O='\e[0m'
 G='\e[1;32m'
 R='\e[1;31m'
-rm -rf testo/*
+
 echo "start annotations..."
-JULIA_NUM_THREADS=8 time -p julia chloe.jl -l info annotate -o testo testfa/*.fa
+JULIA_NUM_THREADS=8 time -p julia "$@" chloe.jl -l info annotate -o testo testfa/*.fa
 for f in $(ls testo)
 do 
     echo "diffing $f"

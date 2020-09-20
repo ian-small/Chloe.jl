@@ -26,6 +26,7 @@ function JuliaWebAPI.juliaformat(fmt::TerminatingJSONMsgFormat, msgstr)
             error("wrong arguments")
         end
         if getpid() != pid[1]
+            # ROUTER has sent a terminate command to wrong process
             error("exit: incorrect process")
         end
         ret["cmd"] = ":terminate"
