@@ -15,16 +15,35 @@ AlignedBlock = Tuple{Int32,Int32,Int32}
 const Two = Int32(2)
 const Three = Int32(3)
 
+import .MappedString: MMappedString, ASCII
 
 AlignedBlocks = Vector{AlignedBlock}
 
+@inline function compareSubStrings(a::SubString{MMappedString{ASCII}}, 
+                                   b::SubString{MMappedString{ASCII}})::Tuple{Int32,Int}
+    la, lb = length(a), length(b)
+    m = min(la, lb)
+
+    count::Int32 = 0
+    ia = a.string.ptr
+    ib = b.string.ptr
+    # compare bytes!
+    @inbounds for i in 1:m
+        c = ia[i + a.offset]
+        d = ib[i + b.offset]
+        c ≠ d && return c < d ? (count, -1) : (count, 1)
+        count += one(Int32)
+    end
+    la == 0 && return lb == 0 ? (count, 0) : (count, -1)
+    return (count, 1)
+end
 
 @inline function compareSubStrings(a::SubString, b::SubString)::Tuple{Int32,Int}
     # a, b = Iterators.Stateful(a), Iterators.Stateful(b)
     count::Int32 = 0
     for (c, d) in zip(a, b)
         c ≠ d && return c < d ? (count, -1) : (count, 1)
-        count += 1
+        count += one(Int32)
     end
     isempty(a) && return isempty(b) ? (count, 0) : (count, -1)
     return (count, 1)

@@ -20,6 +20,7 @@ struct ASCII end
 struct MMappedString{T <: Union{Unicode,ASCII}} <: AbstractString
     ptr::Vector{UInt8}
 end
+# Base.eltype(::Type{MMappedString}) = Char
 
 MMappedString(ptr) = MMappedString{Unicode}(ptr)
 
@@ -29,7 +30,9 @@ MMappedString(s::String) = MMappedString(Vector{UInt8}(s)) # copy unfortunately
 MMappedString{ASCII}(s::String) = MMappedString{ASCII}(Vector{UInt8}(s))
 
 
-Base.:(==)(x::MMappedString, y::MMappedString) = x.ptr == y.ptr
+
+@inline Base.:(==)(x::MMappedString, y::MMappedString) = x.ptr == y.ptr
+@inline Base.cmp(a::MMappedString, b::MMappedString) = Base.cmp(a.ptr, b.ptr)
 
 Base.:(==)(x::String, y::MMappedString) = begin
     sa = sizeof(x)
@@ -38,10 +41,9 @@ end
 
 Base.:(==)(y::MMappedString, x::String) = x == y
 
-Base.cmp(a::MMappedString, b::MMappedString) = Base.cmp(a.ptr, b.ptr)
 
 Base.cmp(a::String, b::MMappedString) = begin
-    al, bl = sizeof(a), length(b)
+    al, bl = sizeof(a), length(b.ptr)
     c = Base._memcmp(a, pointer(b.ptr), min(al, bl))
     c < 0 ? -1 : c > 0 ? +1 : Base.cmp(al, bl)
 end
@@ -80,6 +82,7 @@ Base.pointer(s::MMappedString, i::Integer) = pointer(s.ptr, i)
 @propagate_inbounds Base.getindex(s::MMappedString, r::UnitRange{<:Integer}) = s[Int(first(r)):Int(last(r))]
 
 @propagate_inbounds Base.getindex(s::MMappedString, r::UnitRange{Int}) = utf8_getindex(s.ptr, r)
+# @propagate_inbounds getindex(s::MMappedString, r::UnitRange{Int}) = SubString(s, r)
 
 @propagate_inbounds Base.length(s::MMappedString) = utf8_length(s.ptr)
 
@@ -91,11 +94,40 @@ Base.pointer(s::MMappedString, i::Integer) = pointer(s.ptr, i)
 
 @propagate_inbounds Base.isascii(s::MMappedString) = utf8_isascii(s.ptr)
 
+@propagate_inbounds Base.String(s::MMappedString) = begin
+    parent = s.ptr
+    return GC.@preserve parent Base.unsafe_string(pointer(parent), length(s.ptr))
+end
+
+# substrings 
+
+@propagate_inbounds Base.String(s::SubString{MMappedString}) = begin
+    parent = s.string.ptr
+    return GC.@preserve parent Base.unsafe_string(pointer(parent, s.offset + 1), s.ncodeunits)
+end
+
+function Base.cmp(sa::SubString{Union{MMappedString,String}}, sb::Union{String,SubString{MMappedString}})
+
+    na = sizeof(sa)
+    nb = sizeof(sb)
+    c = Base._memcmp(pointer(sa), pointer(sb), min(na, nb))
+    return c < 0 ? -1 : c > 0 ? +1 : cmp(na, nb)
+end
+
+# reverse comparisons
+Base.cmp(sb::SubString{MMappedString}, sa::SubString{String}) = -Base.cmp(sa, sb)
+Base.cmp(sb::String, sa::SubString{MMappedString}) = -Base.cmp(sa, sb)
+
+Base.pointer(x::SubString{MMappedString}) = pointer(x.string.ptr) + x.offset
+Base.pointer(x::SubString{MMappedString}, i::Integer) = pointer(x.string.ptr) + x.offset + (i - 1)
 
 # specializations
 
 ## Must be ASCII! (Not e.g. latin1). Otherwise the bitwise equality above
 # would not work and latin1 from 0x80 up are 2 byte representations in utf-8
+
+# The use of MMappedString{ASCII} is that now length, lastindex, m[i] *won't* need to
+# do a scan of the bytes to find the number of characters
 
 Base.show(io::IO, s::MMappedString{ASCII}) = begin
     print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr)) of type $(Base.codeunit(s)) ASCII only")
@@ -125,4 +157,18 @@ end
 
 @propagate_inbounds Base.getindex(s::MMappedString{ASCII}, r::UnitRange{Int}) = ascii_getindex(s.ptr, r)
 
+# the problem here is that MMappedString{Unicode} might
+# actually be ASCII so x.ptr == y.ptr will be *way* quicker than scanning the characters.
+# you can have all charaters the same:
+# all([a == b for (a,b) in zip(string, mmap)) && length(string) == length(mmap)
+# *and* string != mmap
+AString = Union{String,MMappedString{Unicode}}
+function allow_latin1()
+    @eval begin
+        @propagate_inbounds Base.:(==)(m::MMappedString{ASCII}, s::String) = latin1_eq(m.ptr, s)
+        @propagate_inbounds Base.:(==)(s::String, m::MMappedString{ASCII}) =  m == s
+        @propagate_inbounds Base.cmp(m::MMappedString{ASCII}, s::String) = latin1_cmp(m.ptr, s)
+        @propagate_inbounds Base.cmp(s::String, m::MMappedString{ASCII}) = -Base.cmp(m, s)
+    end
+end
 end
