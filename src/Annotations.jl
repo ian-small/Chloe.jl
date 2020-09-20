@@ -100,7 +100,7 @@ datasize(a::Annotation) = sizeof(Annotation) + sizeof(a.genome_id)
 function addAnnotation(genome_id::String, feature::Feature, block::AlignedBlock)::Union{Nothing,Annotation}
     startA = max(feature.start, block[1])
     flength = min(feature.start + feature.length, block[1] + block[3]) - startA
-    flength <= 0 && return
+    flength <= 0 && return nothing
     feature_type = getFeatureType(feature)
     offset5 = startA - feature.start
     if (feature_type == "CDS")
@@ -244,7 +244,7 @@ function fillFeatureStack(target_length::Int32, annotations::Vector{Annotation},
     return stacks, shadowstack
 end
 
-function expandBoundaryInChunks(feature_stack::FeatureStack, shadowstack::ShadowStack, origin, direction, max)::Integer
+function expandBoundaryInChunks(feature_stack::FeatureStack, shadowstack::ShadowStack, origin, direction, max)::Int
     glen = length(shadowstack)
     pointer = origin
 
@@ -332,24 +332,11 @@ function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Vector
     end
     if length(phases) == 0
         @warn "No annotations found for $(feat.path)"
-        return 0
+        return zero(Int8)
     end
     return StatsBase.mode(phases) # return most common phase
 end
 
-# function weightedMode(values::Vector{Int32}, weights::Vector{Float32})::Int32
-#     weightedCounts = zeros(0, 2)
-#     for (v, w) in zip(values, weights)
-#         row = findfirst(isequal(v), weightedCounts[:,1])
-#         if isnothing(row)
-#             weightedCounts = vcat(weightedCounts, [v w])
-#         else
-#             weightedCounts[row,2] += w
-#         end
-#     end
-#     maxweight, maxrow = findmax(weightedCounts[:,2])
-#     return Int32(weightedCounts[maxrow,1])
-# end
 
 function weightedMode(values::Vector{Int32}, weights::Vector{Float32})::Int32
     w, v = findmax(StatsBase.addcounts!(Dict{Int32,Float32}(), values, weights))
@@ -730,28 +717,7 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
     return gene_models
 end
 
-# MaybeFeature = Union{Feature,Nothing}
-# MaybeAFeature = Union{AFeature,Nothing}
-# function getFeatureByName(fname::String, features::FeatureArray)::MaybeFeature
-#     for feat in features.features
-#         if isFeatureName(feat, fname)
-#             return feat
-#         end
-#     end
-#     return nothing
-# end
 
-# function getGeneModelByName(gm_name::String, gene_models::AAFeature)::MaybeAFeature
-#     for model in gene_models
-#         if isempty(model)
-#             continue
-#         end
-#         if isFeatureName(model[1], gm_name)
-#             return model::AFeature
-#         end
-#     end
-#     return nothing
-# end
 
 struct SFF
     gene::String
@@ -868,14 +834,9 @@ end
 
 function calc_maxlengths(fstrand_models::AAFeature, rstrand_models::AAFeature)::Dict{String,Int32}
     maxlengths = Dict{String,Int32}()
-    # if length(fstrand_models) != length(rstrand_models) 
-    #     @warn "forward=$(length(fstrand_models)) != reverse=$(length(rstrand_models))"
-    # end
-    # FIXME XXXX TODO
-    # m = min(length(fstrand_models), length(rstrand_models))
     
     function add_model(models)
-        for model in models# [1:m]
+        for model in models
             if !isempty(model)
                 gene = getFeatureName(first(model))
                 maxlengths[gene] = max(gene_length(model), get(maxlengths, gene, 0))
