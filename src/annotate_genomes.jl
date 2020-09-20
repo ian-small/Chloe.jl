@@ -105,10 +105,11 @@ end
 
 function read_mmap_suffix(filename::String; forward_only::Bool=false)
     size = filesize(filename)
-    if isodd(size) && !forward_only
-        error("memory mapped file \"$(filename)\" has been generated with forward sequences only (run with --forward-only)!")
-    end
-    if isodd(size) && forward_only
+    if isodd(size)
+        if !forward_only
+            error("memory mapped file \"$(filename)\" has been generated with forward sequences only (run with --forward-only)!")
+        end
+
         return read_mmap_suffix_forward_only(filename)
     end
     # may as well mmap everything even thou we don't need it....

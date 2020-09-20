@@ -190,7 +190,7 @@ function readTemplates(file::String)::Tuple{Dict{String,FeatureTemplate},Dict{St
                 parse(Float32, fields[3]),
                 parse(Int32, fields[4]))
             if haskey(templates, template.path)
-                error("duplicate path: $(template.path) in \"$file\"")
+                @error "duplicate path: $(template.path) in \"$file\""
             end
             templates[template.path] = template
             # push!(templates, template)
@@ -224,7 +224,8 @@ function fillFeatureStack(target_length::Int32, annotations::Vector{Annotation},
         template = get(feature_templates, annotation.path, nothing)
         # template_index = findfirst(x -> x.path == annotation.path, templates)
         if template === nothing
-            error("Can't find template for $(annotation.path)")
+            @error "Can't find template for $(annotation.path)"
+            continue
         end
         index = get(indexmap, annotation.path, nothing)
         if index === nothing
@@ -321,9 +322,8 @@ function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowSt
 end
 
 function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Vector{Annotation})::Int8
-    matching_annotations = findall(x -> x.path == feat.path, annotations)
     phases = Int8[]
-    for annotation in annotations[matching_annotations]
+    for annotation in annotations[findall(x -> x.path == feat.path, annotations)]
         if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
             # estimating feature phase from annotation phase
             phase = phaseCounter(annotation.phase, feat.start - annotation.start)
@@ -349,7 +349,7 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::Vector{Anno
     # grab all the matching features
     matching_annotations = findall(x -> x.path == feat.path, annotations)
     isempty(matching_annotations) && return #  feat, [], []
-    overlapping_annotations = []
+    overlapping_annotations = Annotation[]
     minstart = target_length
     maxend = 1
     for annotation in annotations[matching_annotations]
@@ -485,10 +485,10 @@ function findStartCodon2!(cds::Feature, genome_length::Integer, genomeloop::DNAS
     phase = zeros(window_size)
     cumulative_stack_coverage = zeros(window_size)
     cumulative_shadow_coverage = zeros(window_size)
-    i = 1
+
     stack_coverage = 0
     shadow_coverage = 0
-    for nt in search_range
+    for (i, nt) in enumerate(search_range)
         codon = SubString(genomeloop, nt, nt + 2)
         codons[i] = startScore(cds, codon)
         if i % 3 == 1
@@ -499,9 +499,10 @@ function findStartCodon2!(cds::Feature, genome_length::Integer, genomeloop::DNAS
         elseif shadowstack[nt] < 0
             shadow_coverage -= 1
         end
-        if stack_coverage > 3; cumulative_stack_coverage[i] = 3 - stack_coverage; end
+        if stack_coverage > 3
+            cumulative_stack_coverage[i] = 3 - stack_coverage
+        end
         cumulative_shadow_coverage[i] = shadow_coverage
-        i += 1
     end
 
     predicted_starts = zeros(window_size)

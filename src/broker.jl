@@ -47,7 +47,7 @@ function check_endpoints(endpoints::String...)
             ZMQ.close(router)
         end
     end
-    nothing
+    nothing # OK
 
 end
 function start_broker(worker_url::String, client_url::String)
