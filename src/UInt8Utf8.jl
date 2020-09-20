@@ -7,6 +7,8 @@ export utf8_iterate, utf8_length, utf8_nextind, utf8_prevind, utf8_thisind
 export ascii_getindex, ascii_isvalid, ascii_length, ascii_iterate
 export ascii_nextind, ascii_prevind, ascii_thisind
 
+export latin1_eq,latin1_cmp
+
 import Base
 import Base: @propagate_inbounds
 
@@ -146,7 +148,7 @@ function getindex_continued(s::Vector{UInt8}, i::Int, u::UInt32)
     return reinterpret(Char, u)
 end
 
-@inline function utf8_getindex(s::Vector{UInt8}, r::UnitRange{Int})
+@propagate_inbounds function utf8_getindex(s::Vector{UInt8}, r::UnitRange{Int})
     isempty(r) && return ""
     i, j = first(r), last(r)
     @boundscheck begin
@@ -262,6 +264,25 @@ end
     isempty(r) && return ""
     return (@view s[r]) .|> Char |> String
 end
+
+# we have to scan the bytes since bitwise the representations are different
+
+@propagate_inbounds function latin1_eq(v::Vector{UInt8}, s::AbstractString)
+
+    @inbounds for (a, b) in zip(v, s)
+        Char(a) !== b && return false 
+    end
+    return length(s) == length(v)
+end
+
+@propagate_inbounds function latin1_cmp(v::Vector{UInt8}, s::AbstractString)
+    @inbounds for (a, b) in zip(v, s)
+        c = Base.cmp(Char(a), b)
+        c != 0 && return c
+    end
+    return Base.cmp(length(v), length(s))
+end
+
 
 end
 
