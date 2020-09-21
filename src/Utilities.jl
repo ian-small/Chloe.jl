@@ -41,6 +41,7 @@ function maybe_gzread(f::Function, filename::String)
         open(f, filename)
     end
 end
+
 function maybe_gzwrite(f::Function, filename::String)
     
     function gzcompress(f::Function, fp::IO)
@@ -58,6 +59,7 @@ function maybe_gzwrite(f::Function, filename::String)
         open(f, filename, "w")
     end
 end
+
 function readFasta(fasta::String)::Tuple{String,String}
     if !isfile(fasta)
         error("$(fasta): not a file!")
@@ -66,6 +68,7 @@ function readFasta(fasta::String)::Tuple{String,String}
         readFasta(io)
     end
 end
+
 function readFasta(f::IO)::Tuple{String,String}
     seqs = Vector{String}()
     header = strip(readline(f))
@@ -87,14 +90,7 @@ function readFasta(f::IO)::Tuple{String,String}
     return string(nc_id), join(seqs, "")
 end
 
-const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 
-                  'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
-    
-function revComp(dna::AbstractString)::String # where {T <: AbstractString}
-    reverse(map(x -> get(COMP, x, 'N'), dna))
-end
-
-@inline function frameCounter(base::T, addition::T) where {T <: Integer}
+@inline function frameCounter(base::Int8, addition::Int32)
     result = (base - addition) % 3
     if result <= 0
         result = 3 + result
@@ -102,15 +98,29 @@ end
     result
 end
 
-@inline function phaseCounter(base::Int8, addition::Int32)::Int8
-    result = (base - addition) % 3
+@inline function phaseCounter(base::Int8, addition::Integer)::Int8
+    result::Int8 = (base - addition) % 3
     if result < 0
-        result = 3 + result
+        result = Int8(3) + result
     end
     result
 end
 
-@inline function rangesOverlap(start1::T, length1::T, start2::T, length2::T)::Bool where {T <: Integer}
+@inline function genome_wrap(genome_length::Integer, position::Integer)
+    if 0 < position ≤ genome_length
+    return position
+    end
+    while position > genome_length
+        position -= genome_length
+    end 
+    while position ≤ 0
+        position += genome_length
+    end
+    position
+end
+
+
+@inline function rangesOverlap(start1::Int32, length1::Int32, start2::Int32, length2::Int32)::Bool
     if start1 >= start2 + length2 || start2 >= start1 + length1
         return false
     end
@@ -118,42 +128,29 @@ end
 end
 
 
-@inline function genome_wrap(genome_length::T, position::T)::T where {T <: Integer}
-    if 0 < position <= genome_length
-        return position
-    end
-    while position <= 0
-        position = position + genome_length
-    end
-    while position > genome_length
-        position = position - genome_length
-    end
-    position
-end
-
 # wraps range within genome loop
-Base.@propagate_inbounds function range_wrap!(range::UnitRange{T}, genome_length::T)::UnitRange{T} where {T <: Integer}
-    @boundscheck range.start <= range.stop  && genome_length > 0 || throw(BoundError("start after stop"))
-    loop_length = genome_length + genome_length - 1
-    # if start of range is negative, move range to end of genome
-    while range.start <= 0
-        lengthminus1 = range.stop - range.start
-        range.start += genome_length
-        range.stop = range.start + lengthminus1
-    end
-    # if end of range is beyond end of loop, move range to beginning of loop
-    while range.stop > loop_length
-        range.start -= genome_length
-        range.stop -= genome_length
-    end
-    # if start of range is beyond end of genome, move range to beginning of genome
-    while range.start > genome_length
-        range.start -= genome_length
-        range.stop -= genome_length
-    end
-    @boundscheck 0 < range.start <= genome_length &&  0 < range.stop <= loop_length || throw(BoundsError("out of range"))
-    return range
-end
+# Base.@propagate_inbounds function range_wrap!(range::UnitRange{T}, genome_length::T)::UnitRange{T} where {T <: Integer}
+#     @boundscheck range.start <= range.stop  && genome_length > 0 || throw(BoundError("start after stop"))
+#     loop_length = genome_length + genome_length - 1
+#     # if start of range is negative, move range to end of genome
+#     while range.start <= 0
+#         lengthminus1 = range.stop - range.start
+#         range.start += genome_length
+#         range.stop = range.start + lengthminus1
+#     end
+#     # if end of range is beyond end of loop, move range to beginning of loop
+#     while range.stop > loop_length
+#         range.start -= genome_length
+#         range.stop -= genome_length
+#     end
+#     # if start of range is beyond end of genome, move range to beginning of genome
+#     while range.start > genome_length
+#         range.start -= genome_length
+#         range.stop -= genome_length
+#     end
+#     @boundscheck 0 < range.start <= genome_length &&  0 < range.stop <= loop_length || throw(BoundsError("out of range"))
+#     return range
+# end
 
 function isStartCodon(codon::AbstractString, allow_editing::Bool, allow_GTG::Bool)::Bool
     codon == "ATG" && return true
@@ -194,4 +191,88 @@ const GENETIC_CODE = Dict{String,Char}(
 
 function translateDNA(dna::AbstractString)::String
     @inbounds String([get(GENETIC_CODE, SubString(dna, i, i + 2), 'X') for i in 1:3:length(dna) - 2])
+end
+
+const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 
+                  'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
+    
+function revComp(dna::AbstractString)::String
+    String(reverse(map(x -> get(COMP, x, 'N'), dna)))
+end
+
+# --- wrapped iterators
+
+struct ModuloIteratorState{T <: Integer}
+    start::T
+    step::T
+    length::T # number of iterations
+    gene_length::Int
+end
+struct VModuloIteratorState{T <: Integer,V}
+    start::T
+    step::T
+    length::T # number of iterations
+    v::Vector{V}
+end
+
+Base.length(t::ModuloIteratorState{T}) where {T} = t.length
+Base.eltype(::Type{ModuloIteratorState{T}}) where {T} = T
+Base.IteratorSize(::Type{ModuloIteratorState{T}}) where {T} = Base.HasLength()
+
+Base.length(t::VModuloIteratorState{T,V}) where {T,V} = t.length
+Base.eltype(::Type{VModuloIteratorState{T,V}}) where {T,V} = V
+Base.IteratorSize(::Type{VModuloIteratorState{T,V}}) where {T,V} = Base.HasLength()
+
+function Base.iterate(i::ModuloIteratorState{T}, state=(i.start, i.length)) where {T}
+    pos, n = state
+        n -= 1
+    if n < 0
+        return nothing
+    end
+    pos += i.step
+    m = i.gene_length
+    if pos > m
+        pos -= m
+    elseif pos ≤ 0
+        pos += m
+    end
+    return (pos, (pos, n))
+end
+function Base.iterate(i::VModuloIteratorState{T,V}, state=(i.start, i.length)) where {T,V}
+    pos, n = state
+        n -= 1
+    if n < 0
+        return nothing
+    end
+    pos += i.step
+    m = length(i.v)
+    if pos > m
+        pos -= m
+    elseif pos ≤ 0
+        pos += m
+    end
+    @inbounds v = i.v[pos]
+    return (v, (pos, n))
+end
+function iter_wrap(r::UnitRange{<:Integer}, gene_length::Int)
+    # for i in iter_wrap(-5:5, 10)
+    # 5,6,7,8,9,10,1,2,3,4,5
+    # end
+    start = genome_wrap(gene_length, r.start)
+    return ModuloIteratorState(start - 1, 1, length(r), gene_length)
+end
+function iter_wrap(r::UnitRange{<:Integer}, v::Vector{T}) where {T}
+    @boundscheck 1 ≤ length(v) || throw(Base.BoundsError("step size too large"))
+    start = genome_wrap(length(v), r.start)
+    return VModuloIteratorState(start - 1, 1, length(r), v)
+end
+function iter_wrap(r::StepRange{<:Integer,<:Integer}, gene_length::Int)
+    # @boundscheck abs(r.step) ≤ gene_length || throw(Base.BoundsError("step size too large"))
+    start = genome_wrap(gene_length, r.start)
+    return ModuloIteratorState(start - r.step, r.step, length(r), gene_length)
+end
+function iter_wrap(r::StepRange{<:Integer,<:Integer}, v::Vector{T}) where {T}
+    @boundscheck abs(r.step) ≤ length(v) || throw(Base.BoundsError("step size too large"))
+    start = genome_wrap(gene_length, r.start)
+    return VModuloIteratorState(start - r.step, r.step, length(r), v)
 end
