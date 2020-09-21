@@ -254,17 +254,16 @@ the bigger problem is deciding whose responsibility it is to distribute code,
 and when. For example, initially your library might decide to send itself
 (or parts of itself) to other nodes, but then the user might later want to do a
 parallel map of your library functions, such that the whole library is needed on
-every node. This gets very complex, so it is far simpler for everybody just to load all needed code on all nodes as early as possible.
+every node. This gets very complex, so it is far simpler for everybody just to load
+all needed code on all nodes as early as possible.
 
 ---
 
-This only really is of interest with using the `add_worker` method that tries to add new workers
-to the running server. If the server was
-started by loading `Chloe` as a package then
-you can't add new workers by just sending
-the required code: The new worker seems
-to be expecting a Chloe module. Use `distributed.jl` if you want to expand
-workers dynamically.
+This only really is of interest with using the `add_worker` method that tries 
+to add new workers to the running server. If the server was
+started by loading `Chloe` as a package then you can't add new workers by just sending
+the required code: The new worker seems to be expecting a Chloe module.
+Use `distributed.jl` if you want to expand workers dynamically.
 
 ### Authors
 
