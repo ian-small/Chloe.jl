@@ -29,8 +29,6 @@ MMappedString(s::String) = MMappedString(Vector{UInt8}(s)) # copy unfortunately
 # Must be ASCII! call isvalid(s) to check
 MMappedString{ASCII}(s::String) = MMappedString{ASCII}(Vector{UInt8}(s))
 
-
-
 @inline Base.:(==)(x::MMappedString, y::MMappedString) = x.ptr == y.ptr
 @inline Base.cmp(a::MMappedString, b::MMappedString) = Base.cmp(a.ptr, b.ptr)
 
@@ -162,7 +160,6 @@ end
 # you can have all charaters the same:
 # all([a == b for (a,b) in zip(string, mmap)) && length(string) == length(mmap)
 # *and* string != mmap
-AString = Union{String,MMappedString{Unicode}}
 function allow_latin1()
     @eval begin
         @propagate_inbounds Base.:(==)(m::MMappedString{ASCII}, s::String) = latin1_eq(m.ptr, s)
@@ -171,4 +168,48 @@ function allow_latin1()
         @propagate_inbounds Base.cmp(s::String, m::MMappedString{ASCII}) = -Base.cmp(m, s)
     end
 end
+
+## Regex
+
+# subvert the type checks of julia by disguising MMappedString as a SubString
+Base.occursin(re::Regex , s::MMappedString; offset::Integer=0) = begin
+    Base.occursin(re, SubString(s, 1); offset=offset)
 end
+function startswith(s::MMappedString, r::Regex)
+    Base.startswith(SubString(s, 1), r)
+end
+Base.findnext(r::Regex, s::MMappedString, idx::Integer) = begin
+    Base.findnext(r, SubString(s, 1), idx)
+end
+# don't know why I have to enumerate subclasses
+function Base.match(re::Regex, str::Union{SubString{MMappedString{Unicode}},SubString{MMappedString{ASCII}},MMappedString}, idx::Integer, add_opts::UInt32=UInt32(0))
+    Base.compile(re)
+    opts = re.match_options | add_opts
+    matched, data = Base.PCRE.exec_r_data(re.regex, str, idx - 1, opts)
+    if !matched
+        Base.PCRE.free_match_data(data)
+        return nothing
+    end
+    n = div(Base.PCRE.ovec_length(data), 2) - 1
+    p = Base.PCRE.ovec_ptr(data)
+    mat = SubString(str, Base.unsafe_load(p, 1) + 1, Base.prevind(str, Base.unsafe_load(p, 2) + 1))
+    # needs to be SubString{String} since this is the type of captures field :(
+    cap = Union{Nothing,SubString{String}}[Base.unsafe_load(p, 2i + 1) == Base.PCRE.UNSET ? nothing :
+                                        SubString(str, Base.unsafe_load(p, 2i + 1) + 1,
+                                                Base.prevind(str, Base.unsafe_load(p, 2i + 2) + 1)) for i = 1:n]
+    off = Int[ Base.unsafe_load(p, 2i + 1) + 1 for i = 1:n ]
+    result = RegexMatch(mat, cap, Base.unsafe_load(p, 1) + 1, off, re)
+    Base.PCRE.free_match_data(data)
+    return result
+end
+
+function Base.PCRE.exec(re, subject::Union{SubString{MMappedString{Unicode}},SubString{MMappedString{ASCII}},MMappedString}, offset, options, match_data)
+    rc = ccall((:pcre2_match_8, Base.PCRE.PCRE_LIB), Cint,
+               (Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Csize_t, UInt32, Ptr{Cvoid}, Ptr{Cvoid}),
+               re, subject, ncodeunits(subject), offset, options, match_data, Base.PCRE.get_local_match_context())
+    # rc == -1 means no match, -2 means partial match.
+    rc < -2 && error("PCRE.exec error: $(err_message(rc))")
+    return rc >= 0
+end
+
+end # module
