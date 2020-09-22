@@ -10,18 +10,18 @@ struct ModelArray
     features::Vector{Feature}
 end
 function mergeAdjacentFeaturesinModel!(model::Vector{Feature}, genome_id, genome_length, strand)
-    f1_pointer = 1
-    f2_pointer = 2
-    while f2_pointer <= length(model)
-        f1 = model[f1_pointer]
-        f2 = model[f2_pointer]
+    f1_index = 1
+    f2_index = 2
+    while f2_index <= length(model)
+        f1 = model[f1_index]
+        f2 = model[f2_index]
         # if adjacent features are same type, merge them into a single feature
         if getFeatureType(f1) == getFeatureType(f2)
             f1.length += f2.length
-            deleteat!(model, f2_pointer)
+            deleteat!(model, f2_index)
         else
-            f1_pointer += 1
-            f2_pointer += 1
+            f1_index += 1
+            f2_index += 1
         end
     end
     return ModelArray(genome_id, genome_length, strand, model)

@@ -175,14 +175,24 @@ function read_gwsas(gwsas::String, id::String; forward_only::Bool=false)
 end
 
 function verify_refs(refsdir, template)
-    if ~isfile(template) || ~isdir(refsdir) || ~isfile(joinpath(refsdir, "ReferenceOrganisms.json"))
-        msg = "template: $(template) or refsdir: $(refsdir) is incorrect!"
+ 
+    if ~isdir(refsdir)
+        msg = "Reference directory $(refsdir) is not a directory!"
         @error msg
         throw(ArgumentError(msg))
     end
+
+    for f in [template, joinpath(refsdir, "ReferenceOrganisms.json")]
+        if ~isfile(f)
+            msg = "missing file: $f"
+            @error msg
+            throw(ArgumentError(msg))
+        end
+    end
+
     files = findall(x -> endswith(x, r"\.(gwsas|mmap)"), readdir(refsdir))
     if length(files) == 0
-        msg = "please run `julia chloe.jl mmap $(refsdir)/*.fa`"
+        msg = "please run `julia chloe.jl mmap $(refsdir)/*.{fa,fasta}`"
         @error msg
         throw(ArgumentError(msg))
     end
@@ -194,7 +204,8 @@ end
 
 creates a Reference object to feed into `annotate_one`
 """
-function readReferences(refsdir::String, templates::String; verbose::Bool=true, 
+function readReferences(refsdir::String, templates::String;
+    verbose::Bool=true, 
     forward_only::Bool=false)::Reference
 
     if !isdir(refsdir)
@@ -221,7 +232,7 @@ function readReferences(refsdir::String, templates::String; verbose::Bool=true,
     files = readdir(refsdir)
     idx = findall(x -> endswith(x, ".sff"), files)
     if isempty(idx)
-        error("No sff files found!")
+        error("No sff files found in $(refsdir)!")
     end
     
     sff_files = files[idx]
@@ -243,25 +254,24 @@ function readReferences(refsdir::String, templates::String; verbose::Bool=true,
                 @info "found gwsas file for: $(ref.first)"
             end
         else
-            error("no data file for $(ref.first)")
+            error("no gwsas or mmap file found for \"$(ref.first)\". run `julia chloe.jl mmap --help`")
         end
         idx = findfirst(x -> startswith(x, ref.second), sff_files)
         if idx === nothing
-            idx = findfirst(x -> startswith(x, ref.first))
+            idx = findfirst(x -> startswith(x, ref.first), sff_files)
         end
         if idx === nothing
             # TODO check for fasta files
             error("no sff file for $(ref.first) -> $(ref.second)")
         end
-        feature_file = sff_files[idx]
-        f_strand_features, r_strand_features = readFeatures(joinpath(refsdir, feature_file))
+        f_strand_features, r_strand_features = readFeatures(joinpath(refsdir, sff_files[idx]))
 
         ref_features[i] = FwdRev(f_strand_features, r_strand_features)
         refsrc[i] = ref.first
 
     end
     if mmaps != length(refsrc)
-        @info "better to use memory mapped files use: `julia chloe.jl mmap $(refsdir)/*.fa`"
+        @info "better to use memory mapped files use: `julia chloe.jl mmap $(refsdir)/*.{fa,fasta}`"
     end
     feature_templates, gene_exons = readTemplates(templates)
     ret = Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons, forward_only)
@@ -315,7 +325,7 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
             end
             path_to_stack[stack.path] = stack
         else
-            @debug "[$target_id]$strand Below threshold: $(stack.path)"
+            @debug "[$target_id]$strand below threshold: $(stack.path): depth=$(@sprintf "%.3f" depth) coverage=$( @sprintf "%.3f" coverage)"
         end
     end
 

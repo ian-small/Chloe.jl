@@ -39,7 +39,6 @@ end
 # https://github.com/ChrisRackauckas/ParallelDataTransfer.jl
 # function sendto(p::Int; args...)
 #     for (nm, val) in args
-#         @debug "sending $val to $p as $nm"
 #         @spawnat(p, Base.eval(Main, Expr(:(=), nm, val)))
 #     end
 # end
@@ -47,7 +46,6 @@ end
 # function sendto(p::Int; args...)
     
 #     function send(nm, val)
-#         @debug "sending $val to $p as $nm"
 #         @spawnat p Base.eval(Main, Expr(:(=), nm, val))
 #     end
 
