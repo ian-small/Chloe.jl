@@ -192,6 +192,9 @@ const GENETIC_CODE = Dict{String,Char}(
 function translateDNA(dna::AbstractString)::String
     @inbounds String([get(GENETIC_CODE, SubString(dna, i, i + 2), 'X') for i in 1:3:length(dna) - 2])
 end
+function translateDNA(dna::AbstractString, start::Integer, stop::Integer)::String
+    String([get(GENETIC_CODE, SubString(dna, i, i + 2), 'X') for i in start:3:stop])
+end
 
 const COMP = Dict('A' => 'T', 'T' => 'A', 'G' => 'C', 'C' => 'G', 
                   'R' => 'Y', 'Y' => 'R', 'N' => 'N', 'X' => 'X')
@@ -258,6 +261,7 @@ function iter_wrap(r::UnitRange{<:Integer}, gene_length::Int)
     # for i in iter_wrap(-5:5, 10)
     # 5,6,7,8,9,10,1,2,3,4,5
     # end
+    @boundscheck 1 ≤ gene_length || throw(Base.BoundsError("step size too large"))
     start = genome_wrap(gene_length, r.start)
     return ModuloIteratorState(start - 1, 1, length(r), gene_length)
 end
@@ -267,7 +271,7 @@ function iter_wrap(r::UnitRange{<:Integer}, v::Vector{T}) where {T}
     return VModuloIteratorState(start - 1, 1, length(r), v)
 end
 function iter_wrap(r::StepRange{<:Integer,<:Integer}, gene_length::Int)
-    # @boundscheck abs(r.step) ≤ gene_length || throw(Base.BoundsError("step size too large"))
+    @boundscheck abs(r.step) ≤ gene_length || throw(Base.BoundsError("step size too large"))
     start = genome_wrap(gene_length, r.start)
     return ModuloIteratorState(start - r.step, r.step, length(r), gene_length)
 end
