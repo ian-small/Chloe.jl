@@ -74,7 +74,7 @@ end
 
 
 function human(num::Int)::String
-    if num === 0
+    if num == 0
         return "0B"
     end
     magnitude = floor(Int, log10(abs(num)) / 3)
@@ -265,9 +265,9 @@ function readReferences(refsdir::String, templates::String; verbose::Bool=true,
     end
     feature_templates, gene_exons = readTemplates(templates)
     ret = Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons, forward_only)
-    
+
     @info ret
-    
+    GC.gc() # cleanup
     return ret
 end
 
@@ -292,13 +292,13 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     sort!(annotations, by=x -> x.path)
 
     t4 = time_ns()
-    @info "[$target_id]$strand overlapping ref annotations ($(length(annotations))): $(ns(t4 - start_ns))"
+    @info "[$target_id]$strand overlapping ref annotations ($(length(annotations))) $(human(datasize(annotations))): $(ns(t4 - start_ns))"
 
     # strand_feature_stacks is basically grouped by annotations.path
     strand_feature_stacks, shadow = fillFeatureStack(target_length, annotations, reference.feature_templates)
 
     t5 = time_ns()
-    @info "[$target_id]$strand ref features stacks ($(length(strand_feature_stacks))): $(ns(t5 - t4))"
+    @info "[$target_id]$strand ref features stacks ($(length(strand_feature_stacks))) $(human(datasize(strand_feature_stacks))): $(ns(t5 - t4))"
 
     features = Vector{Feature}()
     # sizehint!(fa, length(strand_feature_stacks))
@@ -332,7 +332,8 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     # group by feature name on **ordered** features getFeatureName()
     target_strand_models = groupFeaturesIntoGeneModels(features)
     # this toys with the feature start, phase etc....
-    target_strand_models = refineGeneModels!(target_strand_models, target_length, targetloop, annotations, strand_feature_stacks)
+    target_strand_models = refineGeneModels!(target_strand_models, target_length, targetloop, annotations,
+                                             path_to_stack)
 
     t8 = time_ns()
     @info "[$target_id]$strand refining gene models: $(ns(t8 - t7))"
@@ -387,7 +388,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
 
     t2 = time_ns()
 
-    @info "[$target_id] made suffix arrays: $(ns(t2 - t1))"
+    @info "[$target_id] made suffix arrays $(human(datasize(target_saf) + datasize(target_raf) + datasize(target_sar) + datasize(target_rar))): $(ns(t2 - t1))"
 
     blocks_aligned_to_targetf = AAlignedBlocks(undef, num_refs)
     blocks_aligned_to_targetr = AAlignedBlocks(undef, num_refs)
@@ -416,7 +417,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
 
     t3 = time_ns()
     
-    @info "[$target_id] aligned: ($(length(reference.refloops))) $(ns(t3 - t2))" 
+    @info "[$target_id] aligned: ($(length(reference.refloops))) $(human(datasize(blocks_aligned_to_targetf) + datasize(blocks_aligned_to_targetr))) $(ns(t3 - t2))" 
 
     coverages = Dict{String,Float32}()
     for (ref, a) in zip(reference.refsrc, blocks_aligned_to_targetf)

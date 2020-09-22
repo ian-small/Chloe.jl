@@ -3,6 +3,7 @@ import JLD
 
 SuffixArray = Vector{Int32}
 
+datasize(a::SuffixArray) = length(a) * sizeof(Int32)
 struct GenomeWithSAs
     id::String
     sequence::String
@@ -11,7 +12,7 @@ struct GenomeWithSAs
 end
 
 datasize(g::GenomeWithSAs) = begin
-    sizeof(GenomeWithSAs) + sizeof(id) + sizeof(g.sequence) + datasize(g.forwardSA) + datasize(g.reverseSA)
+    sizeof(GenomeWithSAs) + sizeof(g.id) + sizeof(g.sequence) + datasize(g.forwardSA) + datasize(g.reverseSA)
 end
 
 # define equality between GenomeWithSAs
