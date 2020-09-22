@@ -561,6 +561,10 @@ function findStartCodon!(cds::Feature, genome_length::Int32, genomeloop::DNAStri
             break
         end
         start3 = start3 + 3
+        if start3 > genome_length
+            start3 = nothing
+            break
+        end
         codon = SubString(genomeloop, start3, start3 + 2)
     end
     # search for start codon 3'-5' beginning at cds.start, save result; abort if stop encountered
@@ -572,6 +576,10 @@ function findStartCodon!(cds::Feature, genome_length::Int32, genomeloop::DNAStri
             break
         end
         start5 = start5 - 3
+        if start5 <= 0
+            start5 = nothing
+            break
+        end
         codon = SubString(genomeloop, start5, start5 + 2)
     end
     # return cds with start set to nearer of the two choices

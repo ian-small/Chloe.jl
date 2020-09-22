@@ -383,7 +383,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
     n = count(r"[XN]", target_seqf)
     r = n / length(target_seqf)
     if r > .9
-        error("sequence too vague: $(@sprintf "%.1f" r * 100)%  either X or N")
+        error("sequence [$(target_id)] too vague: $(@sprintf "%.1f" r * 100)%  either X or N")
     end
     
     @info "[$target_id] seq length: $(target_length)bp"
