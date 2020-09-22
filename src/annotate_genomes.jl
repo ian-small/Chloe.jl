@@ -410,13 +410,13 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
 
     function alignit(refcount::Int)
         start = time_ns()
-        refloop, refSA, refRA = reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
+        src_id, refloop, refSA, refRA = reference.refsrc[refcount], reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
 
-        ff, fr = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopf, target_saf, target_raf) 
+        ff, fr = alignLoops(src_id, refloop.forward, refSA.forward, refRA.forward, targetloopf, target_saf, target_raf) 
         if !reference.forward_only
-            rf, rr = alignLoops(refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
+            rf, rr = alignLoops(src_id, refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
         else
-            rr, rf = alignLoops(refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
+            rr, rf = alignLoops(src_id, refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
         end
         # note cross ...
         blocks_aligned_to_targetf[refcount] = FwdRev(ff, rf)
@@ -460,7 +460,8 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
     target_rstrand_models, rstrand_feature_stacks = strands[2]
 
     # find inverted repeat if any
-    f_aligned_blocks, r_aligned_blocks = alignLoops(targetloopf, target_saf, target_raf,
+    f_aligned_blocks, r_aligned_blocks = alignLoops(target_id,
+                                                    targetloopf, target_saf, target_raf,
                                                     targetloopr, target_sar, target_rar)
 
     # sort blocks by length
@@ -470,6 +471,9 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
         f_aligned_blocks[1]
     else
         nothing
+    end
+    if ir !== nothing
+        @info "[$target_id] inverted repeat $(ir[3])"
     end
     
     if output !== nothing

@@ -63,10 +63,12 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
 
         if p1 != p2 or l1 != l2:
             ll = []
+            if p1 - p2 == l1 - l2:
+                ll.append(f"gene shifted {p1 -p2}")
             if p1 + l1 == p2 + l2:
                 ll.append(f"start moved {p1 - p2}")
             if p1 == p2 and l1 != l2:
-                ll.append("end moved")
+                ll.append(f"end moved  {l1 -l2}")
             if ll:
                 click.secho(f"{prefix}{k} {', '.join(ll)}")
 

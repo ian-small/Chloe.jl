@@ -300,7 +300,8 @@ function mergeBlockArrays(blocks1::AlignedBlocks, blocks2::AlignedBlocks)::Align
     return merged_array
 end
 
-function alignLoops(ref_loop::DNAString, ref_SA::SuffixArray, ref_RA::SuffixArray, 
+function alignLoops(src_id::String,
+                    ref_loop::DNAString, ref_SA::SuffixArray, ref_RA::SuffixArray, 
                     tgt_loop::DNAString, tgt_SA::SuffixArray, tgt_RA::SuffixArray)::Tuple{AlignedBlocks,AlignedBlocks}
     # check if sequences are identical, allowing for rotation
     if length(ref_loop) == length(tgt_loop)
@@ -310,21 +311,22 @@ function alignLoops(ref_loop::DNAString, ref_SA::SuffixArray, ref_RA::SuffixArra
             return aligned_blocks, revCompBlocks(aligned_blocks, length(ref_SA), length(tgt_SA))
         end
     end
-    function align(src::DNAString, srcSA::SuffixArray, srcRA::SuffixArray,
+    function align(ref::String,
+                   src::DNAString, srcSA::SuffixArray, srcRA::SuffixArray,
                    tgt::DNAString, tgtSA::SuffixArray, tgtRA::SuffixArray)
         # ~30% for alignSAs and 60% for fillAllGaps!
         lcps = alignSAs(src, srcSA, tgt, tgtSA)
         aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(srcSA), length(tgtSA)))
         aligned_blocks = fillAllGaps!(aligned_blocks, src, srcSA, srcRA, tgt, tgtSA, tgtRA)
-        @debug "alignLoops[$(Threads.threadid())] lcps#=$(length(lcps)) -> aligned#=$(length(aligned_blocks))"
+        @debug "alignLoops: [$(src_id)]$(ref) lcps#=$(length(lcps)) -> aligned#=$(length(aligned_blocks))"
         aligned_blocks
     end
     block = Vector{AlignedBlocks}(undef, 2)
     function rt()
-        block[1] = align(ref_loop, ref_SA, ref_RA, tgt_loop, tgt_SA, tgt_RA)
+        block[1] = align("+", ref_loop, ref_SA, ref_RA, tgt_loop, tgt_SA, tgt_RA)
     end
     function tr()
-        block[2] = align(tgt_loop, tgt_SA, tgt_RA, ref_loop, ref_SA, ref_RA)
+        block[2] = align("-", tgt_loop, tgt_SA, tgt_RA, ref_loop, ref_SA, ref_RA)
     end
 
     Threads.@threads for worker in [rt, tr]

@@ -13,7 +13,7 @@ targetloopr = target_seqr * target_seqr[1:end - 1]
 target_sar = makeSuffixArray(targetloopr, true)
 target_rar = makeSuffixArrayRanksArray(target_sar)
 
-f_aligned_blocks, r_aligned_blocks = alignLoops(targetloopf, target_saf, target_raf, targetloopr, target_sar, target_rar)
+f_aligned_blocks, r_aligned_blocks = alignLoops("src", targetloopf, target_saf, target_raf, targetloopr, target_sar, target_rar)
 
 # sort blocks by length
 f_aligned_blocks = sort(f_aligned_blocks, by=last, rev=true)
