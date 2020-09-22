@@ -209,7 +209,7 @@ struct ModuloIteratorState{T <: Integer}
     start::T
     step::T
     length::T # number of iterations
-    gene_length::Int
+    gene_length::T
 end
 struct VModuloIteratorState{T <: Integer,V}
     start::T
@@ -257,26 +257,25 @@ function Base.iterate(i::VModuloIteratorState{T,V}, state=(i.start, i.length)) w
     @inbounds v = i.v[pos]
     return (v, (pos, n))
 end
-function iter_wrap(r::UnitRange{<:Integer}, gene_length::Int)
+function iter_wrap(r::UnitRange{<:Integer}, gene_length::T) where {T <: Integer}
     # for i in iter_wrap(-5:5, 10)
     # 5,6,7,8,9,10,1,2,3,4,5
     # end
     @boundscheck 1 ≤ gene_length || throw(Base.BoundsError("step size too large"))
     start = genome_wrap(gene_length, r.start)
-    return ModuloIteratorState(start - 1, 1, length(r), gene_length)
+    return ModuloIteratorState(promote(start - 1, 1, length(r), gene_length)...)
 end
 function iter_wrap(r::UnitRange{<:Integer}, v::Vector{T}) where {T}
     @boundscheck 1 ≤ length(v) || throw(Base.BoundsError("step size too large"))
     start = genome_wrap(length(v), r.start)
     return VModuloIteratorState(start - 1, 1, length(r), v)
 end
-function iter_wrap(r::StepRange{<:Integer,<:Integer}, gene_length::Int)
+function iter_wrap(r::StepRange{<:Integer,<:Integer}, gene_length::T) where {T <: Integer}
     @boundscheck abs(r.step) ≤ gene_length || throw(Base.BoundsError("step size too large"))
-    start = genome_wrap(gene_length, r.start)
-    return ModuloIteratorState(start - r.step, r.step, length(r), gene_length)
+    return ModuloIteratorState(promote(genome_wrap(gene_length, r.start) - r.step, r.step, length(r), gene_length)...)
 end
 function iter_wrap(r::StepRange{<:Integer,<:Integer}, v::Vector{T}) where {T}
     @boundscheck abs(r.step) ≤ length(v) || throw(Base.BoundsError("step size too large"))
-    start = genome_wrap(gene_length, r.start)
+    start = genome_wrap(length(v), r.start)
     return VModuloIteratorState(start - r.step, r.step, length(r), v)
 end
