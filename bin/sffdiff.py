@@ -23,11 +23,14 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
             comment=com.strip(),
         )
 
-    def ss(s):
-        return ", ".join(sorted(s))
-
     def ps(key, n, f1, f2):
         return f'{prefix}{key} [{yellow(n)}]: "{f1}" {yellow("!=")} "{f2}" [ref]'
+
+    def fixcom(s):
+        s = s.replace("possible pseudogene", "")
+        s = s.replace(",", "")
+        s = s.split()
+        return " ".join(s)
 
     lines1 = open(fa1).readlines()
     lines2 = open(fa2).readlines()
@@ -38,29 +41,50 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
 
     d1 = {d["name"]: d for l in lines1[1:] for d in [todict(l)]}
     d2 = {d["name"]: d for l in lines2[1:] for d in [todict(l)]}
+
     if d1 == d2:
         return
     prefix = "\t"
     if d1.keys() != d2.keys():
         s = set(d1) - set(d2)
         if s:
-            click.echo(red(f"{prefix}new: {ss(s)}"))
+            for t in sorted(s):
+                click.echo(red(f"{prefix}new: {t}"))
         s = set(d2) - set(d1)
         if s:
-            click.echo(red(f"{prefix}old: {ss(s)}"))
+            for t in sorted(s):
+                click.echo(red(f"{prefix}old: {t}"))
 
     fields = ["name", "strand", "pos", "length", "phase"]
-    if not skip_comments:
-        fields.append("comment")
+
+    def check_pos(dd1, dd2):
+        p1, l1 = dd1["pos"], dd1["length"]
+        p2, l2 = dd2["pos"], dd2["length"]
+
+        if p1 != p2 or l1 != l2:
+            ll = []
+            if p1 + l1 == p2 + l2:
+                ll.append(f"start moved {p1 - p2}")
+            if p1 == p2 and l1 != l2:
+                ll.append("end moved")
+            if ll:
+                click.secho(f"{prefix}{k} {', '.join(ll)}")
 
     for k in set(d1) & set(d2):
         dd1 = d1[k]
         dd2 = d2[k]
 
+        check_pos(dd1, dd2)
+
         for n in fields:
             f1, f2 = dd1[n], dd2[n]
             if not f1 == f2:
                 click.secho(ps(k, n, f1, f2))
+
+        if not skip_comments:
+            f1, f2 = dd1["comment"], dd2["comment"]
+            if not fixcom(f1) == fixcom(f2):
+                click.secho(ps(k, "comment", f1, f2))
 
         for n in ["avg", "coverage"]:
             f1, f2 = dd1[n], dd2[n]
@@ -84,7 +108,7 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
     type=click.Path(file_okay=False, dir_okay=True),
     help="source directory for .sff files",
 )
-@click.option("--skip-comments", is_flag=True, help="ignore comment differences")
+@click.option("-c", "--skip-comments", is_flag=True, help="ignore comment differences")
 def run(depth, coverage, skip_comments, src):
 
     for sff in os.listdir("testo"):

@@ -43,29 +43,29 @@ end
 
 function alignSAs(a::DNAString, saa::SuffixArray, b::DNAString, sab::SuffixArray)::AlignedBlocks
     lcps = AlignedBlocks(undef, length(saa))
-    bpointer = 1
+    bindex = 1
     zerot = (zero(Int32), zero(Int32), zero(Int32))
-    @inbounds for apointer = 1:length(saa)
-        ssa = SubString(a, saa[apointer])
+    @inbounds for aindex = 1:length(saa)
+        ssa = SubString(a, saa[aindex])
         oldtuple = zerot
         while true
-            ssb = SubString(b, sab[bpointer])
+            ssb = SubString(b, sab[bindex])
             (lcp, direction) = compareSubStrings(ssa, ssb)
-            newtuple = (saa[apointer], sab[bpointer], lcp)
-            if (direction < 0 || bpointer == length(sab))
-                if (oldtuple[1] == 0) && (bpointer > 1)
-                    sab1 = SubString(b, sab[bpointer - 1])
+            newtuple = (saa[aindex], sab[bindex], lcp)
+            if (direction < 0 || bindex == length(sab))
+                if (oldtuple[1] == 0) && (bindex > 1)
+                    sab1 = SubString(b, sab[bindex - 1])
                     (lcp2, direction) = compareSubStrings(ssa, sab1)
-                    oldtuple = (saa[apointer], sab[bpointer - 1], lcp2)
+                    oldtuple = (saa[aindex], sab[bindex - 1], lcp2)
                 end
                 if (lcp >= oldtuple[3])
-                    lcps[apointer] = newtuple
+                    lcps[aindex] = newtuple
                 else
-                    lcps[apointer] = oldtuple
+                    lcps[aindex] = oldtuple
                 end
                 break
             end
-            bpointer += 1
+            bindex += 1
             oldtuple = newtuple
         end
     end
@@ -207,30 +207,30 @@ end
 function fillAllGaps!(aligned_blocks::AlignedBlocks, 
     refloop::DNAString, refSA::SuffixArray, refRA::SuffixArray, 
     tgtloop::DNAString, tgtSA::SuffixArray, tgtRA::SuffixArray)::AlignedBlocks
-    block1_pointer = 1
-    block2_pointer = 2
-    @inbounds while block2_pointer <= length(aligned_blocks)
-        block1 = aligned_blocks[block1_pointer]
-        block2 = aligned_blocks[block2_pointer]
+    block1_index = 1
+    block2_index = 2
+    @inbounds while block2_index <= length(aligned_blocks)
+        block1 = aligned_blocks[block1_index]
+        block2 = aligned_blocks[block2_index]
         block1, block2 = mergeBlocks(block1, block2)
         while isnothing(block2) # blocks1 and 2 got merged
-            splice!(aligned_blocks, block1_pointer:block2_pointer, [block1]) # replace block1 and block2 with merged block
-            if block2_pointer > length(aligned_blocks)
+            splice!(aligned_blocks, block1_index:block2_index, [block1]) # replace block1 and block2 with merged block
+            if block2_index > length(aligned_blocks)
                 return aligned_blocks
             end
-            block2 = aligned_blocks[block2_pointer]
+            block2 = aligned_blocks[block2_index]
             block1, block2 = mergeBlocks(block1, block2)
         end
-        new_blocks = fillGap(aligned_blocks[block1_pointer],
-                             aligned_blocks[block2_pointer], 
+        new_blocks = fillGap(aligned_blocks[block1_index],
+                             aligned_blocks[block2_index], 
                              refloop, refSA, refRA,
                              tgtloop, tgtSA, tgtRA)
         if (isempty(new_blocks))
-            block1_pointer += 1
-            block2_pointer += 1
+            block1_index += 1
+            block2_index += 1
         else
-            # insert before block pointer 2
-            splice!(aligned_blocks, block2_pointer:block2_pointer - 1, new_blocks)
+            # insert before block index 2
+            splice!(aligned_blocks, block2_index:block2_index - 1, new_blocks)
         end
     end
     return aligned_blocks
@@ -252,49 +252,49 @@ function mergeBlockArrays(blocks1::AlignedBlocks, blocks2::AlignedBlocks)::Align
     # assume sorted arrays
     merged_array = AlignedBlocks()
 
-    blocks1_pointer = 1
-    blocks2_pointer = 1
+    blocks1_index = 1
+    blocks2_index = 1
     blocks1_len = length(blocks1)
     blocks2_len = length(blocks2)
 
     sizehint!(merged_array, blocks1_len + blocks2_len)
 
-    @inbounds while blocks1_pointer <= blocks1_len && blocks2_pointer <= blocks2_len
-        block1 = blocks1[blocks1_pointer]
-        block2 = blocks2[blocks2_pointer]
+    @inbounds while blocks1_index <= blocks1_len && blocks2_index <= blocks2_len
+        block1 = blocks1[blocks1_index]
+        block2 = blocks2[blocks2_index]
         if block1[1] == block2[2] && block1[2] == block2[1] && block1[3] == block2[3] # both the same, only add one of them
             push!(merged_array, block1)
-            blocks1_pointer += 1
-            blocks2_pointer += 1
+            blocks1_index += 1
+            blocks2_index += 1
         elseif block1[1] + block1[3] < block2[2] # block1 can't overlap anything in blocks2, so add it
             push!(merged_array, block1)
-            blocks1_pointer += 1
+            blocks1_index += 1
         elseif block2[2] + block2[3] < block1[1] # block2 can't overlap anything in blocks1, so add it
             push!(merged_array, (block2[2], block2[1], block2[3]))
-            blocks2_pointer += 1
+            blocks2_index += 1
         # blocks must overlap if we got this far
         elseif block1[1] - block1[2] == block2[2] - block2[1] # same offset so compatible
             blocka_start = min(block1[1], block2[2])
             blockb_start = min(block1[2], block2[1])
             block_length = max(block1[1] + block1[3], block2[2] + block2[3]) - blocka_start + 1
             push!(merged_array, (blocka_start, blockb_start, block_length)) # add merger of the two blocks
-            blocks1_pointer += 1
-            blocks2_pointer += 1
+            blocks1_index += 1
+            blocks2_index += 1
         else # overlap but incompatible, add both
             push!(merged_array, block1)
             push!(merged_array, (block2[2], block2[1], block2[3]))
-            blocks1_pointer += 1
-            blocks2_pointer += 1
+            blocks1_index += 1
+            blocks2_index += 1
         end
     end
-    @inbounds while blocks1_pointer <= blocks1_len
-        push!(merged_array, blocks1[blocks1_pointer])
-        blocks1_pointer += 1
+    @inbounds while blocks1_index <= blocks1_len
+        push!(merged_array, blocks1[blocks1_index])
+        blocks1_index += 1
     end
-    @inbounds while blocks2_pointer <= blocks2_len
-        block2 = blocks2[blocks2_pointer]
+    @inbounds while blocks2_index <= blocks2_len
+        block2 = blocks2[blocks2_index]
         push!(merged_array, (block2[2], block2[1], block2[3]))
-        blocks2_pointer += 1
+        blocks2_index += 1
     end
     @debug "mergeBlockArrays: $(length(merged_array)) ≅ $(blocks1_len + blocks2_len)"
     return merged_array
@@ -314,9 +314,9 @@ function alignLoops(ref_loop::DNAString, ref_SA::SuffixArray, ref_RA::SuffixArra
                    tgt::DNAString, tgtSA::SuffixArray, tgtRA::SuffixArray)
         # ~30% for alignSAs and 60% for fillAllGaps!
         lcps = alignSAs(src, srcSA, tgt, tgtSA)
-        @debug "align[$(Threads.threadid())]" lcps = length(lcps)
         aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(srcSA), length(tgtSA)))
         aligned_blocks = fillAllGaps!(aligned_blocks, src, srcSA, srcRA, tgt, tgtSA, tgtRA)
+        @debug "alignLoops[$(Threads.threadid())] lcps#=$(length(lcps)) -> aligned#=$(length(aligned_blocks))"
         aligned_blocks
     end
     block = Vector{AlignedBlocks}(undef, 2)
