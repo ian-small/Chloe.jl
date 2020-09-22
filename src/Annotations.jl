@@ -20,7 +20,7 @@ Base.last(f::Feature) = f.start + f.length - one(Int32)
 Base.intersect(i::RefTree, lo::Integer, hi::Integer) = intersect(i, Interval{Int32}(lo, hi))
 
 datasize(f::Feature) = sizeof(Feature) + sizeof(f.path) + sum(sizeof(p) for p in f._path_components)
-datasize(i::RefTree) = sum([datasize(f) for f in i])
+datasize(i::RefTree) = sum(datasize(f) for f in i)
 
 const annotationPath(feature::Feature) = begin
     pc = feature._path_components
@@ -95,7 +95,8 @@ struct Annotation
     # to be in the correct reading frame
     phase::Int8
 end
-datasize(a::Annotation) = sizeof(Annotation) + sizeof(a.genome_id)
+datasize(a::Annotation) = sizeof(Annotation) # genome_id is shared + sizeof(a.genome_id)
+datasize(v::Vector{Annotation}) = length(v) * sizeof(Annotation)
 
 function addAnnotation(genome_id::String, feature::Feature, block::AlignedBlock)::Union{Nothing,Annotation}
     startA = max(feature.start, block[1])
@@ -205,13 +206,19 @@ struct FeatureStack
     stack::Vector{Int32}
     template::FeatureTemplate
 end
+datasize(f::FeatureStack) = sizeof(FeatureStack) + sizeof(f.path) + length(f.stack) * sizeof(Int32)
 
+DFeatureStack = Dict{String,FeatureStack}
 AFeatureStack = Vector{FeatureStack}
 # AFeatureStack = Dict{String,FeatureStack}
 ShadowStack = Vector{Int32}
 
 function fillFeatureStack(target_length::Int32, annotations::Vector{Annotation},
     feature_templates::Dict{String,FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
+
+    # Implementation Note: Feature stacks are rather large (we can get 80MB)
+    # ... but! the memory requirement is upperbounded by the number of features
+    # in the optimized_templates.v2.tsv
 
     # assumes annotations is ordered by path
     # so that each stacks[idx] array has the same annotation.path
@@ -235,53 +242,56 @@ function fillFeatureStack(target_length::Int32, annotations::Vector{Annotation},
         else
             stack = stacks[index]
         end
-        for i = annotation.start:annotation.start + annotation.length - one(Int32)
+        stack_stack = stack.stack
+        @inbounds for i = annotation.start:annotation.start + annotation.length - one(Int32)
             gw = genome_wrap(target_length, i)
-            stack.stack[gw] += 3 # +1 to counteract shadowstack initialisation, +1 to counteract addition to shadowstack
+            stack_stack[gw] += 3 # +1 to counteract shadowstack initialisation, +1 to counteract addition to shadowstack
             shadowstack[gw] -= 1
         end
     end
-    @debug "found $(length(stacks)) FeatureStacks from $(length(annotations)) annotations"
+    @debug "found ($(length(stacks))) $(human(datasize(stacks) + datasize(shadowstack))) FeatureStacks from $(length(annotations)) annotations"
     return stacks, shadowstack
 end
 
 function expandBoundaryInChunks(feature_stack::FeatureStack, shadowstack::ShadowStack, origin, direction, max)::Int
     glen = length(shadowstack)
-    pointer = origin
+    index = origin
 
     # expand in chunks
     for chunksize in [100,80,60,40,30,20,10,5,1]
         for i = direction:direction * chunksize:direction * max
             sumscore = 0
             for j = 1:chunksize
-                sumscore += feature_stack.stack[genome_wrap(glen, pointer + direction * j)] + shadowstack[genome_wrap(glen, pointer + direction * j)]
+                sumscore += feature_stack.stack[genome_wrap(glen, index + direction * j)] + shadowstack[genome_wrap(glen, index + direction * j)]
             end
             sumscore < 0 && break
-            pointer += direction * chunksize
+            index += direction * chunksize
         end
     end
-    return genome_wrap(glen, pointer)
+    return genome_wrap(glen, index)
 end
 
 function expandBoundary(feature_stack::FeatureStack, shadowstack::ShadowStack, origin, direction, max)
     glen = length(shadowstack)
-    pointer = origin
-    for i = direction:direction:direction * max
-        sumscore = 0
-        sumscore += feature_stack.stack[genome_wrap(glen, pointer + direction)] + shadowstack[genome_wrap(glen, pointer + direction)]
+    stack_stack = feature_stack.stack
+    index = origin
+    @inbounds for i = direction:direction:direction * max
+        gw = genome_wrap(glen, index + direction)
+        sumscore = stack_stack[gw] + shadowstack[gw]
         sumscore < 0 && break
-        pointer += direction
+        index += direction
     end
-    return pointer # not wrapped
+    return index # not wrapped
 end
 
 function getDepthAndCoverage(feature_stack::FeatureStack, left::Int32, len::Int32)::Tuple{Float64,Float64}
     coverage = 0
     max_count = 0
     sum_count = 0
-    stack_len = length(feature_stack.stack)
-    for nt = left:left + len - 1
-        count = feature_stack.stack[genome_wrap(stack_len, nt)]
+    stack_stack = feature_stack.stack
+    stack_len = length(stack_stack)
+    @inbounds for nt = left:left + len - 1
+        count = stack_stack[genome_wrap(stack_len, nt)]
         if count > 0
             coverage += 1
             sum_count += count
@@ -303,15 +313,17 @@ function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowSt
     glen = length(stack)
     median_length = feature_stack.template.median_length
     score = 0
-    for nt = 1:median_length
-        score += stack[genome_wrap(glen, nt)] + shadowstack[genome_wrap(glen, nt)]
+    @inbounds for nt = 1:median_length
+        gw = genome_wrap(glen, nt)
+        score += stack[gw] + shadowstack[gw]
     end
     max_score = score
     best_hit = 1
 
-    for nt = 2:glen
-        score -= stack[genome_wrap(glen, nt - 1)] + shadowstack[genome_wrap(glen, nt)]
-        score += stack[genome_wrap(glen, nt + median_length - 1)] + shadowstack[genome_wrap(glen, nt)]
+    @inbounds for nt = 2:glen
+        st = shadowstack[nt]
+        score -= stack[nt - 1] + st
+        score += stack[genome_wrap(glen, nt + median_length - 1)] + st
         if score > max_score
             max_score = score
             best_hit = nt
@@ -425,11 +437,10 @@ function translateFeature(genome::DNAString, feat::Feature)
         fend = length(genome) - 2
         @warn "translateFeature: feature points past genome"
     end
-
-    @inbounds String([get(GENETIC_CODE, SubString(genome, i, i + 2), 'X') for i in (feat.start + feat.phase):3:fend])
+    translateDNA(genome, feat.start + feat.phase, fend)
 end
 
-function translateModel(genome::DNAString, model::AFeature)::String
+function translateModel(genomeloop::DNAString, model::AFeature)::String
     DNA = Vector{String}()
     sizehint!(DNA, length(model))
     for (i, feat) in enumerate(model)
@@ -438,12 +449,11 @@ function translateModel(genome::DNAString, model::AFeature)::String
         if i == 1
             start += feat.phase
         end
-        push!(DNA, SubString(genome, start, feat.start + feat.length - 1))
+        push!(DNA, SubString(genomeloop, start, feat.start + feat.length - 1))
     end
     
     dna = join(DNA, "")
-
-    @inbounds String([get(GENETIC_CODE, SubString(dna, i, i + 2), 'X') for i in 1:3:length(dna) - 2])
+    translateDNA(dna)
 end
 
 # define parameter weights
@@ -472,7 +482,7 @@ end
 function findStartCodon2!(cds::Feature, genome_length::Integer, genomeloop::DNAString, predicted_starts,
                           predicted_starts_weights, feature_stack, shadowstack)
     # define range in which to search from upstream stop to end of feat
-    start5 = cds.start + cds.phase
+    start5 = genome_wrap(genome_length, cds.start + cds.phase)
     codon = SubString(genomeloop, start5, start5 + 2)
     while !isStopCodon(codon, false)
         start5 = genome_wrap(genome_length, start5 - 3)
@@ -489,14 +499,15 @@ function findStartCodon2!(cds::Feature, genome_length::Integer, genomeloop::DNAS
     stack_coverage = 0
     shadow_coverage = 0
     for (i, nt) in enumerate(search_range)
+        gw = genome_wrap(genome_length, nt)
         codon = SubString(genomeloop, nt, nt + 2)
         codons[i] = startScore(cds, codon)
         if i % 3 == 1
             phase[i] = 1.0
         end
-        if feature_stack[nt] > 0
+        if feature_stack[gw] > 0
             stack_coverage += 1
-        elseif shadowstack[nt] < 0
+        elseif shadowstack[gw] < 0
             shadow_coverage -= 1
         end
         if stack_coverage > 3
@@ -507,11 +518,9 @@ function findStartCodon2!(cds::Feature, genome_length::Integer, genomeloop::DNAS
 
     predicted_starts = zeros(window_size)
     for (s, w) in zip(predicted_starts, predicted_starts_weights)
-        i = 1
-        for nt in search_range
+        for (i, nt) in enumerate(search_range)
             distance = 1 + (s - nt)^2
             predicted_starts[i] = w / distance
-            i += 1
         end
     end
 
@@ -530,7 +539,6 @@ end
 function findStartCodon!(cds::Feature, genome_length::Int32, genomeloop::DNAString)
     # assumes phase has been correctly set
     # search for start codon 5'-3' beginning at cds.start, save result; abort if stop encountered
-    Three = Int32(3)
     start3 = cds.start + cds.phase
     codon = SubString(genomeloop, start3, start3 + 2)
     if isStartCodon(codon, true, true)  # allow ACG and GTG codons if this is predicted start
@@ -552,7 +560,7 @@ function findStartCodon!(cds::Feature, genome_length::Int32, genomeloop::DNAStri
             start3 = nothing
             break
         end
-        start3 = genome_wrap(genome_length, start3 + Three)
+        start3 = start3 + 3
         codon = SubString(genomeloop, start3, start3 + 2)
     end
     # search for start codon 3'-5' beginning at cds.start, save result; abort if stop encountered
@@ -563,7 +571,7 @@ function findStartCodon!(cds::Feature, genome_length::Int32, genomeloop::DNAStri
             start5 = nothing
             break
         end
-        start5 = genome_wrap(genome_length, start5 - Three)
+        start5 = start5 - 3
         codon = SubString(genomeloop, start5, start5 + 2)
     end
     # return cds with start set to nearer of the two choices
@@ -590,47 +598,44 @@ end
 
 function setLongestORF!(feat::Feature, genome_length::Int32, targetloop::DNAString)
     orfs = []
-    zero, one, two, three = Int32(0), Int32(1), Int32(2), Int32(3)
     translation_start = feat.start
-    translation_stop = translation_start + two
-    fend = feat.start + feat.length - three
-    if  fend > genome_length - three
-        fend = genome_length - three
-        @warn "setLongestORF: feature points past genome"
-    end
-    for nt = translation_start + feat.phase:three:fend
-        translation_stop = nt + two
+    translation_stop = translation_start + 2
+    fend = feat.start + feat.length - 3
+
+    for nt = translation_start + feat.phase:3:fend
+        translation_stop = nt + 2
         codon = SubString(targetloop, nt, translation_stop)
         if isStopCodon(codon, false)
             push!(orfs, (translation_start, translation_stop, true))
-            translation_start = nt + three
+            translation_start = nt + 3
         end
     end
     push!(orfs, (translation_start, translation_stop, false))
-    maxgap = zero
-    local longest_orf
+    maxgap = 0
+    longest_orf = nothing
     for orf in orfs
-        gap = orf[2] - orf[1] + one
+        gap = orf[2] - orf[1] + 1
         if gap > maxgap
             maxgap = gap
             longest_orf = orf
         end
     end
+    longest_orf === nothing && return
 
     if longest_orf[1] > feat.start # must be an internal stop
         feat.phase = 0
     end
-    feat.length = longest_orf[2] - longest_orf[1] + one
+    feat.length = longest_orf[2] - longest_orf[1] + 1
     feat.start = genome_wrap(genome_length, longest_orf[1])
 
     if !longest_orf[3]
-       # orf is still open, so extend until stop
-        translation_start = longest_orf[2] - two
-        codon = SubString(targetloop, translation_start, translation_start + two)
+        # orf is still open, so extend until stop
+        translation_start = longest_orf[2] - 2
+        codon = SubString(targetloop, translation_start, translation_start + 2)
         if isStopCodon(codon, true)
             return feat
         end
-        for nt = translation_start:3:length(targetloop) - 3
+        for nt = translation_start:3:length(targetloop) - 3 # sic! - 3
             codon = SubString(targetloop, nt, nt + 2)
             if isStopCodon(codon, false)
                 break
@@ -640,18 +645,22 @@ function setLongestORF!(feat::Feature, genome_length::Int32, targetloop::DNAStri
     end
 end
 
-function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, stacks::Vector{FeatureStack})
-    # feat1 shoud be before feat2
-    range_to_test = min(feat1.start + feat1.length - 1, feat2.start):max(feat1.start + feat1.length - 1, feat2.start)
+function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, genome_length::Int32, stacks::DFeatureStack)
+    # feat1 should be before feat2
+    start = feat1.start + feat1.length - 1
+    range_to_test = min(start, feat2.start):max(start, feat2.start)
+    
+    feat1_stack = stacks[feat1.path].stack
+    feat2_stack = stacks[feat2.path].stack
 
-    feat1_stack = stacks[findfirst(x -> x.path == feat1.path, stacks)]
-    feat2_stack = stacks[findfirst(x -> x.path == feat2.path, stacks)]
-    score = sum(feat2_stack.stack[range_to_test]) - sum(feat1_stack.stack[range_to_test])
+    # score = sum(@view feat2_stack[range_to_test]) - sum(@view feat1_stack[range_to_test])
+    score = sum(iter_wrap(range_to_test, feat2_stack)) - sum(iter_wrap(range_to_test, feat1_stack))
     maxscore = score
     fulcrum = first(range_to_test) - 1
-    for i in range_to_test
-        score += 2 * feat1_stack.stack[genome_wrap(length(feat1_stack.stack), i)]
-        score -= 2 * feat2_stack.stack[genome_wrap(length(feat2_stack.stack), i)]
+    @inbounds for i in range_to_test
+        gw = genome_wrap(genome_length, i)
+        score += 2 * feat1_stack[gw]
+        score -= 2 * feat2_stack[gw]
         if score > maxscore
             maxscore = score
             fulcrum = i
@@ -661,18 +670,17 @@ function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, stacks::Vector
     feat1.length = fulcrum - feat1.start + 1
     # fulcrum+1 should point to start of feat2
     feat2.length += feat2.start - (fulcrum + 1)
-    feat2.start = fulcrum + 1
+    feat2.start = genome_wrap(genome_length, fulcrum + 1)
 end
 
 function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetloop::DNAString,
                           annotations::Vector{Annotation},
-                          feature_stacks::AFeatureStack)::AAFeature
+                          feature_stacks::DFeatureStack)::AAFeature
     last_cds_examined = nothing
     for model in gene_models
         isempty(model) && continue
         # sort features in model by mid-point to avoid cases where long intron overlaps short exon
         sort!(model, by=f -> f.start + f.length / 2)
-        # @debug "model"  model
         last_exon = last(model)
         # if CDS, find phase, stop codon and set feature.length
         if isType(last_exon, "CDS")
@@ -689,7 +697,7 @@ function refineGeneModels!(gene_models::AAFeature, genome_length::Int32, targetl
             # check adjacent to last exon, if not...
             gap = model[i + 1].start - (feature.start + feature.length)
             if gap ≠ 0 && gap < 100
-                refineBoundariesbyScore!(feature, model[i + 1], feature_stacks)
+                refineBoundariesbyScore!(feature, model[i + 1], genome_length, feature_stacks)
                 gap = model[i + 1].start - (feature.start + feature.length)
             end
             if gap ≠ 0
@@ -732,8 +740,6 @@ struct SFF
     hasPrematureStop::Bool
 end
 
-
-DFeatureStack = Dict{String,FeatureStack}
 
 gene_length(model::AFeature) = begin
     last(model).start + last(model).length - first(model).start

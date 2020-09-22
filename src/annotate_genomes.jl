@@ -58,8 +58,8 @@ end
 
 datasize(t::T) where T = sizeof(t)
 datasize(f::FwdRev{T}) where T = sizeof(FwdRev{T}) + datasize(f.forward) + datasize(f.reverse)
-datasize(v::Vector{T}) where T = sum(datasize(a) for a in v)
-datasize(t::Dict{K,V}) where {K,V} = sum(datasize(e.first) + datasize(e.second) for e in t)
+datasize(v::Vector{T}) where T = length(v) == 0 ? 0 : sum(datasize(a) for a in v)
+datasize(t::Dict{K,V}) where {K,V} = length(t) == 0 ? 0 : sum(datasize(e.first) + datasize(e.second) for e in t)
 datasize(m::MMappedString) = length(m.ptr)
 datasize(r::Reference) = begin
     (sizeof(Reference)
@@ -380,6 +380,11 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
 
     target_id, target_seqf = readFasta(fasta)
     target_length = Int32(length(target_seqf))
+    n = count(r"[XN]", target_seqf)
+    r = n / length(target_seqf)
+    if r > .9
+        error("sequence too vague: $(@sprintf "%.1f" r * 100)%  either X or N")
+    end
     
     @info "[$target_id] seq length: $(target_length)bp"
     
