@@ -118,7 +118,9 @@ function old_lcps2AlignmentBlocks(lcps::AlignedBlocks, circular::Bool, min_run_l
     return aligned_blocks
 end
 function lcps2AlignmentBlocks(lcps::AlignedBlocks, circular::Bool, min_run_length::Integer)::AlignedBlocks
+    # length of aligned_blocks is usually much small than lcps
     aligned_blocks = AlignedBlocks()
+
     b_start = -1
 
     for lcp in lcps
