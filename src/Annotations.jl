@@ -548,39 +548,34 @@ function findStartCodon!(cds::Feature, genome_length::Int32, genomeloop::DNAStri
         return cds
     end
 
-    gene = getFeatureName(cds)
     allowACG = false
     allowGTG = false
-    if gene == "rps19"
+    if getFeatureName(cds) == "rps19"
         allowGTG = true
     end
-
-    while (!isStartCodon(codon, allowACG, allowGTG) && start3 <= genome_length)
+    
+    start3 = nothing
+    for i in iter_wrap(cds.start + cds.phase:3:cds.start + cds.phase + genome_length - 3, genome_length)
+        codon = SubString(genomeloop, i, i + 2)
+        if isStartCodon(codon, allowACG, allowGTG)
+            start3 = i >= cds.start + cds.phase ? i : i + genome_length
+            break
+        end
         if isStopCodon(codon, false)
-            start3 = nothing
             break
         end
-        start3 = start3 + 3
-        if start3 > genome_length
-            start3 = nothing
-            break
-        end
-        codon = SubString(genomeloop, start3, start3 + 2)
     end
     # search for start codon 3'-5' beginning at cds.start, save result; abort if stop encountered
-    start5 = cds.start + cds.phase
-    codon = SubString(genomeloop, start5, start5 + 2)
-    while (!isStartCodon(codon, allowACG, allowGTG) && start5 > 0)
+    start5 = nothing
+    for i in iter_wrap(cds.start + cds.phase:-3:cds.start + cds.phase - genome_length + 3, genome_length)
+        codon = SubString(genomeloop, i, i + 2)
+        if isStartCodon(codon, allowACG, allowGTG)
+            start5 = i <= cds.start + cds.phase ? i : i - genome_length
+            break
+        end
         if isStopCodon(codon, false)
-            start5 = nothing
             break
         end
-        start5 = start5 - 3
-        if start5 <= 0
-            start5 = nothing
-            break
-        end
-        codon = SubString(genomeloop, start5, start5 + 2)
     end
     # return cds with start set to nearer of the two choices
     if isnothing(start3) && isnothing(start5)
@@ -643,7 +638,8 @@ function setLongestORF!(feat::Feature, genome_length::Int32, targetloop::DNAStri
         if isStopCodon(codon, true)
             return feat
         end
-        for nt = translation_start:3:length(targetloop) - 3 # sic! - 3
+        for nt in iter_wrap(translation_start:3:translation_start + genome_length - 3, genome_length)
+        # for nt = translation_start:3:length(targetloop) - 3 # sic! - 3
             codon = SubString(targetloop, nt, nt + 2)
             if isStopCodon(codon, false)
                 break
@@ -878,7 +874,7 @@ function writeSFF(outfile::Union{String,IO}, id::String,
 
     function getModelID!(model_ids::Dict{String,Int32}, model::AFeature)
         gene_name = getFeatureName(first(model))
-        instance_count = 1
+        instance_count::Int32 = 1
         model_id = "$(gene_name)/$(instance_count)"
         while get(model_ids, model_id, 0) ≠ 0
             instance_count += 1
@@ -906,8 +902,8 @@ function writeSFF(outfile::Union{String,IO}, id::String,
             writeModelToSFF(outfile, model, model_id, targetloopr, gene_exons, maxlengths, rstrand_feature_stacks, '-')
         end
         if ir !== nothing
-            println(outfile, "IR/1/repeat_region/1\t+\t" * string(ir[1]) * "\t" * string(ir[3]) * "\t0\t0\t0\t0\t")
-            println(outfile, "IR/2/repeat_region/1\t-\t" * string(ir[2]) * "\t" * string(ir[3]) * "\t0\t0\t0\t0\t")
+            println(outfile, "IR/1/repeat_region/1\t+\t$(ir[1])\t$(ir[3])\t0\t0\t0\t0\t")
+            println(outfile, "IR/2/repeat_region/1\t-\t$(ir[2])\t$(ir[3])\t0\t0\t0\t0\t")
         end
     end
     if typeof(outfile) == String
