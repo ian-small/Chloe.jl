@@ -17,6 +17,7 @@ function mergeAdjacentFeaturesinModel!(model::Vector{Feature}, genome_id, genome
         f2 = model[f2_index]
         # if adjacent features are same type, merge them into a single feature
         if getFeatureType(f1) == getFeatureType(f2)
+            @debug "[$(genome_id)]$(strand) merging $(f1.path) and $(f2.path)"
             f1.length += f2.length
             deleteat!(model, f2_index)
         else
@@ -47,7 +48,7 @@ function writeGFF3(outfile, genemodel::ModelArray)
     end
     # gene
     write(outfile, join([genemodel.genome_id,"Chloe","gene",start,finish], "\t"))
-    write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", id, ";Name=", split(first(features).path, '/')[1], "\n")
+    write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", id, ";Name=", path_components[1], "\n")
     # RNA product
     ft = getFeatureType(first(features))
     if ft == "CDS"
@@ -57,7 +58,7 @@ function writeGFF3(outfile, genemodel::ModelArray)
     elseif ft == "rRNA"
         write(outfile, join([genemodel.genome_id,"Chloe","rRNA",start,finish], "\t"))
         parent = id * ".rRNA"
-        write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", id, parent, ";Parent=", id, "\n")
+        write(outfile, "\t", ".", "\t", genemodel.strand, "\t", ".", "\t", "ID=", parent, ";Parent=", id, "\n")
     elseif ft == "tRNA"
         write(outfile, join([genemodel.genome_id,"Chloe","tRNA",start,finish], "\t"))
         parent = id * ".tRNA"
@@ -72,7 +73,7 @@ function writeGFF3(outfile, genemodel::ModelArray)
             start = feature.start
             finish = feature.start + feature.length - 1
             length = finish - start + 1
-            phase = ifelse(type == "CDS", string(feature.phase), ".")
+            phase = type == "CDS" ? string(feature.phase) : "."
             write(outfile, join([genemodel.genome_id,"Chloe",type,start,finish], "\t"))
             write(outfile, "\t", ".", "\t", genemodel.strand, "\t", phase, "\t", "ID=", feature.path, ";Parent=", parent, "\n")
         end
@@ -90,7 +91,7 @@ function writeGFF3(outfile, genemodel::ModelArray)
                 start += genemodel.genome_length
             end
             finish = start + length - 1
-            phase = ifelse(type == "CDS", string(feature.phase), ".")
+            phase = type == "CDS" ? string(feature.phase) : "."
             write(outfile, join([genemodel.genome_id,"Chloe",type,start,finish], "\t"))
             write(outfile, "\t", ".", "\t", genemodel.strand, "\t", phase, "\t", "ID=", feature.path, ";Parent=", parent, "\n")
         end
