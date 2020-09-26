@@ -14,7 +14,7 @@ function to80(io::IO, genome::String, width::Int=80)
 end
 
 
-function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0)::String
+function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0)::Tuple{String,Int}
     target_length = length(target_seqf)
     targetloopf = target_seqf * target_seqf[1:end - 1]
     target_saf = makeSuffixArray(targetloopf, true)
@@ -52,6 +52,7 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
     end
 
     out = Vector{String}()
+    rotation = 0
 
     if IR_length >= 1000
         ir1 = genome_wrap(target_length, ir1)
@@ -71,30 +72,26 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
         SSC = last(IR1) + 1:first(IR2) - 1
         rest = last(IR2) + 1:target_length
         
-        @debug begin 
+        if DEBUG 
             ov = last(IR2) > target_length ? red("IR2 overhang! ") : ""
-            "[$(target_id)] $(target_length) ir=$IR_length $(ov)LSC=$(LSC)[$(length(LSC))] IR1=$(IR1)[$(length(IR1))] SSC=$(SSC)[$(length(SSC))] IR2=$(IR2)[$(length(IR2))] rest=$(rest)[$(length(rest))]" 
+            @info "[$(target_id)] $(target_length) ir=$IR_length $(ov)LSC=$(LSC)[$(length(LSC))] IR1=$(IR1)[$(length(IR1))] SSC=$(SSC)[$(length(SSC))] IR2=$(IR2)[$(length(IR2))] rest=$(rest)[$(length(rest))]" 
         end
     
         ss = (rng::UnitRange) -> SubString(targetloopf, rng)
-     
+        rotation1 = rotation = target_length - last(IR2)
+        rotation2 = target_length - last(IR1)
         LSC, IR1, SSC, IR2, rest = map(ss, [LSC, IR1, SSC, IR2, rest])
         LSC = length(rest) > 0 ? join([rest, LSC], "") : LSC
-        rotated = if length(LSC) < length(SSC)
-            [
-                flip_LSC ? revComp(SSC) : SSC,
-                IR2,
-                flip_SSC ? revComp(LSC) : LSC,
-                IR1
-            ]
-        else
-            [
+        if length(LSC) < length(SSC)
+            LSC, IR1, SSC, IR2 = SSC, IR2, LSC, IR1
+            rotation = rotation2
+        end
+        rotated = [
                 flip_LSC ? revComp(LSC) : LSC,
                 IR1,
                 flip_SSC ? revComp(SSC) : SSC, 
                 IR2
             ]
-        end
         push!(out, rotated...)
 
     else
@@ -109,17 +106,17 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
         o = join(out, "") # can we do better here?
         push!(out, SubString(o, 1:e))
     end
-    join(out, "")
+    join(out, ""), rotation
 end
 
 function rotateGenome(fasta, io::IO, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0, width::Int=80)
 
     for (target_id, target_seqf) in iterFasta(fasta; full=true)
-        seq = rotateGenome(target_id, target_seqf, flip_LSC, flip_SSC, extend)
+        seq, rotation = rotateGenome(target_id, target_seqf, flip_LSC, flip_SSC, extend)
 
         println(io, ">", target_id, " rotated:LSC=$(flip_LSC),SSC=$(flip_SSC),extend=$(extend)")        
         to80(io, seq, width)
-        @info "[$(target_id)] rotated"
+        @info "[$(target_id)] rotated $rotation"
 
         if DEBUG
 
