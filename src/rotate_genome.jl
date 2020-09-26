@@ -3,6 +3,8 @@ import ..Annotator: iterFasta, readFasta, DNAString, makeSuffixArray, makeSuffix
 import Crayons: @crayon_str
 
 const success = crayon"bold green"
+const red = crayon"bold red"
+const DEBUG = true
 
 function to80(io::IO, genome::String, width::Int=80)
     len = length(genome)
@@ -34,25 +36,26 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
 
     @debug "[$(target_id)] $target_length found inverted repeats: $(ir1) $(ir2) len=$(IR_length)"
 
-    s1 = SubString(targetloopf, ir1, ir1 + IR_length - 1)
-    s2 = SubString(targetloopr, ir2, ir2 + IR_length - 1)
-    if s1 != s2
-        @error "s1 != s2 $(s1[1:20]) $(s2[1:20])"
+    if DEBUG
+        s1 = SubString(targetloopf, ir1, ir1 + IR_length - 1)
+        s2 = SubString(targetloopr, ir2, ir2 + IR_length - 1)
+        if s1 != s2
+            s = sum(x != y for (x, y) in zip(s1, s2))
+            @error "s1 != s2: $(IR_length) $(s)"
+        end
+        s = genome_wrap(target_length, target_length - ir2  - IR_length + 2)
+        s3 = revComp(SubString(targetloopf, s, s + IR_length - 1))
+        if s1 != s3
+            s = sum(x != y for (x, y) in zip(s1, s3))
+            @error "s1 != s3: $(IR_length) $(s)"
+        end
     end
-    s = genome_wrap(target_length, target_length - ir2  - IR_length + 2)
-    s3 = revComp(SubString(targetloopf, s, s + IR_length - 1))
-    if s1 != s3 
-        @error "s1 != s3 $(s1[1:20]) $(s3[1:20])"
-    end
-
 
     out = Vector{String}()
     
     ss = (rng::UnitRange) -> SubString(targetloopf, rng)
 
-
     if IR_length >= 1000
-        @debug "[$(target_id)] found inverted repeat: $(ir1) $(ir2) len=$(IR_length)"
         ir1 = genome_wrap(target_length, ir1)
         ir2 = genome_wrap(target_length, target_length - ir2  - IR_length + 2)
         if ir2 < ir1
@@ -61,7 +64,8 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
         IR1 = ir1:ir1 + IR_length - 1
         IR2 = ir2:ir2 + IR_length - 1
         if last(IR1) >= first(IR2)
-            error("$(target_id): inverted repeats overlap ... too vague sequence?")
+            @error "$(target_id): inverted repeats overlap ... too vague a sequence?"
+            IR1 = ir1:first(IR2) - 1 # what to do? reset...
         end
         # extra is after IR2 but we need to place it first
 
@@ -70,7 +74,10 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
         SSC = last(IR1) + 1:first(IR2) - 1
         rest = last(IR2) + 1:target_length
         
-        @info "[$(target_id)] $(target_length) ir=$IR_length LSC=$(LSC)[$(length(LSC))] IR1=$(IR1)[$(length(IR1))] SSC=$(SSC)[$(length(SSC))] IR2=$(IR2)[$(length(IR2))] rest=$(rest)[$(length(rest))]"
+        @debug begin 
+            ov = last(IR2) > target_length ? red("overhang! ") : ""
+            "[$(target_id)] $(target_length) ir=$IR_length $(ov)LSC=$(LSC)[$(length(LSC))] IR1=$(IR1)[$(length(IR1))] SSC=$(SSC)[$(length(SSC))] IR2=$(IR2)[$(length(IR2))] rest=$(rest)[$(length(rest))]" 
+        end
         
         LSC, IR1, SSC, IR2, rest = map(ss, [LSC, IR1, SSC, IR2, rest])
         LSC = length(rest) > 0 ? join([rest, LSC], "") : LSC
@@ -92,7 +99,7 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
         push!(out, rotated...)
 
     else
-        @warn "[$(target_id)] no inverted repeat found"
+        @warn "[$(target_id)] no inverted repeat found: $(IR_length) < 1000"
         push!(out, target_seqf)
     end
     
@@ -116,38 +123,34 @@ function rotateGenome(fasta, io::IO, flip_LSC::Bool, flip_SSC::Bool, extend::Int
             end
         end
         @debug "[$(target_id)] seq length=$(length(target_seqf)) rotated=$(length(seq))"
-        println(io, ">", target_id, " rotated:LSC=$(flip_LSC),SSC=$(flip_SSC),extend=$(extend)")
         
-        iio = IOBuffer()
-        ir(iio, fasta, flip_LSC, flip_SSC, extend)
-        ss2 = replace(String(take!(iio)), r"\s+" => "")
-        if ss2 != seq
-            @error "$target_id len=$(length(target_seqf)) ian=$(length(ss2)) me=$(length(seq))"
-            # @error "$(ss2[1:100])"
-            # @error "$(seq[1:100])"
-            for (idx, (c1, c2)) in enumerate(zip(ss2, seq))
-                if c1 != c2
-                    @error "$idx $c1 $c2"
-                    break
-                end
-            end
-        else
-            @info success(target_id)
-        end
-        
+        println(io, ">", target_id, " rotated:LSC=$(flip_LSC),SSC=$(flip_SSC),extend=$(extend)")        
         to80(io, seq, width)
+
+        if DEBUG
+            iio = IOBuffer()
+            ir(iio, fasta, flip_LSC, flip_SSC, extend)
+            ss2 = replace(String(take!(iio)), r"\s+" => "")
+            if ss2 != seq
+                @error "$target_id len=$(length(target_seqf)) ian=$(length(ss2)) me=$(length(seq))"
+            else
+                @info success(target_id)
+            end
+        end
     end
 
 end
 
 function rotateGenome(;fasta_files::Vector{String}, directory::Union{String,Nothing}=nothing,
                       flip_LSC::Bool=false, flip_SSC::Bool=false, extend::Int=0, width::Int=80)
+
     if width <= 0
         error("width should be positive!")
     end
 
     if directory == "-"
         for fasta in fasta_files
+            @info "rotating $(fasta)"
             rotateGenome(fasta, stdout, flip_LSC, flip_SSC, extend, width)
         end
         return
@@ -161,11 +164,10 @@ function rotateGenome(;fasta_files::Vector{String}, directory::Union{String,Noth
             f, ext = splitext(d[end])
             joinpath(d[1:end - 1]..., f * "-rotated" * ext)
         end
-
+        @info "$(fasta) rotating to $(fname)"
         open(fname, "w") do io
             rotateGenome(fasta, io, flip_LSC, flip_SSC, extend, width)
         end
-        @info "$(fasta) rotated to $(fname)"
     end
 end
 
@@ -194,7 +196,7 @@ function ir(io, fasta, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0)
     if IR_length >= 1000
         IR1 = (f_aligned_blocks[1][1], IR_length)
         IR2 = (f_aligned_blocks[1][2], IR_length)
-        SSC = (f_aligned_blocks[1][1] + IR_length, length(target_seqf) - 2 * IR_length - IR1[1] - 1 - IR2[1] - 1)
+        SSC = (f_aligned_blocks[1][1] + IR_length, length(target_seqf) - 2 * IR_length - IR1[1] + 1 - IR2[1] + 1) # plus one not -1!
         LSC = (length(target_seqf) - f_aligned_blocks[1][2] + 2, length(target_seqf) - 2 * IR_length - SSC[2])
         if LSC[2] < SSC[2]
             temp = LSC
