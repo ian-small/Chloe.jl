@@ -322,7 +322,8 @@ function Base.iterate(i::IFasta, state=nothing)
         error("$(i.name): expecting \">\" at line $(lineno) got: $(str_truncate(header))")
     end
 
-    id = String(i.full ? header[1:end] : split(header, " ")[1][2:end])
+    id = String(i.full ? header[2:end] : split(header, " ")[1][2:end])
+    
     if length(id) == 0
         done()
         error("$(i.name): no FASTA ID at line $(lineno)")
