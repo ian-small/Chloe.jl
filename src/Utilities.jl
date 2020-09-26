@@ -255,6 +255,7 @@ struct IFasta
     io::IO
     name::String
     full::Bool # full header
+    close::Bool
 end
 
 Base.eltype(::Type{IFasta}) = Tuple{String,String}
@@ -269,10 +270,10 @@ function iterFasta(fasta::String; full::Bool=false)
     else
         open(fasta)
     end
-    return IFasta(io, fasta, full)
+    return IFasta(io, fasta, full, true)
 end 
 
-iterFasta(io::IO, name::String="<stream>"; full::Bool=false) = IFasta(io, name, full)
+iterFasta(io::IO, name::String="<stream>", close::Bool=true; full::Bool=false) = IFasta(io, name, full, close)
 
 
 function findStart(io::IO)
@@ -284,6 +285,7 @@ function findStart(io::IO)
     end
     ""
 end
+
 function str_truncate(s::String, width=80)
     n = length(s)
     if n <= width
@@ -292,29 +294,37 @@ function str_truncate(s::String, width=80)
         s[1:width] * "..."
     end
 end
+
 function Base.iterate(i::IFasta, state=nothing)
+    done = () -> i.close && close(i.io)
+
     if state === nothing
         if eof(i.io)
+            done()
             return nothing
         end
         state = findStart(i.io)
         if state == "" # a single line of spaces is i guess valid
+            done()
             return nothing
         end
         lineno, header = 1, state
     else
         lineno, header = state
         if header === nothing
+            done()
             return nothing
         end
     end
 
     if !startswith(header, ">")
+        done()
         error("$(i.name): expecting \">\" at line $(lineno) got: $(str_truncate(header))")
     end
 
     id = String(i.full ? header[1:end] : split(header, " ")[1][2:end])
     if length(id) == 0
+        done()
         error("$(i.name): no FASTA ID at line $(lineno)")
     end
 
