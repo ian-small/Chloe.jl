@@ -4,11 +4,14 @@ export cmd_main
 
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 
-include("globals.jl")
-
 import ..Annotator
 import ..Sff2Gff
 import ..SuffixArray
+
+include("globals.jl")
+include("rotate_genome.jl")
+
+
 
  
 function chloe(;refsdir=DEFAULT_REFS, fasta_files=String[],
@@ -41,6 +44,9 @@ function getargs()
             action = :command
         "mmap"
             help = "generate mmap files from gwsas/fasta files"
+            action = :command
+        "rotate"
+            help = "rotate circular genomes to standard form"
             action = :command
         "--level", "-l"
             arg_type = String
@@ -84,7 +90,7 @@ function getargs()
             help = "only save forward"
     end
 
-    @add_arg_table! cmd_args["annotate"]  begin
+        @add_arg_table! cmd_args["annotate"]  begin
         "fasta-files"
             arg_type = String
             nargs = '+'
@@ -103,12 +109,38 @@ function getargs()
         "--template", "-t"
             arg_type = String
             default = "default"
-            metavar = "TSV"
+        metavar = "TSV"
             dest_name = "template"
             help = "template tsv [default: $(DEFAULT_TEMPLATE)]"
         "--forward-only"
             action = :store_true
             help = "only use forward sequences"
+    end
+
+    @add_arg_table! cmd_args["rotate"] begin
+        "fasta-files"
+            arg_type = String
+            nargs = '+'
+            required = true
+            action = :store_arg
+            help = "fasta file to process"
+        "--flip-SSC", "-S"
+            action = :store_true
+            help = "flip orientation of small single-copy region"
+        "--flip-LSC", "-L"
+            action = :store_true
+            help = "flip orientation of large single-copy region"
+        "--extend", "-e"
+            default = 0
+            arg_type = Int
+            help = "add n bases from start to end of sequence to allow mapping to wrap ends [use -1 for maximum extent]"
+        "--directory", "-d"
+            arg_type = String
+            help = "output directory to place rotated fasta files (use '-' to write to stdout)" 
+        "--width", "-w"
+            arg_type = Int
+            default = 80
+            help = "line width of fasta output"
     end
 
     # args.epilog = """
@@ -132,6 +164,8 @@ function cmd_main()
             SuffixArray.create_mmaps(;a...)
         elseif cmd == :suffix
             SuffixArray.writesuffixarray(;a...)
+        elseif cmd == :rotate
+            rotateGenome(;a...)
         end
     end
 
