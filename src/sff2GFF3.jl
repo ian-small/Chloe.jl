@@ -17,7 +17,7 @@ function mergeAdjacentFeaturesinModel!(model::Vector{Feature}, genome_id, genome
         f2 = model[f2_index]
         # if adjacent features are same type, merge them into a single feature
         if getFeatureType(f1) == getFeatureType(f2)
-            @debug "[$(genome_id)]$(strand) merging $(f1.path) and $(f2.path)"
+            @debug "[$(genome_id)]$(strand) merging adjacent $(f1.path) and $(f2.path)"
             f1.length += f2.length
             deleteat!(model, f2_index)
         else

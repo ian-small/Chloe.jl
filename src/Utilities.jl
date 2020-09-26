@@ -18,7 +18,6 @@ function gbff2fasta(infile::String)
                 metadata = metadata * line[13:end]
                 line = readline(f)
             end
-            @debug metadata
             while !startswith(line, "ORIGIN")
                 line = readline(f)
             end
@@ -69,26 +68,23 @@ function readFasta(fasta::String)::Tuple{String,String}
     end
 end
 
-function readFasta(f::IO)::Tuple{String,String}
-    seqs = Vector{String}()
-    header = strip(readline(f))
-    if !startswith(header, ">")
-        error("expecting '>' as start of fasta header found: \"$(header)\"")
+function readFasta(f::IO, name::String="<stream>")::Tuple{String,String}
+    for res in iterFasta(f, name)
+        return res
     end
-    nc_id = split(header, " ")[1][2:end]
-    for (idx, line) in enumerate(eachline(f))
-        line = uppercase(strip(line))
-        if length(line) === 0
-            continue
-        end
-        # see https://www.bioinformatics.org/sms/iupac.html
-        if match(r"^[ACTGRYNXSWKMBDHV.-]+$", line) === nothing
-            error("expecting nucleotide sequence found[$(idx + 1)]: \"$(line)\"")
-        end
-        push!(seqs, line)
-    end
-    return string(nc_id), join(seqs, "")
+
+    error("$(name): no FASTA data!")
 end
+
+function readFasta(fasta::String)::Tuple{String,String}
+    for res in iterFasta(fasta)
+        return res
+    end
+
+    error("$(fasta): no FASTA data!")
+
+end
+
 
 @inline function frameCounter(base::Int8, addition::Int32)
     result = (base - addition) % 3
@@ -126,31 +122,6 @@ end
     end
     true
 end
-
-
-# wraps range within genome loop
-# Base.@propagate_inbounds function range_wrap!(range::UnitRange{T}, genome_length::T)::UnitRange{T} where {T <: Integer}
-#     @boundscheck range.start <= range.stop  && genome_length > 0 || throw(BoundError("start after stop"))
-#     loop_length = genome_length + genome_length - 1
-#     # if start of range is negative, move range to end of genome
-#     while range.start <= 0
-#         lengthminus1 = range.stop - range.start
-#         range.start += genome_length
-#         range.stop = range.start + lengthminus1
-#     end
-#     # if end of range is beyond end of loop, move range to beginning of loop
-#     while range.stop > loop_length
-#         range.start -= genome_length
-#         range.stop -= genome_length
-#     end
-#     # if start of range is beyond end of genome, move range to beginning of genome
-#     while range.start > genome_length
-#         range.start -= genome_length
-#         range.stop -= genome_length
-#     end
-#     @boundscheck 0 < range.start <= genome_length &&  0 < range.stop <= loop_length || throw(BoundsError("out of range"))
-#     return range
-# end
 
 function isStartCodon(codon::AbstractString, allow_editing::Bool, allow_GTG::Bool)::Bool
     codon == "ATG" && return true
@@ -278,4 +249,96 @@ function iter_wrap(r::StepRange{<:Integer,<:Integer}, v::Vector{T}) where {T}
     @boundscheck abs(r.step) ≤ length(v) || throw(Base.BoundsError("step size too large"))
     start = genome_wrap(length(v), r.start)
     return VModuloIteratorState(start - r.step, r.step, length(r), v)
+end
+
+struct IFasta
+    io::IO
+    name::String
+    full::Bool # full header
+end
+
+Base.eltype(::Type{IFasta}) = Tuple{String,String}
+Base.IteratorSize(::Type{IFasta}) = Base.SizeUnknown()
+
+function iterFasta(fasta::String; full::Bool=false)
+    if !isfile(fasta)
+        error("$(fasta): not a file!")
+    end
+    io = if endswith(fasta, ".gz")
+        open(fasta) |> GzipDecompressorStream
+    else
+        open(fasta)
+    end
+    return IFasta(io, fasta, full)
+end 
+
+iterFasta(io::IO, name::String="<stream>"; full::Bool=false) = IFasta(io, name, full)
+
+
+function findStart(io::IO)
+    while !eof(io)
+        h = strip(readline(io))
+        if length(h) > 0
+            return h
+        end
+    end
+    ""
+end
+function str_truncate(s::String, width=80)
+    n = length(s)
+    if n <= width
+        s
+    else
+        s[1:width] * "..."
+    end
+end
+function Base.iterate(i::IFasta, state=nothing)
+    if state === nothing
+        if eof(i.io)
+            return nothing
+        end
+        state = findStart(i.io)
+        if state == "" # a single line of spaces is i guess valid
+            return nothing
+        end
+        lineno, header = 1, state
+    else
+        lineno, header = state
+        if header === nothing
+            return nothing
+        end
+    end
+
+    if !startswith(header, ">")
+        error("$(i.name): expecting \">\" at line $(lineno) got: $(str_truncate(header))")
+    end
+
+    id = String(i.full ? header[1:end] : split(header, " ")[1][2:end])
+    if length(id) == 0
+        error("$(i.name): no FASTA ID at line $(lineno)")
+    end
+
+    seq, lineno, more = readFastaBody(i, lineno)
+    return ((id, seq), (lineno, more))
+end
+
+function readFastaBody(f::IFasta, lineno::Int=0)::Tuple{String,Int,Union{String,Nothing}}
+    seqs = Vector{String}()
+    while !eof(f.io)
+        line = strip(readline(f.io))
+        lineno += 1
+        if length(line) === 0
+            continue
+        end
+        if startswith(line, ">")
+            return join(seqs, ""), lineno, line
+        end
+        line = uppercase(line)
+        # see https://www.bioinformatics.org/sms/iupac.html
+        if match(r"^[ACTGRYNXSWKMBDHV.-]+$", line) === nothing
+            error("$(f.name): expecting nucleotide sequence found[$(lineno)]: \"$(str_truncate(line))\"")
+        end
+        push!(seqs, line)
+    end
+    return join(seqs, ""), lineno, nothing
 end
