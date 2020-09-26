@@ -1,5 +1,8 @@
 
 import ..Annotator: iterFasta, readFasta, DNAString, makeSuffixArray, makeSuffixArrayRanksArray, revComp, alignLoops, genome_wrap
+import Crayons: @crayon_str
+
+const success = crayon"bold green"
 
 function to80(io::IO, genome::String, width::Int=80)
     len = length(genome)
@@ -34,13 +37,13 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
     s1 = SubString(targetloopf, ir1, ir1 + IR_length - 1)
     s2 = SubString(targetloopr, ir2, ir2 + IR_length - 1)
     if s1 != s2
-        @error s1
-        @error s2
-        @assert false
+        @error "s1 != s2 $(s1[1:20]) $(s2[1:20])"
     end
     s = genome_wrap(target_length, target_length - ir2  - IR_length + 2)
     s3 = revComp(SubString(targetloopf, s, s + IR_length - 1))
-    @assert s1 == s3 "$(s1[1:20]) $(s3[1:20])"
+    if s1 != s3 
+        @error "s1 != s3 $(s1[1:20]) $(s3[1:20])"
+    end
 
 
     out = Vector{String}()
@@ -67,10 +70,10 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
         SSC = last(IR1) + 1:first(IR2) - 1
         rest = last(IR2) + 1:target_length
         
-        @info "[$(target_id)] $(target_length) LSC=$(LSC) IR1=$(IR1) SSC=$(SSC) IR2=$(IR2) rest=$(rest)"
+        @info "[$(target_id)] $(target_length) ir=$IR_length LSC=$(LSC)[$(length(LSC))] IR1=$(IR1)[$(length(IR1))] SSC=$(SSC)[$(length(SSC))] IR2=$(IR2)[$(length(IR2))] rest=$(rest)[$(length(rest))]"
         
         LSC, IR1, SSC, IR2, rest = map(ss, [LSC, IR1, SSC, IR2, rest])
-        LSC = if length(rest) > 0 ? join([rest, LSC], "") : LSC
+        LSC = length(rest) > 0 ? join([rest, LSC], "") : LSC
         rotated = if length(LSC) < length(SSC)
             [
                 flip_LSC ? revComp(SSC) : SSC,
@@ -117,17 +120,19 @@ function rotateGenome(fasta, io::IO, flip_LSC::Bool, flip_SSC::Bool, extend::Int
         
         iio = IOBuffer()
         ir(iio, fasta, flip_LSC, flip_SSC, extend)
-        ss2 = replace(String(take!(iio)), r"\\s+" => "")
+        ss2 = replace(String(take!(iio)), r"\s+" => "")
         if ss2 != seq
             @error "$target_id len=$(length(target_seqf)) ian=$(length(ss2)) me=$(length(seq))"
-            @error "$(ss2[1:100])"
-            @error "$(seq[1:100])"
+            # @error "$(ss2[1:100])"
+            # @error "$(seq[1:100])"
             for (idx, (c1, c2)) in enumerate(zip(ss2, seq))
                 if c1 != c2
                     @error "$idx $c1 $c2"
                     break
                 end
             end
+        else
+            @info success(target_id)
         end
         
         to80(io, seq, width)
@@ -202,8 +207,12 @@ function ir(io, fasta, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0)
         # println(LSC,IR1,SSC,IR2)
         n = LSC[2] + IR1[2] + SSC[2] + IR2[2]
         @assert n == target_length "$(target_id) $n != $target_length"
-        @info "$LSC $IR1 $SSC $IR2"
-        @info "LSC=$(LSC[1]:LSC[1] + LSC[2] - 1) IR1=$(IR1[1]:IR1[1] + IR1[2] - 1) SSC=$(SSC[1]:SSC[1] + SSC[2] - 1) IR2=$(IR2[1]:IR2[1] + IR2[2] - 1)"
+        # @info "$LSC $IR1 $SSC $IR2"
+        lsc = LSC[1]:LSC[1] + LSC[2] - 1
+        ir1 = IR1[1]:IR1[1] + IR1[2] - 1
+        ssc = SSC[1]:SSC[1] + SSC[2] - 1
+        ir2 = IR2[1]:IR2[1] + IR2[2] - 1
+        @info "LSC=$(lsc)[$(length(lsc))] IR1=$(ir1)[$(length(ir1))] SSC=$(ssc)[$(length(ssc))] IR2=$(ir2)[$(length(ir2))]"
         if flip_LSC
             print(io, revComp(targetloopf[LSC[1]:LSC[1] + LSC[2] - 1]))
         else
