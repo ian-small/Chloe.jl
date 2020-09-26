@@ -4,7 +4,7 @@ import Crayons: @crayon_str
 
 const success = crayon"bold green"
 const red = crayon"bold red"
-const DEBUG = true
+const DEBUG = false
 
 function to80(io::IO, genome::String, width::Int=80)
     len = length(genome)
@@ -41,19 +41,17 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
         s2 = SubString(targetloopr, ir2, ir2 + IR_length - 1)
         if s1 != s2
             s = sum(x != y for (x, y) in zip(s1, s2))
-            @error "s1 != s2: $(IR_length) $(s)"
+            @error "s1 != s2: $(IR_length) diff=$(s)"
         end
         s = genome_wrap(target_length, target_length - ir2  - IR_length + 2)
         s3 = revComp(SubString(targetloopf, s, s + IR_length - 1))
         if s1 != s3
             s = sum(x != y for (x, y) in zip(s1, s3))
-            @error "s1 != s3: $(IR_length) $(s)"
+            @error "s1 != s3: $(IR_length) diff=$(s)"
         end
     end
 
     out = Vector{String}()
-    
-    ss = (rng::UnitRange) -> SubString(targetloopf, rng)
 
     if IR_length >= 1000
         ir1 = genome_wrap(target_length, ir1)
@@ -64,10 +62,9 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
         IR1 = ir1:ir1 + IR_length - 1
         IR2 = ir2:ir2 + IR_length - 1
         if last(IR1) >= first(IR2)
-            @error "$(target_id): inverted repeats overlap ... too vague a sequence?"
+            @error "[$(target_id)]: inverted repeats overlap ... too vague a sequence?"
             IR1 = ir1:first(IR2) - 1 # what to do? reset...
         end
-        # extra is after IR2 but we need to place it first
 
         # IR2 *end* might extend beyond target_length
         LSC = max(1, 1 + last(IR2) - target_length):first(IR1) - 1
@@ -75,10 +72,12 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
         rest = last(IR2) + 1:target_length
         
         @debug begin 
-            ov = last(IR2) > target_length ? red("overhang! ") : ""
+            ov = last(IR2) > target_length ? red("IR2 overhang! ") : ""
             "[$(target_id)] $(target_length) ir=$IR_length $(ov)LSC=$(LSC)[$(length(LSC))] IR1=$(IR1)[$(length(IR1))] SSC=$(SSC)[$(length(SSC))] IR2=$(IR2)[$(length(IR2))] rest=$(rest)[$(length(rest))]" 
         end
-        
+    
+        ss = (rng::UnitRange) -> SubString(targetloopf, rng)
+     
         LSC, IR1, SSC, IR2, rest = map(ss, [LSC, IR1, SSC, IR2, rest])
         LSC = length(rest) > 0 ? join([rest, LSC], "") : LSC
         rotated = if length(LSC) < length(SSC)
@@ -115,19 +114,22 @@ end
 
 function rotateGenome(fasta, io::IO, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0, width::Int=80)
 
-    for (target_id, target_seqf) in iterFasta(fasta; full=false)
+    for (target_id, target_seqf) in iterFasta(fasta; full=true)
         seq = rotateGenome(target_id, target_seqf, flip_LSC, flip_SSC, extend)
-        if extend == 0
-            if length(seq) != length(target_seqf)
-                error("[$(target_id)] lengths differ: $(length(target_seqf)) != rotated $(length(seq))")
-            end
-        end
-        @debug "[$(target_id)] seq length=$(length(target_seqf)) rotated=$(length(seq))"
-        
+
         println(io, ">", target_id, " rotated:LSC=$(flip_LSC),SSC=$(flip_SSC),extend=$(extend)")        
         to80(io, seq, width)
+        @info "[$(target_id)] rotated"
 
         if DEBUG
+
+            if extend == 0
+                if length(seq) != length(target_seqf)
+                    error("[$(target_id)] lengths differ: $(length(target_seqf)) != rotated $(length(seq))")
+                end
+            end
+            
+            @debug "[$(target_id)] seq length=$(length(target_seqf)) rotated=$(length(seq))"
             iio = IOBuffer()
             ir(iio, fasta, flip_LSC, flip_SSC, extend)
             ss2 = replace(String(take!(iio)), r"\s+" => "")
