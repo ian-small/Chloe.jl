@@ -1,5 +1,5 @@
 
-module SuffixArray
+module MMap
 export create_mmaps, writesuffixarray
 import Mmap
 import ..Annotator: revComp, iterFasta, makeSuffixArray, makeSuffixArrayRanksArray, GenomeWithSAs, writeGenomeWithSAs

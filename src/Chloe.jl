@@ -15,13 +15,13 @@ include("annotate_genomes.jl")
 include("broker.jl")
 include("sff2GFF3.jl")
 include("WebAPI.jl")
-include("SuffixArray.jl")
+include("MMap.jl")
 include("chloe_cmd.jl")
 include("tasks.jl")
 
 include("chloe_distributed.jl")
 
-import .SuffixArray: create_mmaps, writesuffixarray
+import .MMap: create_mmaps, writesuffixarray
 import .Sff2Gff: writeallGFF3
 # import .ChloeDistributed: distributed_main, chloe_distributed, run_broker, get_distributed_args, maybe_launch_broker
 import .Annotator: annotate, annotate_one, readReferences, MayBeIO, MayBeString, Feature

@@ -6,7 +6,7 @@ import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 
 import ..Annotator
 import ..Sff2Gff
-import ..SuffixArray
+import ..MMap
 
 include("globals.jl")
 include("rotate_genome.jl")
@@ -159,9 +159,9 @@ function cmd_main()
         elseif cmd == :annotate
             chloe(;a...)
         elseif cmd == :mmap
-            SuffixArray.create_mmaps(;a...)
+            MMap.create_mmaps(;a...)
         elseif cmd == :suffix
-            SuffixArray.writesuffixarray(;a...)
+            MMap.writesuffixarray(;a...)
         elseif cmd == :rotate
             rotateGenome(;a...)
         end

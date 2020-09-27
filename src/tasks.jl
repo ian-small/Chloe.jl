@@ -6,7 +6,7 @@ import .Annotator: annotate_one, MayBeIO, MayBeString, readReferences, Reference
 
 #### these are only used by chloe_distributed ####
 
-function annotate_one_task(fasta::MayBeString, output::MayBeIO, task_id::MayBeString)
+function annotate_one_task(fasta::String, output::MayBeIO, task_id::MayBeString)
     annotation_local_storage(TASK_KEY, task_id)
     try
         # the global REFERENCE should have been
