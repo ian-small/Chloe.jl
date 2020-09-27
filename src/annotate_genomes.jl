@@ -318,11 +318,12 @@ end
 function do_annotations(target_id::String, strand::Char, idxmap::Dict{Int,SingleReference}, blocks_aligned_to_target::AAlignedBlocks)
     # this takes about 4secs!
     function do_one(refsrc, ref_features, blocks)
-        annotations = Vector{Annotation}()
         st = time_ns()
-        push!(annotations, findOverlaps(ref_features.forward, blocks.forward)...)
-        push!(annotations, findOverlaps(ref_features.reverse, blocks.reverse)...)
-        @info "[$(target_id)]$(strand) $(refsrc)± overlaps $(length(annotations)): $(elapsed(st))"
+        annotations = findOverlaps(ref_features.forward, blocks.forward)
+        # ugh splatting is *really* inefficient!
+        # push!(annotations, findOverlaps(ref_features.reverse, blocks.reverse)...)
+        annotations = vcat(annotations, findOverlaps(ref_features.reverse, blocks.reverse))
+        # @info "[$(target_id)]$(strand) $(refsrc)± overlaps $(length(annotations)): $(elapsed(st))"
         return annotations
     end
     tgt = Vector{Vector{Annotation}}(undef, length(idxmap))
@@ -587,7 +588,7 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
     end
     
     if output !== nothing
-        if typeof(output) == String
+        if output isa String
             fname = output::String
             if isdir(fname)
                 fname = joinpath(fname, "$(target_id).sff")
