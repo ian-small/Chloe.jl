@@ -3,6 +3,7 @@ module CmdLine
 export cmd_main
 
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
+import Logging
 
 import ..Annotator
 import ..Sff2Gff
@@ -11,6 +12,11 @@ import ..MMap
 include("globals.jl")
 include("rotate_genome.jl")
 
+function quiet_metafmt(level, _module, group, id, file, line)
+    color = Logging.default_logcolor(level)
+    prefix = (level == Logging.Warn ? "Warning" : string(level)) * ':'
+    return color, prefix, ""
+end
 
 function chloe(;refsdir=DEFAULT_REFS, fasta_files=String[],
     template=DEFAULT_TEMPLATE, output::Union{Nothing,String}=nothing,
@@ -25,7 +31,6 @@ function chloe(;refsdir=DEFAULT_REFS, fasta_files=String[],
         verbose=verbose)
 
 end
-
 
 function getargs()
     cmd_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
@@ -44,12 +49,12 @@ function getargs()
             help = "generate mmap files from gwsas/fasta files"
             action = :command
         "rotate"
-            help = "rotate circular genomes to standard form"
+            help = "rotate circular genomes to standard position"
             action = :command
         "--level", "-l"
             arg_type = String
             default = "info"
-            help = "log level (warn,debug,info,error)"
+            help = "log level (info,warn,error,debug)"
     end
 
     @add_arg_table! cmd_args["gff3"]  begin
@@ -61,6 +66,7 @@ function getargs()
             help = "sff files to process" 
         "--directory", "-d"
             arg_type = String
+            metavar = "DIRECTORY"
             help = "output directory" 
     end
 
@@ -73,6 +79,7 @@ function getargs()
             help = "fasta files to process"
         "--directory", "-d"
             arg_type = String
+            metavar = "DIRECTORY"
             help = "output directory" 
     end
 
@@ -131,13 +138,16 @@ function getargs()
         "--extend", "-e"
             default = 0
             arg_type = Int
-            help = "add n bases from start to end of sequence to allow mapping to wrap ends [use -1 for maximum extent]"
+            metavar = "INT"
+            help = "add n bases from start to the end of sequence to allow mapping to wrap ends [use -1 for maximum extent]"
         "--directory", "-d"
             arg_type = String
+            metavar = "DIRECTORY"
             help = "output directory to place rotated fasta files (use '-' to write to stdout)" 
         "--width", "-w"
             arg_type = Int
             default = 80
+            metavar = "INT"
             help = "line width of fasta output"
     end
 
@@ -151,7 +161,8 @@ end
 function cmd_main() 
     parsed_args = getargs()
     level = lowercase(parsed_args[:level])
-    Logging.with_logger(Logging.ConsoleLogger(stderr, get(LOGLEVELS, level, Logging.Warn))) do 
+    Logging.with_logger(Logging.ConsoleLogger(stderr,
+        get(LOGLEVELS, level, Logging.Warn), meta_formatter=quiet_metafmt)) do 
         cmd = parsed_args[:_COMMAND_]
         a = parsed_args[cmd]
         if cmd == :gff3

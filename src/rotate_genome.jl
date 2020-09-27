@@ -1,6 +1,6 @@
 
 import ..Annotator: iterFasta, readFasta, genome_wrap, DNAString, revComp
-import ..Annotator: createTargetReference, inverted_repeat
+import ..Annotator: createTargetReference, inverted_repeat, fastaID
 # for test
 import ..Annotator: makeSuffixArray, makeSuffixArrayRanksArray, alignLoops
 
@@ -8,7 +8,7 @@ import Crayons: @crayon_str
 
 const success = crayon"bold green"
 const red = crayon"bold red"
-const DEBUG = true
+const DEBUG = false
 
 function to80(io::IO, genome::String, width::Int=80)
     len = length(genome)
@@ -109,7 +109,7 @@ function rotateGenome(fasta, io::IO, flip_LSC::Bool, flip_SSC::Bool, extend::Int
 
         println(io, ">", target_id, " rotated:LSC=$(flip_LSC),SSC=$(flip_SSC),extend=$(extend)")        
         to80(io, seq, width)
-        @info "[$(target_id)] rotated $rotation"
+        @info "[$(fastaID(target_id))] rotated $rotation"
 
         if DEBUG
 

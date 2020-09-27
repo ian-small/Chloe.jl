@@ -41,31 +41,33 @@ end
     return (count, 1)
 end
 
-function alignSAs(a::DNAString, saa::SuffixArray, b::DNAString, sab::SuffixArray)::AlignedBlocks
-    lcps = AlignedBlocks(undef, length(saa))
-    bindex = 1
+function alignSAs(src::DNAString, srcSA::SuffixArray, tgt::DNAString, tgtSA::SuffixArray)::AlignedBlocks
+    # src is the reference suffix position
+    # tgt is the suffixes of what we want to align
+    lcps = AlignedBlocks(undef, length(srcSA))
+    tgt_idx = 1
     zerot = (zero(Int32), zero(Int32), zero(Int32))
-    @inbounds for aindex = 1:length(saa)
-        ssa = SubString(a, saa[aindex])
+    @inbounds for src_idx = 1:length(srcSA)
+        ssa = SubString(src, srcSA[src_idx])
         oldtuple = zerot
         while true
-            ssb = SubString(b, sab[bindex])
+            ssb = SubString(tgt, tgtSA[tgt_idx])
             (lcp, direction) = compareSubStrings(ssa, ssb)
-            newtuple = (saa[aindex], sab[bindex], lcp)
-            if (direction < 0 || bindex == length(sab))
-                if (oldtuple[1] == 0) && (bindex > 1)
-                    sab1 = SubString(b, sab[bindex - 1])
+            newtuple = (srcSA[src_idx], tgtSA[tgt_idx], lcp)
+            if (direction < 0 || tgt_idx == length(tgtSA))
+                if (oldtuple[1] == 0) && (tgt_idx > 1)
+                    sab1 = SubString(tgt, tgtSA[tgt_idx - 1])
                     (lcp2, direction) = compareSubStrings(ssa, sab1)
-                    oldtuple = (saa[aindex], sab[bindex - 1], lcp2)
+                    oldtuple = (srcSA[src_idx], tgtSA[tgt_idx - 1], lcp2)
                 end
                 if (lcp >= oldtuple[3])
-                    lcps[aindex] = newtuple
+                    lcps[src_idx] = newtuple
                 else
-                    lcps[aindex] = oldtuple
+                    lcps[src_idx] = oldtuple
                 end
                 break
             end
-            bindex += 1
+            tgt_idx += 1
             oldtuple = newtuple
         end
     end
@@ -124,7 +126,7 @@ function lcps2AlignmentBlocks(lcps::AlignedBlocks, circular::Bool, min_run_lengt
     b_start = -1
 
     for lcp in lcps
-        if lcp[2] == b_start + 1
+        if lcp[2] == b_start + 1 # target location
             b_start += 1
             continue
         end

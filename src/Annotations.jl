@@ -111,7 +111,7 @@ function addAnnotation(genome_id::String, feature::Feature, block::AlignedBlock)
     end
     annotation_path = annotationPath(feature)
     Annotation(genome_id, annotation_path, 
-                            startA - block[1] + block[2],
+                            startA - block[1] + block[2], # shift from reference position to target
                             flength, offset5,
                             feature.length - (startA - feature.start) - flength,
                             phase)
@@ -908,7 +908,7 @@ function writeSFF(outfile::Union{String,IO},
             println(outfile, "IR/2/repeat_region/1\t-\t$(ir[2])\t$(ir[3])\t0\t0\t0\t0\t")
         end
     end
-    if typeof(outfile) == String
+    if outfile isa String
         maybe_gzwrite(outfile::String) do io
             out(io)
         end
