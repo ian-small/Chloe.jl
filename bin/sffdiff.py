@@ -5,6 +5,7 @@ import click
 
 yellow = lambda s: click.style(s, fg="yellow")
 red = lambda s: click.style(s, fg="red", bold="true")
+green = lambda s: click.style(s, fg="green", bold="true")
 
 
 def diff(fa1, fa2, depth, coverage, skip_comments, ignore_order=False):
@@ -25,6 +26,8 @@ def diff(fa1, fa2, depth, coverage, skip_comments, ignore_order=False):
         )
 
     def ps(key, n, f1, f2):
+        if n == 'comment' and f1 == "":
+            f2 = green(f2)
         return f'{prefix}{key} [{yellow(n)}]: "{f1}" {yellow("!=")} "{f2}" [ref]'
 
     def fixcom(s):

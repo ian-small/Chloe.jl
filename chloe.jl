@@ -1,6 +1,6 @@
 include("src/annotate_genomes.jl")
 include("src/sff2GFF3.jl")
-include("src/SuffixArray.jl")
+include("src/MMap.jl")
 include("src/chloe_cmd.jl")
 
 if abspath(PROGRAM_FILE) == @__FILE__
