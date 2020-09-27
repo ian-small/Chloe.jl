@@ -7,8 +7,8 @@ yellow = lambda s: click.style(s, fg="yellow")
 red = lambda s: click.style(s, fg="red", bold="true")
 
 
-def diff(fa1, fa2, depth, coverage, skip_comments):
-    def todict(l):
+def diff(fa1, fa2, depth, coverage, skip_comments, ignore_order=False):
+    def todict(l, idx):
         # accD/1/CDS/1	+	59145	1491	0	1.010	0.537	0.999
         name, strand, pos, length, i1, f1, f2, f3, com = l[:-1].split("\t")
         return dict(
@@ -21,6 +21,7 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
             depth=float(f2),
             coverage=float(f3),
             comment=com.strip(),
+            idx=idx,
         )
 
     def ps(key, n, f1, f2):
@@ -39,8 +40,8 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
     # assert len(lines1) == len(lines2)
     assert lines1[0] == lines2[0]
 
-    d1 = {d["name"]: d for l in lines1[1:] for d in [todict(l)]}
-    d2 = {d["name"]: d for l in lines2[1:] for d in [todict(l)]}
+    d1 = {d["name"]: d for idx, l in enumerate(lines1[1:]) for d in [todict(l, idx)]}
+    d2 = {d["name"]: d for idx, l in enumerate(lines2[1:]) for d in [todict(l, idx)]}
 
     if d1 == d2:
         return
@@ -76,6 +77,9 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
         dd1 = d1[k]
         dd2 = d2[k]
 
+        if not ignore_order and dd2["idx"] != dd1["idx"]:
+            click.secho(ps(k, "idx", dd1["idx"], dd2["idx"]))
+
         check_pos(dd1, dd2)
 
         for n in fields:
@@ -104,6 +108,7 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
 @click.option(
     "--coverage", default=0.05, show_default=True, help='coverage "closeness"'
 )
+@click.option("-i", "--ignore-order", is_flag=True, help="ignore differences in order")
 @click.option(
     "--src",
     default="testfa",
@@ -111,7 +116,7 @@ def diff(fa1, fa2, depth, coverage, skip_comments):
     help="source directory for .sff files",
 )
 @click.option("-c", "--skip-comments", is_flag=True, help="ignore comment differences")
-def run(depth, coverage, skip_comments, src):
+def run(depth, coverage, skip_comments, src, ignore_order):
 
     for sff in os.listdir("testo"):
         if not sff.endswith(".sff"):
@@ -123,7 +128,14 @@ def run(depth, coverage, skip_comments, src):
             click.secho(f"can't find ref file: {fa2}", fg="red")
             continue
         click.echo(yellow(f"diffing {sff}"))
-        diff(fa1, fa2, depth=depth, coverage=coverage, skip_comments=skip_comments)
+        diff(
+            fa1,
+            fa2,
+            depth=depth,
+            coverage=coverage,
+            skip_comments=skip_comments,
+            ignore_order=ignore_order,
+        )
 
 
 if __name__ == "__main__":
