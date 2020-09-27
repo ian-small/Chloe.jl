@@ -85,11 +85,9 @@ function stranded(strand::Char, r::SingleReference)::StrandSingleReference
     end
 end
 
-
 struct Reference
     references::Dict{String,SingleReference}
     # from .tsv file
-    # feature_templates::Vector{FeatureTemplate}
     feature_templates::Dict{String,FeatureTemplate}
     gene_exons::Dict{String,Int32}
 
@@ -103,21 +101,6 @@ datasize(r::Reference) = begin
     )
 end
 
-
-
-function human(num::Int)::String
-    if num == 0
-        return "0B"
-    end
-    magnitude = floor(Int, log10(abs(num)) / 3)
-    val = num / (1000^magnitude)
-    sval = @sprintf("%.1f", val)
-    if magnitude > 7
-        return "$(sval)YB"
-    end
-    p = ["", "k", "M", "G", "T", "P", "E", "Z"][magnitude + 1]
-    return "$(sval)$(p)B"
-end
 # stops the REPL printing the entire 7MB of sequences!
 function Base.show(io::IO, reference::Reference)
 
@@ -160,6 +143,7 @@ function read_mmap_suffix(filename::String; forward_only::Bool=false)
     msf, msr = MappedPtrString(sf),  MappedPtrString(sr)
     return FwdRev(saf, sar), FwdRev(raf, rar), FwdRev(msf, msr)
 end
+
 function read_mmap_suffix_forward_only(filename::String)
     size = filesize(filename)
     nelem = floor(Int, (size + 1) / 10)
@@ -199,7 +183,6 @@ function read_gwsas(gwsas::String, id::String; forward_only::Bool=false)
     
     fwd = fwd * fwd[1:end - 1]
     rev = rev * rev[1:end - 1]
-
 
     FwdRevSA(refgwsas), FwdRevRA(refgwsas), FwdRevMap(fwd, rev)
 end
@@ -314,21 +297,42 @@ function readReferences(refsdir::String, templates::String;
 end
 
 
-# const ns(td) = Time(Nanosecond(td))
-const ns(td) = @sprintf("%.3fs", td / 1e9)
-
 MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,DFeatureStack}
 AAlignedBlocks = Vector{FwdRev{AlignedBlocks}}
 
-function do_annotations(idxmap::Dict{Int,SingleReference}, blocks_aligned_to_target::AAlignedBlocks)
-    annotations = Vector{Annotation}()
-    for i in idxmap
-        blocks = blocks_aligned_to_target[i.first]
-        ref_features = i.second.ref_features
+function flatten(vanno::Vector{Vector{Annotation}})::Vector{Annotation}
+    ret = Vector{Annotation}(undef, sum(length(v) for v in vanno))
+    i = 1
+    @inbounds for v in vanno
+        for a in v
+            ret[i] = a
+            i += 1
+        end
+    end
+    ret
+end
+
+function do_annotations(target_id::String, strand::Char, idxmap::Dict{Int,SingleReference}, blocks_aligned_to_target::AAlignedBlocks)
+    # this takes about 4secs!
+    function do_one(refsrc, ref_features, blocks)
+        annotations = Vector{Annotation}()
+        st = time_ns()
         push!(annotations, findOverlaps(ref_features.forward, blocks.forward)...)
         push!(annotations, findOverlaps(ref_features.reverse, blocks.reverse)...)
+        @info "[$(target_id)]$(strand) $(refsrc)± overlaps $(length(annotations)): $(elapsed(st))"
+        return annotations
     end
+    tgt = Vector{Vector{Annotation}}(undef, length(idxmap))
+
+    Threads.@threads for i in collect(idxmap)
+        blocks = blocks_aligned_to_target[i.first]
+        ref_features = i.second.ref_features
+        tgt[i.first] = do_one(i.second.refsrc, ref_features, blocks)
+
+    end
+    # annotations = collect(Iterators.flatten(tgt))
+    annotations = flatten(tgt)
     sort!(annotations, by=x -> x.path)
     annotations
 end
@@ -337,7 +341,7 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     strand::Char, blocks_aligned_to_target::AAlignedBlocks,
     targetloop::DNAString, feature_templates::Dict{String,FeatureTemplate})::Strand
 
-    annotations = do_annotations(idxmap, blocks_aligned_to_target)
+    annotations = do_annotations(target_id, strand, idxmap, blocks_aligned_to_target)
 
     t4 = time_ns()
     @info "[$target_id]$strand overlapping ref annotations ($(length(annotations))) $(human(datasize(annotations))): $(ns(t4 - start_ns))"
@@ -433,11 +437,30 @@ function alignit(tgt::SingleReference, ref::SingleReference)
     # blocks_aligned_to_targetf[refcount] = FwdRev(ff, rf)
     # blocks_aligned_to_targetr[refcount] = FwdRev(rr, fr)
 
-    @info "[$(tgt.refsrc)]± aligned $(src_id) ($(length(ff)),$(length(rf))) $(ns(time_ns() - start))"
+    @info "[$(tgt.refsrc)]± aligned $(src_id) ($(length(ff)),$(length(rf))) $(elapsed(start))"
     # note cross ...
     FwdRev(ff, rf), FwdRev(rr, fr)
 end
 
+function inverted_repeat(target::SingleReference)::AlignedBlock
+    f_aligned_blocks, _ = alignLoops(target.refsrc,
+                                                    target.refloops.forward, target.refSAs.forward, target.refRAs.forward,
+                                                    target.refloops.reverse, target.refSAs.reverse, target.refRAs.reverse;
+                                                    rev=false
+                                        )
+
+    # sort blocks by length
+    f_aligned_blocks = sort!(f_aligned_blocks, by=last, rev=true)
+    
+    ir = if length(f_aligned_blocks) > 0
+        f_aligned_blocks[1]
+    else
+        AlignedBlock(0, 0, 0)
+    end
+    ir
+end
+
+WatsonCrick = Tuple{Vector{Vector{SFF}},DFeatureStack}
 """
     annotate_one(references::Reference, fasta_file::Union{String,IO} [,output_sff_file])
 
@@ -457,11 +480,10 @@ with the annotation within it
 
 `reference` are the reference annotations (see `readReferences`)
 """
-function annotate_one(reference::Reference, fasta::Union{String,IO}, output::MayBeIO)
+function annotate_one(reference::Reference, target_id::String, target_seqf::String, output::MayBeIO)
 
     t1 = time_ns()
 
-    target_id, target_seqf = readFasta(fasta)
     target_length = Int32(length(target_seqf))
     n = count(r"[XN]", target_seqf)
     r = n / length(target_seqf)
@@ -515,52 +537,49 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
     for key in idxmap
         a = blocks_aligned_to_targetf[key.first]
         coverage = blockCoverage(a.forward) + blockCoverage(a.reverse)
-        coverages[key.second.refsrc] = coverage / target_length * 2
+        coverages[key.second.refsrc] = coverage / (target.target_length * 2)
     end
     @debug "[$target_id] coverages:" coverages
 
+    strands = Vector{WatsonCrick}(undef, 2)
 
-
-    function watson(strands::Vector{Strand})
-        strands[1] = do_strand(target_id, t3, target_length, idxmap, coverages,
+    function watson()
+        models, stacks = do_strand(target_id, t3, target.target_length, idxmap, coverages,
             '+', blocks_aligned_to_targetf, target.refloops.forward, reference.feature_templates)
+
+        sffs_fwd = [toSFF(model, target.refloops.forward, stacks) 
+            for model in filter(m -> !isempty(m), models)]
+        strands[1] = (sffs_fwd, stacks)
+        
     end
-    function crick(strands::Vector{Strand})
-        strands[2] = do_strand(target_id, t3, target_length, idxmap, coverages,
+    function crick()
+        models, stacks = do_strand(target_id, t3, target.target_length, idxmap, coverages,
             '-', blocks_aligned_to_targetr, target.refloops.reverse, reference.feature_templates)
+        sffs_rev = [toSFF(model, target.refloops.reverse, stacks) 
+            for model in filter(m -> !isempty(m), models)]
+        strands[2] = (sffs_rev, stacks)
     end
 
-    strands = Vector{Strand}(undef, 2)
-    Threads.@threads for worker in [watson, crick]
-        worker(strands)
+    irb = Vector{AlignedBlock}(undef, 1)
+
+    function bginverted_repeat()
+        # find inverted repeat if any
+        irb[1] = inverted_repeat(target)
     end
 
-    target_fstrand_models, fstrand_feature_stacks = strands[1]
-    target_rstrand_models, rstrand_feature_stacks = strands[2]
+    Threads.@threads for worker in [watson, crick, bginverted_repeat]
+        worker()
+    end
 
-    sffs_fwd = [toSFF(model, target.refloops.forward, fstrand_feature_stacks) 
-            for model in filter(m -> !isempty(m), target_fstrand_models)]
-
-    sffs_rev = [toSFF(model, target.refloops.reverse, rstrand_feature_stacks) 
-            for model in filter(m -> !isempty(m), target_rstrand_models)]
-
-
-    # find inverted repeat if any
-    f_aligned_blocks, r_aligned_blocks = alignLoops(target_id,
-                                                    target.refloops.forward, target.refSAs.forward, target.refRAs.forward,
-                                                    target.refloops.reverse, target.refSAs.reverse, target.refRAs.reverse
-                                        )
-
-    # sort blocks by length
-    f_aligned_blocks = sort!(f_aligned_blocks, by=last, rev=true)
+    sffs_fwd, fstrand_feature_stacks = strands[1]
+    sffs_rev, rstrand_feature_stacks = strands[2]
+    ir = irb[1]
+   
     
-    ir = if length(f_aligned_blocks) > 0 && f_aligned_blocks[1][3] >= 1000
-        f_aligned_blocks[1]
-    else
-        nothing
-    end
-    if ir !== nothing
+    if ir[3] >= 1000
         @info "[$target_id] inverted repeat $(ir[3])"
+    else
+        ir = nothing
     end
     
     if output !== nothing
@@ -575,7 +594,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
     else
         fname = "$(target_id).sff"
     end
-    writeSFF(fname, target_id, target_length, reference.gene_exons,
+    writeSFF(fname, target_id, target.target_length, reference.gene_exons,
              FwdRev(sffs_fwd, sffs_rev), ir)
 
     @info success("[$target_id] Overall: $(ns(time_ns() - t1))")
@@ -591,7 +610,14 @@ returns a 2-tuple (sff annotation as an IOBuffer, sequence id)
 `reference` are the reference annotations (see `readReferences`)
 """
 function annotate_one(reference::Reference, fasta::Union{String,IO})
-    annotate_one(reference, fasta, IOBuffer())
+    target_id, target_seqf = readFasta(fasta)
+    annotate_one(reference, target_id, target_seqf, IOBuffer())
+end
+
+function annotate_all(reference::Reference, fasta::Union{String,IO})
+    for (target_id, target_seqf) in iterFasta(fasta)
+        annotate_one(reference, target_id, target_seqf, nothing)
+    end
 end
 
 function annotate(refsdir::String, templates::String, fa_files::Vector{String}, output::MayBeString;
@@ -600,7 +626,9 @@ function annotate(refsdir::String, templates::String, fa_files::Vector{String}, 
     reference = readReferences(refsdir, templates; verbose=verbose, forward_only=forward_only)
 
     for infile in fa_files
-        annotate_one(reference, infile, output)
+        for (seq_id, seqf) in iterFasta(infile)
+            annotate_one(reference, seq_id, seqf, output)
+        end
     end
 end
 

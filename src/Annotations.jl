@@ -84,7 +84,7 @@ end
 # part or all of a Feature annotated by alignment
 struct Annotation
     genome_id::String
-    path::String
+    path::String # gene/n/?/n
     start::Int32
     length::Int32
     # offsets are the distance from the edge of the annotation to the end of 
@@ -95,8 +95,8 @@ struct Annotation
     # to be in the correct reading frame
     phase::Int8
 end
-datasize(a::Annotation) = sizeof(Annotation) # genome_id is shared + sizeof(a.genome_id)
-datasize(v::Vector{Annotation}) = length(v) * sizeof(Annotation)
+datasize(a::Annotation) = sizeof(Annotation)  + sizeof(a.path)# genome_id is shared + sizeof(a.genome_id)
+datasize(v::Vector{Annotation}) = sum(datasize(a) for a in v)
 
 function addAnnotation(genome_id::String, feature::Feature, block::AlignedBlock)::Union{Nothing,Annotation}
     startA = max(feature.start, block[1])
@@ -141,12 +141,12 @@ end
 #     end
 #     annotations
 # end
-function findOverlaps(ref_featurearray::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
+function findOverlaps(ref_features::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
     annotations = Vector{Annotation}()
     for block in aligned_blocks
-        for feature in intersect(ref_featurearray.interval_tree, block[1], block[1] + block[3] - one(Int32))
+        for feature in intersect(ref_features.interval_tree, block[1], block[1] + block[3] - one(Int32))
             # @assert rangesOverlap(feature.start, feature.length, block[1], block[3])
-            anno = addAnnotation(ref_featurearray.genome_id, feature, block)
+            anno = addAnnotation(ref_features.genome_id, feature, block)
             if anno !== nothing
                 push!(annotations, anno)
             end

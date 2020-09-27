@@ -12,8 +12,6 @@ include("globals.jl")
 include("rotate_genome.jl")
 
 
-
- 
 function chloe(;refsdir=DEFAULT_REFS, fasta_files=String[],
     template=DEFAULT_TEMPLATE, output::Union{Nothing,String}=nothing,
     forward_only::Bool=false, verbose::Bool=true)
@@ -152,7 +150,7 @@ end
 
 function cmd_main() 
     parsed_args = getargs()
-    level = parsed_args[:level]
+    level = lowercase(parsed_args[:level])
     Logging.with_logger(Logging.ConsoleLogger(stderr, get(LOGLEVELS, level, Logging.Warn))) do 
         cmd = parsed_args[:_COMMAND_]
         a = parsed_args[cmd]

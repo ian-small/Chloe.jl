@@ -2,28 +2,29 @@
 module SuffixArray
 export create_mmaps, writesuffixarray
 import Mmap
-import ..Annotator: revComp, readFasta, makeSuffixArray, makeSuffixArrayRanksArray, GenomeWithSAs, writeGenomeWithSAs
+import ..Annotator: revComp, iterFasta, makeSuffixArray, makeSuffixArrayRanksArray, GenomeWithSAs, writeGenomeWithSAs
 
 function writesuffixarray(;fasta_files=String[], directory=Union{String,Nothing} = nothing)
     for infile in fasta_files
-        seqid, seqf = readFasta(infile)
-        seqr = revComp(seqf)
+        for (seqid, seqf) in iterFasta(infile)
+            seqr = revComp(seqf)
 
-        saf = makeSuffixArray(seqf * seqf[1:end - 1], true)
-        sar = makeSuffixArray(seqr * seqr[1:end - 1], true)
+            saf = makeSuffixArray(seqf * seqf[1:end - 1], true)
+            sar = makeSuffixArray(seqr * seqr[1:end - 1], true)
 
-        @assert length(saf) === length(sar)
+            @assert length(saf) === length(sar)
 
-        gwsas = GenomeWithSAs(seqid, seqf, saf, sar)
-        if directory !== nothing
-            filename = joinpath(directory, gwsas.id * ".gwsas")
-        else
-            d = splitpath(infile)
-            filename = joinpath(d[1:end - 1]..., "$(gwsas.id).gwsas")
+            gwsas = GenomeWithSAs(seqid, seqf, saf, sar)
+            if directory !== nothing
+                filename = joinpath(directory, gwsas.id * ".gwsas")
+            else
+                d = splitpath(infile)
+                filename = joinpath(d[1:end - 1]..., "$(gwsas.id).gwsas")
 
+            end
+            @info "writing suffix array: $filename"
+            writeGenomeWithSAs(filename, gwsas)
         end
-        @info "writing suffix array: $filename"
-        writeGenomeWithSAs(filename, gwsas)
     end
 end
 
@@ -63,38 +64,38 @@ end
 
 
 function one_mmap_from_fasta(infile::String, forward_only::Bool=false)
-    seqid, fwd = readFasta(infile)
-    fwd = uppercase(fwd)
+    for (seqid, fwd) in iterFasta(infile)
 
-    fwds = fwd * fwd[1:end - 1]
-    ufwd = Vector{UInt8}(fwds)
+        fwds = fwd * fwd[1:end - 1]
+        ufwd = Vector{UInt8}(fwds)
 
-    saf = makeSuffixArray(fwds, true)
+        saf = makeSuffixArray(fwds, true)
 
-    if !forward_only
-        rev = revComp(fwd)
-        revs = rev * rev[1:end - 1]
-    else
-        rev = revs = ""
+        if !forward_only
+            rev = revComp(fwd)
+            revs = rev * rev[1:end - 1]
+        else
+            rev = revs = ""
+        end
+        sar = makeSuffixArray(revs, true)
+        urev = Vector{UInt8}(revs)
+
+        
+        n = length(saf)
+        d = splitpath(infile)
+        outfile = joinpath(d[1:end - 1]..., "$(seqid).mmap")
+        f = forward_only ? "[forward-only]" : ""
+        @info "writing mmap array$f from fasta to: $outfile"
+        open(outfile, "w") do f
+            write(f, saf)
+            !forward_only && write(f, sar)
+            write(f, makeSuffixArrayRanksArray(saf))
+            !forward_only && write(f, makeSuffixArrayRanksArray(sar))
+            write(f, ufwd)
+            !forward_only && write(f, urev)
+        end
+        @assert filesize(outfile) === (!forward_only ? 20 * n - 2 : 10 * n - 1)
     end
-    sar = makeSuffixArray(revs, true)
-    urev = Vector{UInt8}(revs)
-
-    
-    n = length(saf)
-    d = splitpath(infile)
-    outfile = joinpath(d[1:end - 1]..., "$(seqid).mmap")
-    f = forward_only ? "[forward-only]" : ""
-    @info "writing mmap array$f from fasta to: $outfile"
-    open(outfile, "w") do f
-        write(f, saf)
-        !forward_only && write(f, sar)
-        write(f, makeSuffixArrayRanksArray(saf))
-        !forward_only && write(f, makeSuffixArrayRanksArray(sar))
-        write(f, ufwd)
-        !forward_only && write(f, urev)
-    end
-    @assert filesize(outfile) === (!forward_only ? 20 * n - 2 : 10 * n - 1)
 
 end
 

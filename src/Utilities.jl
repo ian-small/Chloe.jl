@@ -1,6 +1,9 @@
 
 import CodecZlib: GzipDecompressorStream, GzipCompressorStream
 import Base
+
+import Printf: @sprintf
+
 struct FwdRev{T}
     forward::T
     reverse::T
@@ -43,6 +46,24 @@ function gbff2fasta(infile::String)
             end
         end
     end
+end
+
+# const ns(td) = Time(Nanosecond(td))
+ns(td) = @sprintf("%.3fs", td / 1e9)
+elapsed(st) = @sprintf("%.3fs", (time_ns() - st) / 1e9)
+
+function human(num::Integer)::String
+    if num == 0
+        return "0B"
+    end
+    magnitude = floor(Int, log10(abs(num)) / 3)
+    val = num / (1000^magnitude)
+    sval = @sprintf("%.1f", val)
+    if magnitude > 7
+        return "$(sval)YB"
+    end
+    p = ["", "k", "M", "G", "T", "P", "E", "Z"][magnitude + 1]
+    return "$(sval)$(p)B"
 end
 
 function maybe_gzread(f::Function, filename::String)
