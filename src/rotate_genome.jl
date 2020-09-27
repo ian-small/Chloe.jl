@@ -1,10 +1,14 @@
 
-import ..Annotator: iterFasta, readFasta, DNAString, makeSuffixArray, makeSuffixArrayRanksArray, revComp, alignLoops, genome_wrap
+import ..Annotator: iterFasta, readFasta, genome_wrap, DNAString, revComp
+import ..Annotator: createTargetReference, inverted_repeat
+# for test
+import ..Annotator: makeSuffixArray, makeSuffixArrayRanksArray, alignLoops
+
 import Crayons: @crayon_str
 
 const success = crayon"bold green"
 const red = crayon"bold red"
-const DEBUG = false
+const DEBUG = true
 
 function to80(io::IO, genome::String, width::Int=80)
     len = length(genome)
@@ -15,36 +19,24 @@ end
 
 
 function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0)::Tuple{String,Int}
-    target_length = length(target_seqf)
-    targetloopf = target_seqf * target_seqf[1:end - 1]
-    target_saf = makeSuffixArray(targetloopf, true)
-    target_raf = makeSuffixArrayRanksArray(target_saf)
-
-    target_seqr = revComp(target_seqf)
-    targetloopr = target_seqr * target_seqr[1:end - 1]
-    target_sar = makeSuffixArray(targetloopr, true)
-    target_rar = makeSuffixArrayRanksArray(target_sar)
-
-    f_aligned_blocks, r_aligned_blocks = alignLoops(target_id,
-        targetloopf, target_saf, target_raf,
-        targetloopr, target_sar, target_rar)
-
-    # sort blocks by length
-    f_aligned_blocks = sort(f_aligned_blocks, by=last, rev=true)
     
-    ir1, ir2, IR_length = f_aligned_blocks[1]
+    target = createTargetReference(target_id, target_seqf)
+    target_length = target.target_length
 
-    @debug "[$(target_id)] $target_length found inverted repeats: $(ir1) $(ir2) len=$(IR_length)"
+    ir1, ir2, IR_length = inverted_repeat(target)
+    
 
-    if DEBUG
-        s1 = SubString(targetloopf, ir1, ir1 + IR_length - 1)
-        s2 = SubString(targetloopr, ir2, ir2 + IR_length - 1)
+    @debug "[$(target_id)] $(target_length) found inverted repeats: $(ir1) $(ir2) len=$(IR_length)"
+
+    if DEBUG && IR_length > 0
+        s1 = SubString(target.refloops.forward, ir1, ir1 + IR_length - 1)
+        s2 = SubString(target.refloops.reverse, ir2, ir2 + IR_length - 1)
         if s1 != s2
             s = sum(x != y for (x, y) in zip(s1, s2))
             @error "s1 != s2: $(IR_length) diff=$(s)"
         end
         s = genome_wrap(target_length, target_length - ir2  - IR_length + 2)
-        s3 = revComp(SubString(targetloopf, s, s + IR_length - 1))
+        s3 = revComp(SubString(target.refloops.forward, s, s + IR_length - 1))
         if s1 != s3
             s = sum(x != y for (x, y) in zip(s1, s3))
             @error "s1 != s3: $(IR_length) diff=$(s)"
@@ -63,6 +55,7 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
         IR1 = ir1:ir1 + IR_length - 1
         IR2 = ir2:ir2 + IR_length - 1
         if last(IR1) >= first(IR2)
+            # large segments of NNNNNN might produce this case....
             @error "[$(target_id)]: inverted repeats overlap ... too vague a sequence?"
             IR1 = ir1:first(IR2) - 1 # what to do? reset...
         end
@@ -77,7 +70,7 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
             @info "[$(target_id)] $(target_length) ir=$IR_length $(ov)LSC=$(LSC)[$(length(LSC))] IR1=$(IR1)[$(length(IR1))] SSC=$(SSC)[$(length(SSC))] IR2=$(IR2)[$(length(IR2))] rest=$(rest)[$(length(rest))]" 
         end
     
-        ss = (rng::UnitRange) -> SubString(targetloopf, rng)
+        ss = (rng::UnitRange) -> SubString(target.refloops.forward, rng)
         rotation1 = rotation = target_length - last(IR2)
         rotation2 = target_length - last(IR1)
         LSC, IR1, SSC, IR2, rest = map(ss, [LSC, IR1, SSC, IR2, rest])
