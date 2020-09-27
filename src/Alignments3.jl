@@ -302,13 +302,14 @@ end
 
 function alignLoops(src_id::String,
                     ref_loop::DNAString, ref_SA::SuffixArray, ref_RA::SuffixArray, 
-                    tgt_loop::DNAString, tgt_SA::SuffixArray, tgt_RA::SuffixArray)::Tuple{AlignedBlocks,AlignedBlocks}
+                    tgt_loop::DNAString, tgt_SA::SuffixArray, tgt_RA::SuffixArray;
+                    rev=true)::Tuple{AlignedBlocks,Union{Nothing,AlignedBlocks}}
     # check if sequences are identical, allowing for rotation
     if length(ref_loop) == length(tgt_loop)
         match = findfirst(SubString(ref_loop, 1, floor(Int, (length(ref_loop) + 1) / 2)), tgt_loop)
         if !isnothing(match)
             aligned_blocks = [(one(Int32), Int32(match[1]), Int32(length(ref_loop)))]
-            return aligned_blocks, revCompBlocks(aligned_blocks, length(ref_SA), length(tgt_SA))
+            return aligned_blocks, rev ? revCompBlocks(aligned_blocks, length(ref_SA), length(tgt_SA)) : nothing
         end
     end
     function align(ref::String,
@@ -321,6 +322,7 @@ function alignLoops(src_id::String,
         @debug "alignLoops: [$(src_id)]$(ref) lcps#=$(length(lcps)) -> aligned#=$(length(aligned_blocks))"
         aligned_blocks
     end
+
     block = Vector{AlignedBlocks}(undef, 2)
     function rt()
         block[1] = align("+", ref_loop, ref_SA, ref_RA, tgt_loop, tgt_SA, tgt_RA)
@@ -334,7 +336,5 @@ function alignLoops(src_id::String,
     end
 
     merged_blocks = mergeBlockArrays(block[1], block[2])
-
-    rev_blocks = revCompBlocks(merged_blocks, length(ref_SA), length(tgt_SA))
-    return merged_blocks, rev_blocks
+    return merged_blocks, rev ? revCompBlocks(merged_blocks, length(ref_SA), length(tgt_SA)) : nothing
 end
