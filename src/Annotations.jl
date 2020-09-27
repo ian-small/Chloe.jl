@@ -57,7 +57,7 @@ datasize(f::FeatureArray) = begin
     sizeof(FeatureArray) + sizeof(f.genome_id)  + datasize(f.interval_tree)
 end
 
-function readFeatures(file::String)::Tuple{FeatureArray,FeatureArray}
+function readFeatures(file::String)::FwdRev{FeatureArray}
     open(file) do f
         header = split(readline(f), '\t')
         genome_id = header[1]
@@ -77,7 +77,7 @@ function readFeatures(file::String)::Tuple{FeatureArray,FeatureArray}
         sort!(r_features)
         f_strand_features = FeatureArray(genome_id, genome_length, '+', RefTree(f_features))
         r_strand_features = FeatureArray(genome_id, genome_length, '-', RefTree(r_features))
-        return f_strand_features, r_strand_features
+        return FwdRev(f_strand_features, r_strand_features)
     end
 end
 
@@ -744,11 +744,15 @@ struct SFF
     hasPrematureStop::Bool
 end
 
-
-gene_length(model::AFeature) = begin
-    last(model).start + last(model).length - first(model).start
+gene_length(model::Vector{Feature}) = begin
+    maximum([f.start + f.length for f in model]) - minimum([f.start for f in model])
 end
-function toSFF(model::AFeature, targetloop::DNAString, feature_stacks::DFeatureStack)::Vector{SFF}
+
+gene_length(model::Vector{SFF}) = begin
+    maximum([m.feature.start + m.feature.length for m in model]) - minimum([m.feature.start for m in model])
+end
+
+function toSFF(model::Vector{Feature}, targetloop::DNAString, feature_stacks::DFeatureStack)::Vector{SFF}
     first_model = first(model)
     gene = getFeatureName(first_model)
     ret = []
@@ -797,13 +801,13 @@ end
 
 # ChloeIO = Union{IOStream,IOBuffer,GZipStream}
 
-function writeModelToSFF(outfile::IO, model::AFeature, model_id::String,
-                        targetloop::DNAString,
+function writeModelToSFF(outfile::IO, model_id::String,
+                        sffs::Vector{SFF},
                         gene_exons::Dict{String,Int32},
                         maxlengths::Dict{String,Int32},
-                        feature_stacks::DFeatureStack, strand::Char)
+                        strand::Char)
     
-    for sff in toSFF(model, targetloop, feature_stacks)
+    for sff in sffs
         # stack = feature_stacks[findfirst(x -> x.path == f.path, feature_stacks)]
         feature = sff.feature
         write(outfile, model_id)
@@ -843,37 +847,35 @@ function writeModelToSFF(outfile::IO, model::AFeature, model_id::String,
     end
 end
 
-function calc_maxlengths(fstrand_models::AAFeature, rstrand_models::AAFeature)::Dict{String,Int32}
+function calc_maxlengths(models::FwdRev{Vector{Vector{SFF}}})::Dict{String,Int32}
+
     maxlengths = Dict{String,Int32}()
     
     function add_model(models)
         for model in models
-            if !isempty(model)
-                gene = getFeatureName(first(model))
-                maxlengths[gene] = max(gene_length(model), get(maxlengths, gene, 0))
-            end
+            isempty(model) && continue
+            m = first(model)
+            maxlengths[m.gene] = max(m.gene_length, get(maxlengths, m.gene, 0))
         end
     end
 
-    add_model(fstrand_models)
-    add_model(rstrand_models)
+    add_model(models.forward)
+    add_model(models.reverse)
     maxlengths
 end
 
 MaybeIR = Union{AlignedBlock,Nothing}
 
-function writeSFF(outfile::Union{String,IO}, id::String,
-                genome_length::Int32, gene_exons::Dict{String,Int32},
-                fstrand_models::AAFeature,
-                rstrand_models::AAFeature,
-                fstrand_feature_stacks::DFeatureStack, 
-                rstrand_feature_stacks::DFeatureStack, 
-                targetloopf::DNAString, targetloopr::DNAString,
+function writeSFF(outfile::Union{String,IO},
+                id::String, # NCBI id
+                genome_length::Int32,
+                gene_exons::Dict{String,Int32}, # reference exons lengths
+                models::FwdRev{Vector{Vector{SFF}}},
                 ir::MaybeIR=nothing)
 
 
-    function getModelID!(model_ids::Dict{String,Int32}, model::AFeature)
-        gene_name = getFeatureName(first(model))
+    function getModelID!(model_ids::Dict{String,Int32}, model::Vector{SFF})
+        gene_name = first(model).gene
         instance_count::Int32 = 1
         model_id = "$(gene_name)/$(instance_count)"
         while get(model_ids, model_id, 0) ≠ 0
@@ -885,21 +887,21 @@ function writeSFF(outfile::Union{String,IO}, id::String,
     end
     
 
-    maxlengths = calc_maxlengths(fstrand_models, rstrand_models)
+    maxlengths = calc_maxlengths(models)
 
 
     function out(outfile::IO)
         model_ids = Dict{String,Int32}()
         write(outfile, id, "\t", string(genome_length), "\n")
-        for model in fstrand_models
+        for model in models.forward
             isempty(model) && continue
             model_id = getModelID!(model_ids, model)
-            writeModelToSFF(outfile, model, model_id, targetloopf, gene_exons, maxlengths, fstrand_feature_stacks, '+')
+            writeModelToSFF(outfile, model_id, model, gene_exons, maxlengths, '+')
         end
-        for model in rstrand_models
+        for model in models.reverse
             isempty(model) && continue
             model_id = getModelID!(model_ids, model)
-            writeModelToSFF(outfile, model, model_id, targetloopr, gene_exons, maxlengths, rstrand_feature_stacks, '-')
+            writeModelToSFF(outfile, model_id, model, gene_exons, maxlengths, '-')
         end
         if ir !== nothing
             println(outfile, "IR/1/repeat_region/1\t+\t$(ir[1])\t$(ir[3])\t0\t0\t0\t0\t")

@@ -32,45 +32,77 @@ const success = crayon"bold green"
 MappedPtrString = MMappedString{ASCII}
 # MappedPtrString = String
 
-struct FwdRev{T}
-    forward::T
-    reverse::T
-end
-
-Base.:(==)(x::FwdRev{T}, y::FwdRev{T}) where T = x.forward == y.forward && x.reverse == y.reverse
-
-struct Reference
-    # length(ReferenceOrganisms) from directory reference_1116
-    refsrc::Vector{String}
-    refloops::Vector{FwdRev{MappedPtrString}}
-    refSAs::Vector{FwdRev{SuffixArray}}
-    refRAs::Vector{FwdRev{SuffixArray}}
-    ref_features::Vector{FwdRev{FeatureArray}}
-    # any open memory mapped files...
-    # _mmaps::Vector{Union{Nothing,IOStream}}
-    # from .tsv file
-    # feature_templates::Vector{FeatureTemplate}
-    feature_templates::Dict{String,FeatureTemplate}
-    gene_exons::Dict{String,Int32}
-    forward_only::Bool
-    # referenceOrganisms::Dict{String,String}
-end
-
-datasize(t::T) where T = sizeof(t)
-datasize(f::FwdRev{T}) where T = sizeof(FwdRev{T}) + datasize(f.forward) + datasize(f.reverse)
-datasize(v::Vector{T}) where T = length(v) == 0 ? 0 : sum(datasize(a) for a in v)
-datasize(t::Dict{K,V}) where {K,V} = length(t) == 0 ? 0 : sum(datasize(e.first) + datasize(e.second) for e in t)
 datasize(m::MMappedString) = length(m.ptr)
-datasize(r::Reference) = begin
+
+struct SingleReference
+    refsrc::String
+    refloops::FwdRev{MappedPtrString}
+    refSAs::FwdRev{SuffixArray}
+    refRAs::FwdRev{SuffixArray}
+    ref_features::Union{Nothing,FwdRev{FeatureArray}}
+    target_length::Int32
+    ismmapped::Bool
+    forward_only::Bool
+end
+datasize(r::SingleReference) = begin
     (sizeof(Reference)
     + datasize(r.refsrc)
     + datasize(r.refloops)
     + datasize(r.refSAs)
     + datasize(r.refRAs)
     + datasize(r.ref_features)
-    + datasize(r.feature_templates)
-    + datasize(r.gene_exons))
+    )
 end
+struct StrandSingleReference
+    refsrc::String
+    refloops::MappedPtrString
+    refSAs::SuffixArray
+    refRAs::SuffixArray
+    ref_features::Union{Nothing,FeatureArray}
+    target_length::Int32
+    strand::Char
+    ismmapped::Bool
+end
+datasize(r::StrandSingleReference) = begin
+    (sizeof(StrandReference)
+    + datasize(r.refsrc)
+    + datasize(r.refloops)
+    + datasize(r.refSAs)
+    + datasize(r.refRAs)
+    + datasize(r.ref_features)
+    )
+end
+function stranded(strand::Char, r::SingleReference)::StrandSingleReference
+    fa = r.ref_features
+    if strand == '+'
+        StrandSingleReference(r.refsrc, r.refloops.forward, r.refSAs.forward,
+        r.refRAs.forward, fa === nothing ? nothing : fa.forward,
+        r.target_length, strand, r.ismmapped)
+    else
+        StrandSingleReference(r.refsrc, r.refloops.reverse, r.refSAs.reverse,
+        r.refRAs.reverse, fa === nothing ? nothing : fa.reverse, 
+        r.target_length, strand, r.ismmapped)
+    end
+end
+
+
+struct Reference
+    references::Dict{String,SingleReference}
+    # from .tsv file
+    # feature_templates::Vector{FeatureTemplate}
+    feature_templates::Dict{String,FeatureTemplate}
+    gene_exons::Dict{String,Int32}
+
+    # referenceOrganisms::Dict{String,String}
+end
+datasize(r::Reference) = begin
+    (datasize(Reference) 
+        + datasize(r.feature_templates) 
+        + datasize(r.references) 
+        + datasize(r.gene_exons)
+    )
+end
+
 
 
 function human(num::Int)::String
@@ -88,18 +120,16 @@ function human(num::Int)::String
 end
 # stops the REPL printing the entire 7MB of sequences!
 function Base.show(io::IO, reference::Reference)
-    function fr_length(fr)
-        return length(fr.forward) + length(fr.reverse)
-    end
 
-    sabytes = 2 * sizeof(Int32) * (reference.refSAs .|> fr_length |> sum)
-    bp = reference.refloops .|> fr_length |> sum
+    total = sum(datasize(s.second) for s in reference.references)
+    bp = sum(datasize(s.second.refloops) for s in reference.references)
+    # forward_only = sum(s.second.forward_only for s in reference.references)
     
     t1 = "#templates=$(reference.feature_templates |> length)"
     t2 = "#gene_exons=$(reference.gene_exons |> length)[$(reference.gene_exons |> values |> sum)]"
-    t3 = "#refs=$(reference.refloops |> length)[$(human(bp)) bp]"
-    f = reference.forward_only ? "[forward]" : ""
-    print(io, "Reference$(f): $t1, $t2, $t3, suffix=$(human(sabytes)), total=$(human(sabytes + bp))")
+    t3 = "#refs=$(reference.references |> length)[$(human(bp)) bp]"
+    # f =  "[forward#$(forward_only)]"
+    print(io, "Reference: $t1, $t2, $t3, total=$(human(total))")
 
 end
 
@@ -176,14 +206,14 @@ end
 
 function verify_refs(refsdir, template)
  
-    if ~isdir(refsdir)
+    if !isdir(refsdir)
         msg = "Reference directory $(refsdir) is not a directory!"
         @error msg
         throw(ArgumentError(msg))
     end
 
     for f in [template, joinpath(refsdir, "ReferenceOrganisms.json")]
-        if ~isfile(f)
+        if !isfile(f)
             msg = "missing file: $f"
             @error msg
             throw(ArgumentError(msg))
@@ -199,6 +229,41 @@ function verify_refs(refsdir, template)
     
 end
 
+function readSingleReference(refsdir::String, ref::Pair{String,String}, 
+    sff_files::AbstractArray{String};
+    verbose::Bool=false,
+    forward_only::Bool=false)
+    gwsas = joinpath(refsdir, ref.first * ".gwsas")
+    mmap = joinpath(refsdir, ref.first * ".mmap")
+    ismmapped = false
+    if isfile(mmap)
+        refSAs, refRAs, refloops = read_mmap_suffix(mmap; forward_only=forward_only)
+        ismmapped = true
+        if verbose
+            @info "found mmap file for: $(ref.first)"
+        end
+    elseif isfile(gwsas)
+        refSAs, refRAs, refloops = read_gwsas(gwsas, ref.first; forward_only=forward_only)
+        if verbose
+            @info "found gwsas file for: $(ref.first)"
+        end
+    else
+        error("no gwsas or mmap file found for \"$(ref.first)\". run `julia chloe.jl mmap --help`")
+    end
+    idx = findfirst(x -> startswith(x, ref.second), sff_files)
+    if idx === nothing
+        idx = findfirst(x -> startswith(x, ref.first), sff_files)
+    end
+    if idx === nothing
+        # TODO check for fasta files
+        error("no sff file for $(ref.first) -> $(ref.second)")
+    end
+    ref_features = readFeatures(joinpath(refsdir, sff_files[idx]))
+    target_length = length(refSAs.forward)
+
+    SingleReference(ref.first, refloops, refSAs, refRAs, ref_features, target_length, ismmapped, forward_only)
+end
+
 """
     readReferences(reference_dir, template_file_tsv)
 
@@ -212,7 +277,7 @@ function readReferences(refsdir::String, templates::String;
         error("$(refsdir) is not a directory")
     end
     path = joinpath(refsdir, "ReferenceOrganisms.json")
-    if ~isfile(path)
+    if !isfile(path)
         error("readReferences: require \"$(path)\" JSON file")
     end
     ReferenceOrganisms = open(path) do f
@@ -220,14 +285,7 @@ function readReferences(refsdir::String, templates::String;
     end
 
     num_refs = length(ReferenceOrganisms)
-
-    refloops = Vector{FwdRev{MappedPtrString}}(undef, num_refs)
-    refSAs = Vector{FwdRev{SuffixArray}}(undef, num_refs)
-    refRAs = Vector{FwdRev{SuffixArray}}(undef, num_refs)
-    ref_features = Vector{FwdRev{FeatureArray}}(undef, num_refs)
-    refsrc = Vector{String}(undef, num_refs)
-    # mmapped = Vector{Union{Nothing,IOStream}}(undef, num_refs)
-    
+    refsdict = Dict{String,SingleReference}()
 
     files = readdir(refsdir)
     idx = findall(x -> endswith(x, ".sff"), files)
@@ -238,43 +296,17 @@ function readReferences(refsdir::String, templates::String;
     sff_files = files[idx]
     mmaps = 0
 
-    for (i, ref) in enumerate(ReferenceOrganisms)
-        gwsas = joinpath(refsdir, ref.first * ".gwsas")
-        mmap = joinpath(refsdir, ref.first * ".mmap")
-        
-        if isfile(mmap)
-            refSAs[i], refRAs[i], refloops[i] = read_mmap_suffix(mmap; forward_only=forward_only)
-            if verbose
-                @info "found mmap file for: $(ref.first)"
-            end
+    for ref in ReferenceOrganisms
+        refsdict[ref.first] = r = readSingleReference(refsdir, ref, sff_files; verbose=verbose, forward_only=forward_only)
+        if r.ismmapped 
             mmaps += 1
-        elseif isfile(gwsas)
-            refSAs[i], refRAs[i], refloops[i] = read_gwsas(gwsas, ref.first; forward_only=forward_only)
-            if verbose
-                @info "found gwsas file for: $(ref.first)"
-            end
-        else
-            error("no gwsas or mmap file found for \"$(ref.first)\". run `julia chloe.jl mmap --help`")
         end
-        idx = findfirst(x -> startswith(x, ref.second), sff_files)
-        if idx === nothing
-            idx = findfirst(x -> startswith(x, ref.first), sff_files)
-        end
-        if idx === nothing
-            # TODO check for fasta files
-            error("no sff file for $(ref.first) -> $(ref.second)")
-        end
-        f_strand_features, r_strand_features = readFeatures(joinpath(refsdir, sff_files[idx]))
-
-        ref_features[i] = FwdRev(f_strand_features, r_strand_features)
-        refsrc[i] = ref.first
-
     end
-    if mmaps != length(refsrc)
+    if mmaps != length(refsdict)
         @info "better to use memory mapped files use: `julia chloe.jl mmap $(refsdir)/*.{fa,fasta}`"
     end
     feature_templates, gene_exons = readTemplates(templates)
-    ret = Reference(refsrc, refloops, refSAs, refRAs, ref_features, feature_templates, gene_exons, forward_only)
+    ret = Reference(refsdict, feature_templates, gene_exons)
 
     @info ret
     GC.gc() # cleanup
@@ -289,23 +321,29 @@ MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,DFeatureStack}
 AAlignedBlocks = Vector{FwdRev{AlignedBlocks}}
 
-function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
-    reference::Reference, coverages::Dict{String,Float32},
-    strand::Char, blocks_aligned_to_target::AAlignedBlocks,
-    targetloop::DNAString)::Strand
-
+function do_annotations(idxmap::Dict{Int,SingleReference}, blocks_aligned_to_target::AAlignedBlocks)
     annotations = Vector{Annotation}()
-    for (ref_feature_array, blocks) in zip(reference.ref_features, blocks_aligned_to_target)
-        push!(annotations, findOverlaps(ref_feature_array.forward, blocks.forward)...)
-        push!(annotations, findOverlaps(ref_feature_array.reverse, blocks.reverse)...)
+    for i in idxmap
+        blocks = blocks_aligned_to_target[i.first]
+        ref_features = i.second.ref_features
+        push!(annotations, findOverlaps(ref_features.forward, blocks.forward)...)
+        push!(annotations, findOverlaps(ref_features.reverse, blocks.reverse)...)
     end
     sort!(annotations, by=x -> x.path)
+    annotations
+end
+function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
+    idxmap::Dict{Int,SingleReference}, coverages::Dict{String,Float32},
+    strand::Char, blocks_aligned_to_target::AAlignedBlocks,
+    targetloop::DNAString, feature_templates::Dict{String,FeatureTemplate})::Strand
+
+    annotations = do_annotations(idxmap, blocks_aligned_to_target)
 
     t4 = time_ns()
     @info "[$target_id]$strand overlapping ref annotations ($(length(annotations))) $(human(datasize(annotations))): $(ns(t4 - start_ns))"
 
     # strand_feature_stacks is basically grouped by annotations.path
-    strand_feature_stacks, shadow = fillFeatureStack(target_length, annotations, reference.feature_templates)
+    strand_feature_stacks, shadow = fillFeatureStack(target_length, annotations, feature_templates)
 
     t5 = time_ns()
     @info "[$target_id]$strand ref features stacks ($(length(strand_feature_stacks))) $(human(datasize(strand_feature_stacks))): $(ns(t5 - t4))"
@@ -342,7 +380,8 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
     # group by feature name on **ordered** features getFeatureName()
     target_strand_models = groupFeaturesIntoGeneModels(features)
     # this toys with the feature start, phase etc....
-    target_strand_models = refineGeneModels!(target_strand_models, target_length, targetloop, annotations,
+    target_strand_models = refineGeneModels!(target_strand_models, target_length, 
+                                            targetloop, annotations,
                                              path_to_stack)
 
     t8 = time_ns()
@@ -353,6 +392,51 @@ end
 # MayBeIO: write to file (String), IO buffer or create filename based on fasta filename
 # Union{IO,String}: read fasta from IO buffer or a file (String)
 MayBeIO = Union{String,IO,Nothing}
+
+function createTargetReference(target_id::String, target_seqf::DNAString)::SingleReference
+    target_seqr = revComp(target_seqf)
+    target_length = Int32(length(target_seqf))
+    
+    targetloopf = target_seqf * target_seqf[1:end - 1]
+    target_saf = makeSuffixArray(targetloopf, true)
+    target_raf = makeSuffixArrayRanksArray(target_saf)
+
+    targetloopr = target_seqr * target_seqr[1:end - 1]
+    target_sar = makeSuffixArray(targetloopr, true)
+    target_rar = makeSuffixArrayRanksArray(target_sar)
+    
+    targetloopf = MappedPtrString(targetloopf)
+    targetloopr = MappedPtrString(targetloopr)
+    SingleReference(target_id,
+        FwdRev(targetloopf, targetloopr),
+        FwdRev(target_saf, target_sar),
+        FwdRev(target_raf, target_rar),
+        nothing, # no .sff file
+        target_length,
+        false, false)
+end
+
+function alignit(tgt::SingleReference, ref::SingleReference)
+    start = time_ns()
+    src_id = ref.refsrc
+
+    ff, fr = alignLoops(src_id, ref.refloops.forward, ref.refSAs.forward, ref.refRAs.forward, 
+                                tgt.refloops.forward, tgt.refSAs.forward, tgt.refRAs.forward) 
+    if !ref.forward_only
+        rf, rr = alignLoops(src_id, ref.refloops.reverse, ref.refSAs.reverse, ref.refRAs.reverse, 
+                                    tgt.refloops.forward, tgt.refSAs.forward, tgt.refRAs.forward)
+    else
+        rr, rf = alignLoops(src_id, ref.refloops.forward, ref.refSAs.forward, ref.refRAs.forward, 
+                                    tgt.refloops.reverse, tgt.refSAs.reverse, tgt.refRAs.reverse)
+    end
+
+    # blocks_aligned_to_targetf[refcount] = FwdRev(ff, rf)
+    # blocks_aligned_to_targetr[refcount] = FwdRev(rr, fr)
+
+    @info "[$(tgt.refsrc)]± aligned $(src_id) ($(length(ff)),$(length(rf))) $(ns(time_ns() - start))"
+    # note cross ...
+    FwdRev(ff, rf), FwdRev(rr, fr)
+end
 
 """
     annotate_one(references::Reference, fasta_file::Union{String,IO} [,output_sff_file])
@@ -375,7 +459,6 @@ with the annotation within it
 """
 function annotate_one(reference::Reference, fasta::Union{String,IO}, output::MayBeIO)
 
-    num_refs = length(reference.refsrc)
     t1 = time_ns()
 
     target_id, target_seqf = readFasta(fasta)
@@ -388,67 +471,63 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
     
     @info "[$target_id] seq length: $(target_length)bp"
     
-    target_seqr = revComp(target_seqf)
+    # target_seqr = revComp(target_seqf)
     
-    targetloopf = target_seqf * target_seqf[1:end - 1]
-    target_saf = makeSuffixArray(targetloopf, true)
-    target_raf = makeSuffixArrayRanksArray(target_saf)
+    # targetloopf = target_seqf * target_seqf[1:end - 1]
+    # target_saf = makeSuffixArray(targetloopf, true)
+    # target_raf = makeSuffixArrayRanksArray(target_saf)
 
-    targetloopr = target_seqr * target_seqr[1:end - 1]
-    target_sar = makeSuffixArray(targetloopr, true)
-    target_rar = makeSuffixArrayRanksArray(target_sar)
+    # targetloopr = target_seqr * target_seqr[1:end - 1]
+    # target_sar = makeSuffixArray(targetloopr, true)
+    # target_rar = makeSuffixArrayRanksArray(target_sar)
     
-    targetloopf = MappedPtrString(targetloopf)
-    targetloopr = MappedPtrString(targetloopr)
+    # targetloopf = MappedPtrString(targetloopf)
+    # targetloopr = MappedPtrString(targetloopr)
+
+    target = createTargetReference(target_id, target_seqf)
 
     t2 = time_ns()
 
-    @info "[$target_id] made suffix arrays $(human(datasize(target_saf) + datasize(target_raf) + datasize(target_sar) + datasize(target_rar))): $(ns(t2 - t1))"
+    @info "[$target_id] made suffix arrays $(human(datasize(target))): $(ns(t2 - t1))"
+
+    num_refs = length(reference.references)
 
     blocks_aligned_to_targetf = AAlignedBlocks(undef, num_refs)
     blocks_aligned_to_targetr = AAlignedBlocks(undef, num_refs)
-
-    function alignit(refcount::Int)
-        start = time_ns()
-        src_id, refloop, refSA, refRA = reference.refsrc[refcount], reference.refloops[refcount], reference.refSAs[refcount], reference.refRAs[refcount]
-
-        ff, fr = alignLoops(src_id, refloop.forward, refSA.forward, refRA.forward, targetloopf, target_saf, target_raf) 
-        if !reference.forward_only
-            rf, rr = alignLoops(src_id, refloop.reverse, refSA.reverse, refRA.reverse, targetloopf, target_saf, target_raf)
-        else
-            rr, rf = alignLoops(src_id, refloop.forward, refSA.forward, refRA.forward, targetloopr, target_sar, target_rar)
-        end
-        # note cross ...
-        blocks_aligned_to_targetf[refcount] = FwdRev(ff, rf)
-        blocks_aligned_to_targetr[refcount] = FwdRev(rr, fr)
-    
-        @info "[$target_id]± aligned $(reference.refsrc[refcount]) ($(length(ff)),$(length(rf))) $(ns(time_ns() - start))"
-
+    idxmap = Dict{Int,SingleReference}()
+    # map index into blocks_aligned_to_target{r,f} to SingleReference
+    for (i, r) in enumerate(reference.references)
+        idxmap[i] = r.second
     end
 
-    Threads.@threads for refno in 1:length(reference.refloops)
-        alignit(refno)
+
+    Threads.@threads for i in collect(idxmap)
+        fwd, rev = alignit(target, i.second)
+        blocks_aligned_to_targetf[i.first] = fwd
+        blocks_aligned_to_targetr[i.first] = rev
     end
 
     t3 = time_ns()
     
-    @info "[$target_id] aligned: ($(length(reference.refloops))) $(human(datasize(blocks_aligned_to_targetf) + datasize(blocks_aligned_to_targetr))) $(ns(t3 - t2))" 
+    @info "[$target_id] aligned: ($(num_refs)) $(human(datasize(blocks_aligned_to_targetf) + datasize(blocks_aligned_to_targetr))) $(ns(t3 - t2))" 
 
     coverages = Dict{String,Float32}()
-    for (ref, a) in zip(reference.refsrc, blocks_aligned_to_targetf)
+    for key in idxmap
+        a = blocks_aligned_to_targetf[key.first]
         coverage = blockCoverage(a.forward) + blockCoverage(a.reverse)
-        coverages[ref] = coverage / target_length * 2
+        coverages[key.second.refsrc] = coverage / target_length * 2
     end
     @debug "[$target_id] coverages:" coverages
 
 
+
     function watson(strands::Vector{Strand})
-        strands[1] = do_strand(target_id, t3, target_length, reference, coverages,
-            '+', blocks_aligned_to_targetf, targetloopf)
+        strands[1] = do_strand(target_id, t3, target_length, idxmap, coverages,
+            '+', blocks_aligned_to_targetf, target.refloops.forward, reference.feature_templates)
     end
     function crick(strands::Vector{Strand})
-        strands[2] = do_strand(target_id, t3, target_length, reference, coverages,
-            '-', blocks_aligned_to_targetr, targetloopr)
+        strands[2] = do_strand(target_id, t3, target_length, idxmap, coverages,
+            '-', blocks_aligned_to_targetr, target.refloops.reverse, reference.feature_templates)
     end
 
     strands = Vector{Strand}(undef, 2)
@@ -459,13 +538,21 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
     target_fstrand_models, fstrand_feature_stacks = strands[1]
     target_rstrand_models, rstrand_feature_stacks = strands[2]
 
+    sffs_fwd = [toSFF(model, target.refloops.forward, fstrand_feature_stacks) 
+            for model in filter(m -> !isempty(m), target_fstrand_models)]
+
+    sffs_rev = [toSFF(model, target.refloops.reverse, rstrand_feature_stacks) 
+            for model in filter(m -> !isempty(m), target_rstrand_models)]
+
+
     # find inverted repeat if any
     f_aligned_blocks, r_aligned_blocks = alignLoops(target_id,
-                                                    targetloopf, target_saf, target_raf,
-                                                    targetloopr, target_sar, target_rar)
+                                                    target.refloops.forward, target.refSAs.forward, target.refRAs.forward,
+                                                    target.refloops.reverse, target.refSAs.reverse, target.refRAs.reverse
+                                        )
 
     # sort blocks by length
-    f_aligned_blocks = sort(f_aligned_blocks, by=last, rev=true)
+    f_aligned_blocks = sort!(f_aligned_blocks, by=last, rev=true)
     
     ir = if length(f_aligned_blocks) > 0 && f_aligned_blocks[1][3] >= 1000
         f_aligned_blocks[1]
@@ -489,10 +576,7 @@ function annotate_one(reference::Reference, fasta::Union{String,IO}, output::May
         fname = "$(target_id).sff"
     end
     writeSFF(fname, target_id, target_length, reference.gene_exons,
-        target_fstrand_models, target_rstrand_models,
-        fstrand_feature_stacks, rstrand_feature_stacks,
-        targetloopf, targetloopr,
-        ir)
+             FwdRev(sffs_fwd, sffs_rev), ir)
 
     @info success("[$target_id] Overall: $(ns(time_ns() - t1))")
     return fname, target_id
