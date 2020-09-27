@@ -256,6 +256,8 @@ function readReferences(refsdir::String, templates::String;
     verbose::Bool=true, 
     forward_only::Bool=false)::Reference
 
+    start = time_ns()
+
     if !isdir(refsdir)
         error("$(refsdir) is not a directory")
     end
@@ -291,7 +293,7 @@ function readReferences(refsdir::String, templates::String;
     feature_templates, gene_exons = readTemplates(templates)
     ret = Reference(refsdict, feature_templates, gene_exons)
 
-    @info ret
+    @info "$(ret): $(elapsed(start))"
     GC.gc() # cleanup
     return ret
 end
@@ -460,17 +462,18 @@ function inverted_repeat(target::SingleReference)::AlignedBlock
     ir
 end
 
-WatsonCrick = Tuple{Vector{Vector{SFF}},DFeatureStack}
-"""
-    annotate_one(references::Reference, fasta_file::Union{String,IO} [,output_sff_file])
+Models = Vector{Vector{SFF}}
 
-Annotate a single fasta file containting a *single* circular
+"""
+    annotate_one(references::Reference, seq_id::String, seq::String, [,output_sff_file])
+
+Annotate a single sequence containting a *single* circular
 DNA entry
 
 writes an .sff file to `output_sff_file` or uses the sequence id in the
-fasta file to write `{target_id}.sff` in the current directory.
+fasta file to write `{seq_id}.sff` in the current directory.
 
-If `output_sff_file` is a *directory* write `{target_id}.sff` into that
+If `output_sff_file` is a *directory* write `{seq_id}.sff` into that
 directory.
 
 returns a 2-tuple: (ultimate sff output filename, sequence id)
@@ -480,7 +483,7 @@ with the annotation within it
 
 `reference` are the reference annotations (see `readReferences`)
 """
-function annotate_one(reference::Reference, target_id::String, target_seqf::String, output::MayBeIO)
+function annotate_one(reference::Reference, target_id::String, target_seqf::String, output::MayBeIO)::Tuple{Union{String,IO},String}
 
     t1 = time_ns()
 
@@ -541,7 +544,7 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
     end
     @debug "[$target_id] coverages:" coverages
 
-    strands = Vector{WatsonCrick}(undef, 2)
+    strands = Vector{Models}(undef, 2)
 
     function watson()
         models, stacks = do_strand(target_id, t3, target.target_length, idxmap, coverages,
@@ -549,7 +552,7 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
 
         sffs_fwd = [toSFF(model, target.refloops.forward, stacks) 
             for model in filter(m -> !isempty(m), models)]
-        strands[1] = (sffs_fwd, stacks)
+        strands[1] = sffs_fwd
         
     end
     function crick()
@@ -557,7 +560,7 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
             '-', blocks_aligned_to_targetr, target.refloops.reverse, reference.feature_templates)
         sffs_rev = [toSFF(model, target.refloops.reverse, stacks) 
             for model in filter(m -> !isempty(m), models)]
-        strands[2] = (sffs_rev, stacks)
+        strands[2] = sffs_rev
     end
 
     irb = Vector{AlignedBlock}(undef, 1)
@@ -571,8 +574,9 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
         worker()
     end
 
-    sffs_fwd, fstrand_feature_stacks = strands[1]
-    sffs_rev, rstrand_feature_stacks = strands[2]
+    # fish out the data from background threads
+    sffs_fwd = strands[1]
+    sffs_rev = strands[2]
     ir = irb[1]
    
     
@@ -609,9 +613,13 @@ returns a 2-tuple (sff annotation as an IOBuffer, sequence id)
 
 `reference` are the reference annotations (see `readReferences`)
 """
-function annotate_one(reference::Reference, fasta::Union{String,IO})
+function annotate_one(reference::Reference, fasta::Union{String,IO})::Tuple{Union{String,IO},String}
     target_id, target_seqf = readFasta(fasta)
     annotate_one(reference, target_id, target_seqf, IOBuffer())
+end
+function annotate_one(reference::Reference, fasta::Union{String,IO}, output::MayBeIO)::Tuple{Union{String,IO},String}
+    target_id, target_seqf = readFasta(fasta)
+    annotate_one(reference, target_id, target_seqf, output)
 end
 
 function annotate_all(reference::Reference, fasta::Union{String,IO})
