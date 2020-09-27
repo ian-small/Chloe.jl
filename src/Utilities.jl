@@ -92,14 +92,6 @@ function maybe_gzwrite(f::Function, filename::String)
     end
 end
 
-function readFasta(fasta::String)::Tuple{String,String}
-    if !isfile(fasta)
-        error("$(fasta): not a file!")
-    end
-    maybe_gzread(fasta) do io
-        readFasta(io)
-    end
-end
 
 function readFasta(f::IO, name::String="<stream>")::Tuple{String,String}
     for res in iterFasta(f, name)
@@ -327,6 +319,8 @@ function str_truncate(s::String, width=80)
         s[1:thisind(s, width)] * "..."
     end
 end
+
+fastaID(header::AbstractString) = String(split(header, " ")[1])
 
 function Base.iterate(i::IFasta, state=nothing)
     done = () -> i.close && close(i.io)
