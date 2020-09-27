@@ -1,6 +1,18 @@
 
 import CodecZlib: GzipDecompressorStream, GzipCompressorStream
 import Base
+struct FwdRev{T}
+    forward::T
+    reverse::T
+end
+
+Base.:(==)(x::FwdRev{T}, y::FwdRev{T}) where T = x.forward == y.forward && x.reverse == y.reverse
+
+
+datasize(t::T) where T = sizeof(t)
+datasize(f::FwdRev{T}) where T = sizeof(FwdRev{T}) + datasize(f.forward) + datasize(f.reverse)
+datasize(v::Vector{T}) where T = length(v) == 0 ? 0 : sum(datasize(a) for a in v)
+datasize(t::Dict{K,V}) where {K,V} = length(t) == 0 ? 0 : sum(datasize(e.first) + datasize(e.second) for e in t)
 
 function gbff2fasta(infile::String)
     open(infile) do f
@@ -291,7 +303,7 @@ function str_truncate(s::String, width=80)
     if n <= width
         s
     else
-        s[1:width] * "..."
+        s[1:thisind(s, width)] * "..."
     end
 end
 
