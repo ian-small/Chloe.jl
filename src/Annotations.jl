@@ -799,8 +799,6 @@ function toSFF(model::Vector{Feature}, targetloop::DNAString, feature_stacks::DF
     return ret
 end
 
-# ChloeIO = Union{IOStream,IOBuffer,GZipStream}
-
 function writeModelToSFF(outfile::IO, model_id::String,
                         sffs::Vector{SFF},
                         gene_exons::Dict{String,Int32},

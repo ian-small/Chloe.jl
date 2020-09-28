@@ -507,13 +507,14 @@ function inverted_repeat(target::SingleReference)::AlignedBlock
     ir
 end
 
-function coverage(target::SingleReference, a::FwdRev{AlignedBlocks})
+function avg_coverage(target::SingleReference, a::FwdRev{AlignedBlocks})
     coverage = blockCoverage(a.forward) + blockCoverage(a.reverse)
     coverage /= (target.target_length * 2)
     coverage
 end
-function coverage(target::SingleReference, a::FwdRev{FwdRev{AlignedBlocks}})
-    coverage(target, a.forward)
+
+function avg_coverage(target::SingleReference, a::FwdRev{FwdRev{AlignedBlocks}})
+    avg_coverage(target, a.forward)
 end
 
 Models = Vector{Vector{SFF}}
@@ -584,7 +585,7 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
     coverages = Dict{String,Float32}()
     for key in idx2ref
         a = blocks_aligned_to_targetf[key.first]
-        coverages[key.second.refsrc] = coverage(target, a)
+        coverages[key.second.refsrc] = avg_coverage(target, a)
     end
     @debug "[$target_id] coverages:" coverages
 
