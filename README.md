@@ -195,8 +195,9 @@ Then -- on your puny laptop -- you can run something like:
 
 ```sh
 ssh  you@bigserver -t -o ExitOnForwardFailure=yes -L 9476:127.0.0.1:9467 \
-    'cd /path/to/chloe; JULIA_NUM_THREADS={BIGNUM} /path/to/bin/julia --startup-file=no --color=yes distributed.jl  
-    --broker=tcp://127.0.0.1:9467 -l info --workers=4'
+    'cd /path/to/chloe;
+    JULIA_NUM_THREADS={BIGNUM} /path/to/bin/julia --startup-file=no --color=yes
+    distributed.jl --broker=tcp://127.0.0.1:9467 -l info --workers=4'
 ```
 
 The port `9467` is an entirely random (but hopefully unused both on
