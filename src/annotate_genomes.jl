@@ -1,6 +1,7 @@
 module Annotator
 
 export annotate, annotate_one, readReferences, Reference, MayBeIO, MayBeString
+export readSingleReference, createTargetReference, inverted_repeat
 export MMappedString, ASCII
 
 DNAString = AbstractString
@@ -53,6 +54,17 @@ datasize(r::SingleReference) = begin
     + datasize(r.ref_features)
     )
 end
+
+function Base.show(io::IO, r::SingleReference)
+
+    total = datasize(r)
+    bp = datasize(s.refloops)
+    f = r.forward_only ? "[forward]" : ""
+    m = r.ismmapped ? "[mmap]" : ""
+    print(io, "SingleReference[$(r.refsrc)]$(f)$(m): $(r.target_length), $(human(bp))bp, total=$(human(total))")
+
+end
+
 struct StrandSingleReference
     refsrc::String
     refloops::MappedPtrString
@@ -63,6 +75,7 @@ struct StrandSingleReference
     strand::Char
     ismmapped::Bool
 end
+
 datasize(r::StrandSingleReference) = begin
     (sizeof(StrandReference)
     + datasize(r.refsrc)
@@ -72,6 +85,7 @@ datasize(r::StrandSingleReference) = begin
     + datasize(r.ref_features)
     )
 end
+
 function stranded(strand::Char, r::SingleReference)::StrandSingleReference
     fa = r.ref_features
     if strand == '+'
@@ -90,9 +104,8 @@ struct Reference
     # from .tsv file
     feature_templates::Dict{String,FeatureTemplate}
     gene_exons::Dict{String,Int32}
-
-    # referenceOrganisms::Dict{String,String}
 end
+
 datasize(r::Reference) = begin
     (datasize(Reference) 
         + datasize(r.feature_templates) 
@@ -212,10 +225,24 @@ function verify_refs(refsdir, template)
     
 end
 
+function readSingleReference(mmap::String, features::String;
+    forward_only::Bool=false)::SingleReference
+    
+    _, f = splitpath(mmap)
+    refsrc = splitext(f)[1]
+
+    refSAs, refRAs, refloops = read_mmap_suffix(mmap; forward_only=forward_only)
+    ref_features = readFeatures(features)
+    target_length = length(refSAs.forward)
+
+    SingleReference(refsrc, refloops, refSAs, refRAs, ref_features, target_length, true, forward_only)
+
+end
+
 function readSingleReference(refsdir::String, ref::Pair{String,String}, 
     sff_files::AbstractArray{String};
     verbose::Bool=false,
-    forward_only::Bool=false)
+    forward_only::Bool=false)::SingleReference
     gwsas = joinpath(refsdir, ref.first * ".gwsas")
     mmap = joinpath(refsdir, ref.first * ".mmap")
     ismmapped = false
@@ -320,20 +347,19 @@ function do_annotations(target_id::String, strand::Char, idxmap::Dict{Int,Single
     function do_one(refsrc, ref_features, blocks)
         st = time_ns()
         annotations = findOverlaps(ref_features.forward, blocks.forward)
-        # ugh splatting is *really* inefficient!
+        # Ugh! splatting is *really* inefficient!
         # push!(annotations, findOverlaps(ref_features.reverse, blocks.reverse)...)
         annotations = vcat(annotations, findOverlaps(ref_features.reverse, blocks.reverse))
-        # @info "[$(target_id)]$(strand) $(refsrc)± overlaps $(length(annotations)): $(elapsed(st))"
+        @debug "[$(target_id)]$(strand) $(refsrc)± overlaps $(length(annotations)): $(elapsed(st))"
         return annotations
     end
     tgt = Vector{Vector{Annotation}}(undef, length(idxmap))
 
     Threads.@threads for i in collect(idxmap)
         blocks = blocks_aligned_to_target[i.first]
-        ref_features = i.second.ref_features
-        tgt[i.first] = do_one(i.second.refsrc, ref_features, blocks)
-
+        tgt[i.first] = do_one(i.second.refsrc, i.second.ref_features, blocks)
     end
+
     # annotations = collect(Iterators.flatten(tgt))
     annotations = flatten(tgt)
     sort!(annotations, by=x -> x.path)
@@ -400,6 +426,11 @@ end
 # Union{IO,String}: read fasta from IO buffer or a file (String)
 MayBeIO = Union{String,IO,Nothing}
 
+function createTargetReference(fasta::Union{String,IO})::SingleReference
+    seq_id, seq = readFasta(fasta)
+    createTargetReference(seq_id, seq)
+end
+
 function createTargetReference(target_id::String, target_seqf::DNAString)::SingleReference
     target_seqr = revComp(target_seqf)
     target_length = Int32(length(target_seqf))
@@ -423,7 +454,7 @@ function createTargetReference(target_id::String, target_seqf::DNAString)::Singl
         false, false)
 end
 
-function alignit(tgt::SingleReference, ref::SingleReference)
+function align_target(tgt::SingleReference, ref::SingleReference)::FwdRev{FwdRev{AlignedBlocks}}
     start = time_ns()
     src_id = ref.refsrc
 
@@ -437,12 +468,9 @@ function alignit(tgt::SingleReference, ref::SingleReference)
                                     tgt.refloops.reverse, tgt.refSAs.reverse, tgt.refRAs.reverse)
     end
 
-    # blocks_aligned_to_targetf[refcount] = FwdRev(ff, rf)
-    # blocks_aligned_to_targetr[refcount] = FwdRev(rr, fr)
-
     @info "[$(tgt.refsrc)]± aligned $(src_id) ($(length(ff)),$(length(rf))) $(elapsed(start))"
     # note cross ...
-    FwdRev(ff, rf), FwdRev(rr, fr)
+    FwdRev(FwdRev(ff, rf), FwdRev(rr, fr))
 end
 
 function inverted_repeat(target::SingleReference)::AlignedBlock
@@ -488,27 +516,15 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
 
     t1 = time_ns()
 
+    # sanity check
     target_length = Int32(length(target_seqf))
     n = count(r"[XN]", target_seqf)
-    r = n / length(target_seqf)
+    r = n / target_length
     if r > .9
         error("sequence [$(target_id)] too vague: $(@sprintf "%.1f" r * 100)%  either X or N")
     end
     
     @info "[$target_id] seq length: $(target_length)bp"
-    
-    # target_seqr = revComp(target_seqf)
-    
-    # targetloopf = target_seqf * target_seqf[1:end - 1]
-    # target_saf = makeSuffixArray(targetloopf, true)
-    # target_raf = makeSuffixArrayRanksArray(target_saf)
-
-    # targetloopr = target_seqr * target_seqr[1:end - 1]
-    # target_sar = makeSuffixArray(targetloopr, true)
-    # target_rar = makeSuffixArrayRanksArray(target_sar)
-    
-    # targetloopf = MappedPtrString(targetloopf)
-    # targetloopr = MappedPtrString(targetloopr)
 
     target = createTargetReference(target_id, target_seqf)
 
@@ -520,17 +536,24 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
 
     blocks_aligned_to_targetf = AAlignedBlocks(undef, num_refs)
     blocks_aligned_to_targetr = AAlignedBlocks(undef, num_refs)
-    idxmap = Dict{Int,SingleReference}()
+  
     # map index into blocks_aligned_to_target{r,f} to SingleReference
+
+    # Note: only doing this because I'm not sure (yet)
+    # that writing to a Dict is thread safe... whereas
+    # writing to an array index (a[i] = v) seems to be fine
+    # (as long as different threads write to different indexes!)
+
+    idxmap = Dict{Int,SingleReference}()
     for (i, r) in enumerate(reference.references)
         idxmap[i] = r.second
     end
 
 
     Threads.@threads for i in collect(idxmap)
-        fwd, rev = alignit(target, i.second)
-        blocks_aligned_to_targetf[i.first] = fwd
-        blocks_aligned_to_targetr[i.first] = rev
+        a = align_target(target, i.second)
+        blocks_aligned_to_targetf[i.first] = a.forward
+        blocks_aligned_to_targetr[i.first] = a.reverse
     end
 
     t3 = time_ns()
@@ -570,7 +593,10 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
         # find inverted repeat if any
         irb[1] = inverted_repeat(target)
     end
-
+    # Threads.@threads should really return the values viz:
+    # v1, v2 = Threads.@threads for w in [f1, f2]
+    #     w()
+    # end
     Threads.@threads for worker in [watson, crick, bginverted_repeat]
         worker()
     end
@@ -580,7 +606,6 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
     sffs_rev = strands[2]
     ir = irb[1]
    
-    
     if ir[3] >= 1000
         @info "[$target_id] inverted repeat $(ir[3])"
     else

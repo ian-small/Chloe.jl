@@ -9,6 +9,7 @@ export distributed_main, chloe_distributed, run_broker, get_distributed_args, ma
 export set_global_logger
 export annotate_one_task
 export MMappedString, ASCII
+export readSingleReference, createTargetReference, inverted_repeat
 
 include("ZMQLogger.jl")
 include("annotate_genomes.jl")
@@ -28,5 +29,5 @@ import .Annotator: annotate, annotate_one, readReferences, MayBeIO, MayBeString,
 import .CmdLine: cmd_main
 import .ZMQLogging: set_global_logger
 import .Annotator: MMappedString, ASCII
-
+import .Annotator: readSingleReference, createTargetReference, inverted_repeat
 end
