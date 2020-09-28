@@ -58,7 +58,7 @@ end
 function Base.show(io::IO, r::SingleReference)
 
     total = datasize(r)
-    bp = datasize(s.refloops)
+    bp = datasize(r.refloops)
     f = r.forward_only ? "[forward]" : ""
     m = r.ismmapped ? "[mmap]" : ""
     print(io, "SingleReference[$(r.refsrc)]$(f)$(m): $(r.target_length), $(human(bp))bp, total=$(human(total))")
@@ -290,7 +290,7 @@ function readReferences(refsdir::String, templates::String;
     end
     path = joinpath(refsdir, "ReferenceOrganisms.json")
     if !isfile(path)
-        error("readReferences: require \"$(path)\" JSON file")
+        error("readReferences: require \"$(path)\" JSON file to exist.")
     end
     ReferenceOrganisms = open(path) do f
         JSON.parse(f, dicttype=Dict{String,String})
@@ -302,14 +302,15 @@ function readReferences(refsdir::String, templates::String;
     files = readdir(refsdir)
     idx = findall(x -> endswith(x, ".sff"), files)
     if isempty(idx)
-        error("No sff files found in $(refsdir)!")
+        error("No sff reference files found in $(refsdir)!")
     end
     
     sff_files = files[idx]
     mmaps = 0
 
     for ref in ReferenceOrganisms
-        refsdict[ref.first] = r = readSingleReference(refsdir, ref, sff_files; verbose=verbose, forward_only=forward_only)
+        refsdict[ref.first] = r = readSingleReference(refsdir, ref, sff_files;
+                                        verbose=verbose, forward_only=forward_only)
         if r.ismmapped 
             mmaps += 1
         end
@@ -342,7 +343,7 @@ function flatten(vanno::Vector{Vector{Annotation}})::Vector{Annotation}
     ret
 end
 
-function do_annotations(target_id::String, strand::Char, idxmap::Dict{Int,SingleReference}, blocks_aligned_to_target::AAlignedBlocks)
+function do_annotations(target_id::String, strand::Char, idx2ref::Dict{Int,SingleReference}, blocks_aligned_to_target::AAlignedBlocks)
     # this takes about 4secs!
     function do_one(refsrc, ref_features, blocks)
         st = time_ns()
@@ -353,9 +354,9 @@ function do_annotations(target_id::String, strand::Char, idxmap::Dict{Int,Single
         @debug "[$(target_id)]$(strand) $(refsrc)± overlaps $(length(annotations)): $(elapsed(st))"
         return annotations
     end
-    tgt = Vector{Vector{Annotation}}(undef, length(idxmap))
+    tgt = Vector{Vector{Annotation}}(undef, length(idx2ref))
 
-    Threads.@threads for i in collect(idxmap)
+    Threads.@threads for i in collect(idx2ref)
         blocks = blocks_aligned_to_target[i.first]
         tgt[i.first] = do_one(i.second.refsrc, i.second.ref_features, blocks)
     end
@@ -365,12 +366,13 @@ function do_annotations(target_id::String, strand::Char, idxmap::Dict{Int,Single
     sort!(annotations, by=x -> x.path)
     annotations
 end
+
 function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
-    idxmap::Dict{Int,SingleReference}, coverages::Dict{String,Float32},
+    idx2ref::Dict{Int,SingleReference}, coverages::Dict{String,Float32},
     strand::Char, blocks_aligned_to_target::AAlignedBlocks,
     targetloop::DNAString, feature_templates::Dict{String,FeatureTemplate})::Strand
 
-    annotations = do_annotations(target_id, strand, idxmap, blocks_aligned_to_target)
+    annotations = do_annotations(target_id, strand, idx2ref, blocks_aligned_to_target)
 
     t4 = time_ns()
     @info "[$target_id]$strand overlapping ref annotations ($(length(annotations))) $(human(datasize(annotations))): $(ns(t4 - start_ns))"
@@ -396,7 +398,7 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
             end
             path_to_stack[stack.path] = stack
         else
-            @debug "[$target_id]$strand below threshold: $(stack.path): depth=$(@sprintf "%.3f" depth) coverage=$( @sprintf "%.3f" coverage)"
+            @debug "[$target_id]$strand below threshold: $(stack.path): depth=$(@sprintf "%.3f" depth) coverage=$(@sprintf "%.3f" coverage)"
         end
     end
 
@@ -417,8 +419,7 @@ function do_strand(target_id::String, start_ns::UInt64, target_length::Int32,
                                             targetloop, annotations,
                                              path_to_stack)
 
-    t8 = time_ns()
-    @info "[$target_id]$strand refining gene models: $(ns(t8 - t7))"
+    @info "[$target_id]$strand refining gene models: $(elapsed(t7))"
     return target_strand_models, path_to_stack
 end
 
@@ -427,6 +428,19 @@ end
 MayBeIO = Union{String,IO,Nothing}
 
 function createTargetReference(fasta::Union{String,IO})::SingleReference
+    if fasta isa String && endswith(fasta, ".mmap")
+        refSAs, refRAs, refloops = read_mmap_suffix(fasta)
+        target_length = length(refSAs.forward)
+        _, f = splitpath(fasta)
+        refsrc = splitext(f)[1]
+        return SingleReference(refsrc,
+            refloops,
+            refSAs,
+            refRAs,
+            nothing, # no .sff file
+            target_length,
+            true, false)
+    end
     seq_id, seq = readFasta(fasta)
     createTargetReference(seq_id, seq)
 end
@@ -436,15 +450,17 @@ function createTargetReference(target_id::String, target_seqf::DNAString)::Singl
     target_length = Int32(length(target_seqf))
     
     targetloopf = target_seqf * target_seqf[1:end - 1]
+    targetloopr = target_seqr * target_seqr[1:end - 1]
+
+    targetloopf = MappedPtrString(targetloopf)
+    targetloopr = MappedPtrString(targetloopr)
+    
     target_saf = makeSuffixArray(targetloopf, true)
     target_raf = makeSuffixArrayRanksArray(target_saf)
 
-    targetloopr = target_seqr * target_seqr[1:end - 1]
     target_sar = makeSuffixArray(targetloopr, true)
     target_rar = makeSuffixArrayRanksArray(target_sar)
-    
-    targetloopf = MappedPtrString(targetloopf)
-    targetloopr = MappedPtrString(targetloopr)
+
     SingleReference(target_id,
         FwdRev(targetloopf, targetloopr),
         FwdRev(target_saf, target_sar),
@@ -454,7 +470,7 @@ function createTargetReference(target_id::String, target_seqf::DNAString)::Singl
         false, false)
 end
 
-function align_target(tgt::SingleReference, ref::SingleReference)::FwdRev{FwdRev{AlignedBlocks}}
+function align(tgt::SingleReference, ref::SingleReference)::FwdRev{FwdRev{AlignedBlocks}}
     start = time_ns()
     src_id = ref.refsrc
 
@@ -475,10 +491,10 @@ end
 
 function inverted_repeat(target::SingleReference)::AlignedBlock
     f_aligned_blocks, _ = alignLoops(target.refsrc,
-                                                    target.refloops.forward, target.refSAs.forward, target.refRAs.forward,
-                                                    target.refloops.reverse, target.refSAs.reverse, target.refRAs.reverse;
-                                                    rev=false
-                                        )
+                            target.refloops.forward, target.refSAs.forward, target.refRAs.forward,
+                            target.refloops.reverse, target.refSAs.reverse, target.refRAs.reverse;
+                            rev=false
+                            )
 
     # sort blocks by length
     f_aligned_blocks = sort!(f_aligned_blocks, by=last, rev=true)
@@ -489,6 +505,15 @@ function inverted_repeat(target::SingleReference)::AlignedBlock
         AlignedBlock(0, 0, 0)
     end
     ir
+end
+
+function coverage(target::SingleReference, a::FwdRev{AlignedBlocks})
+    coverage = blockCoverage(a.forward) + blockCoverage(a.reverse)
+    coverage /= (target.target_length * 2)
+    coverage
+end
+function coverage(target::SingleReference, a::FwdRev{FwdRev{AlignedBlocks}})
+    coverage(target, a.forward)
 end
 
 Models = Vector{Vector{SFF}}
@@ -544,14 +569,10 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
     # writing to an array index (a[i] = v) seems to be fine
     # (as long as different threads write to different indexes!)
 
-    idxmap = Dict{Int,SingleReference}()
-    for (i, r) in enumerate(reference.references)
-        idxmap[i] = r.second
-    end
+    idx2ref = Dict(i => r.second for (i, r) in enumerate(reference.references))
 
-
-    Threads.@threads for i in collect(idxmap)
-        a = align_target(target, i.second)
+    Threads.@threads for i in collect(idx2ref)
+        a = align(target, i.second)
         blocks_aligned_to_targetf[i.first] = a.forward
         blocks_aligned_to_targetr[i.first] = a.reverse
     end
@@ -561,50 +582,32 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
     @info "[$target_id] aligned: ($(num_refs)) $(human(datasize(blocks_aligned_to_targetf) + datasize(blocks_aligned_to_targetr))) $(ns(t3 - t2))" 
 
     coverages = Dict{String,Float32}()
-    for key in idxmap
+    for key in idx2ref
         a = blocks_aligned_to_targetf[key.first]
-        coverage = blockCoverage(a.forward) + blockCoverage(a.reverse)
-        coverages[key.second.refsrc] = coverage / (target.target_length * 2)
+        coverages[key.second.refsrc] = coverage(target, a)
     end
     @debug "[$target_id] coverages:" coverages
 
-    strands = Vector{Models}(undef, 2)
 
     function watson()
-        models, stacks = do_strand(target_id, t3, target.target_length, idxmap, coverages,
+        models, stacks = do_strand(target_id, t3, target.target_length, idx2ref, coverages,
             '+', blocks_aligned_to_targetf, target.refloops.forward, reference.feature_templates)
 
-        sffs_fwd = [toSFF(model, target.refloops.forward, stacks) 
+        [toSFF(model, target.refloops.forward, stacks) 
             for model in filter(m -> !isempty(m), models)]
-        strands[1] = sffs_fwd
-        
     end
+
     function crick()
-        models, stacks = do_strand(target_id, t3, target.target_length, idxmap, coverages,
+        models, stacks = do_strand(target_id, t3, target.target_length, idx2ref, coverages,
             '-', blocks_aligned_to_targetr, target.refloops.reverse, reference.feature_templates)
-        sffs_rev = [toSFF(model, target.refloops.reverse, stacks) 
+        [toSFF(model, target.refloops.reverse, stacks) 
             for model in filter(m -> !isempty(m), models)]
-        strands[2] = sffs_rev
     end
 
-    irb = Vector{AlignedBlock}(undef, 1)
-
-    function bginverted_repeat()
-        # find inverted repeat if any
-        irb[1] = inverted_repeat(target)
-    end
-    # Threads.@threads should really return the values viz:
-    # v1, v2 = Threads.@threads for w in [f1, f2]
-    #     w()
-    # end
-    Threads.@threads for worker in [watson, crick, bginverted_repeat]
-        worker()
-    end
-
-    # fish out the data from background threads
-    sffs_fwd = strands[1]
-    sffs_rev = strands[2]
-    ir = irb[1]
+    # from https://discourse.julialang.org/t/threads-threads-to-return-results/47382
+    
+    sffs_fwd, sffs_rev, ir = fetch.((Threads.@spawn w()) for w in 
+            [watson, crick, () -> inverted_repeat(target)])
    
     if ir[3] >= 1000
         @info "[$target_id] inverted repeat $(ir[3])"
@@ -612,22 +615,23 @@ function annotate_one(reference::Reference, target_id::String, target_seqf::Stri
         ir = nothing
     end
     
-    if output !== nothing
+    fname = if output !== nothing
         if output isa String
-            fname = output::String
-            if isdir(fname)
-                fname = joinpath(fname, "$(target_id).sff")
+            if isdir(output)
+                joinpath(output, "$(target_id).sff")
+            else
+                output # filename
             end
         else
-            fname = output # IOBuffer
+            output # IOBuffer
         end
     else
-        fname = "$(target_id).sff"
+        "$(target_id).sff"
     end
     writeSFF(fname, target_id, target.target_length, reference.gene_exons,
              FwdRev(sffs_fwd, sffs_rev), ir)
 
-    @info success("[$target_id] Overall: $(ns(time_ns() - t1))")
+    @info success("[$target_id] Overall: $(elapsed(t1))")
     return fname, target_id
 
 end

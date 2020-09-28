@@ -2,12 +2,7 @@
 AlignedBlock = Tuple{Int32,Int32,Int32}
 AlignedBlocks = Vector{AlignedBlock}
 
-
-const Two = Int32(2)
-const Three = Int32(3)
-
 import .MappedString: MMappedString, ASCII
-
 
 @inline function compareSubStrings(a::SubString{MMappedString{ASCII}}, 
                                    b::SubString{MMappedString{ASCII}})::Tuple{Int32,Int}
@@ -74,7 +69,7 @@ function alignSAs(src::DNAString, srcSA::SuffixArray, tgt::DNAString, tgtSA::Suf
     return sort!(lcps)
 end
 
-function probMatch(m::Integer, n::Integer, k::Integer)::Float64
+@inline function probMatch(m::Integer, n::Integer, k::Integer)::Float64
     m < k && return 0.0
     n < k && return 0.0
     return 1 - (((1 - 1 / 4^k)^(m - k + 1))^(n - k + 1))
@@ -192,7 +187,7 @@ end
 
 
 MaybeAlignedBlock = Union{AlignedBlock,Nothing}
-function mergeBlocks(block1::AlignedBlock, block2::AlignedBlock)::Tuple{AlignedBlock,MaybeAlignedBlock}
+@inline function mergeBlocks(block1::AlignedBlock, block2::AlignedBlock)::Tuple{AlignedBlock,MaybeAlignedBlock}
     gap1 = block2[1] - block1[1] - block1[3]
     gap2 = block2[2] - block1[2] - block1[3]
     if gap1 == gap2 && gap1 < 12
@@ -208,14 +203,26 @@ end
 # most of Chloë is spent in fillGap
 function fillAllGaps!(aligned_blocks::AlignedBlocks, 
     refloop::DNAString, refSA::SuffixArray, refRA::SuffixArray, 
-    tgtloop::DNAString, tgtSA::SuffixArray, tgtRA::SuffixArray)::AlignedBlocks
+    tgtloop::DNAString, tgtSA::SuffixArray, tgtRA::SuffixArray)
     block1_index = 1
     block2_index = 2
+    
+    # nshifted should be **small**
+    # @debug
+    start_len = length(aligned_blocks)
+    nsplices = nshifted = ndeleted = nnew = 0
+    
     @inbounds while block2_index <= length(aligned_blocks)
         block1 = aligned_blocks[block1_index]
         block2 = aligned_blocks[block2_index]
         block1, block2 = mergeBlocks(block1, block2)
         while isnothing(block2) # blocks1 and 2 got merged
+
+            # @debug
+            nsplices += 1
+            nshifted = length(aligned_blocks) - block2_index
+            ndeleted = + block2_index - block1_index
+
             splice!(aligned_blocks, block1_index:block2_index, [block1]) # replace block1 and block2 with merged block
             if block2_index > length(aligned_blocks)
                 return aligned_blocks
@@ -231,16 +238,21 @@ function fillAllGaps!(aligned_blocks::AlignedBlocks,
             block1_index += 1
             block2_index += 1
         else
+            # @debug
+            nsplices += 1
+            nshifted = length(aligned_blocks) - block2_index + 1
+            nnew += length(new_blocks)
+
             # insert before block index 2
             splice!(aligned_blocks, block2_index:block2_index - 1, new_blocks)
         end
     end
-    return aligned_blocks
+    @debug "fillAllGaps: splices=$(nsplices)  gaps=$(nnew) shifted=$(nshifted) deleted=$(ndeleted) len=$(start_len) -> $(length(aligned_blocks))"
 end
 
 function revCompBlocks(blocks::AlignedBlocks, a_length::Integer, b_length::Integer)::AlignedBlocks
     rev_blocks = AlignedBlocks(undef, length(blocks))
-    two, a_length, b_length = Two, Int32(a_length), Int32(b_length)
+    two, a_length, b_length = Int32(2), Int32(a_length), Int32(b_length)
     @inbounds for i = 1:length(blocks)
         block = blocks[i]
         rev_blocks[i] = (a_length - block[3] - block[1] + two, 
@@ -252,13 +264,14 @@ end
 
 function mergeBlockArrays(blocks1::AlignedBlocks, blocks2::AlignedBlocks)::AlignedBlocks
     # assume sorted arrays
-    merged_array = AlignedBlocks()
 
     blocks1_index = 1
     blocks2_index = 1
     blocks1_len = length(blocks1)
     blocks2_len = length(blocks2)
 
+    merged_array = AlignedBlocks()
+    # this is basically true for the tests I've used....
     sizehint!(merged_array, blocks1_len + blocks2_len)
 
     @inbounds while blocks1_index <= blocks1_len && blocks2_index <= blocks2_len
@@ -278,7 +291,7 @@ function mergeBlockArrays(blocks1::AlignedBlocks, blocks2::AlignedBlocks)::Align
         elseif block1[1] - block1[2] == block2[2] - block2[1] # same offset so compatible
             blocka_start = min(block1[1], block2[2])
             blockb_start = min(block1[2], block2[1])
-            block_length = max(block1[1] + block1[3], block2[2] + block2[3]) - blocka_start + 1
+            block_length = max(block1[1] + block1[3], block2[2] + block2[3]) - blocka_start + one(Int32)
             push!(merged_array, (blocka_start, blockb_start, block_length)) # add merger of the two blocks
             blocks1_index += 1
             blocks2_index += 1
@@ -298,45 +311,45 @@ function mergeBlockArrays(blocks1::AlignedBlocks, blocks2::AlignedBlocks)::Align
         push!(merged_array, (block2[2], block2[1], block2[3]))
         blocks2_index += 1
     end
-    @debug "mergeBlockArrays: $(length(merged_array)) ≅ $(blocks1_len + blocks2_len)"
+    @debug "mergeBlockArrays: sizehint! $(length(merged_array)) ≅ $(blocks1_len + blocks2_len)"
     return merged_array
+end
+
+function alignHelper(src_id::String, strand::Char,
+    src::DNAString, srcSA::SuffixArray, srcRA::SuffixArray,
+    tgt::DNAString, tgtSA::SuffixArray, tgtRA::SuffixArray)
+    # ~30% for alignSAs and 60% for fillAllGaps!
+    lcps = alignSAs(src, srcSA, tgt, tgtSA)
+    aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(srcSA), length(tgtSA)))
+    fillAllGaps!(aligned_blocks, src, srcSA, srcRA, tgt, tgtSA, tgtRA)
+    @debug "alignLoops: [$(src_id)]$(strand) lcps#=$(length(lcps)) -> aligned#=$(length(aligned_blocks))"
+    aligned_blocks
 end
 
 function alignLoops(src_id::String,
                     ref_loop::DNAString, ref_SA::SuffixArray, ref_RA::SuffixArray, 
                     tgt_loop::DNAString, tgt_SA::SuffixArray, tgt_RA::SuffixArray;
                     rev=true)::Tuple{AlignedBlocks,Union{Nothing,AlignedBlocks}}
+    
     # check if sequences are identical, allowing for rotation
-    if length(ref_loop) == length(tgt_loop)
-        match = findfirst(SubString(ref_loop, 1, floor(Int, (length(ref_loop) + 1) / 2)), tgt_loop)
+    nr, nt = length(ref_loop), length(tgt_loop)
+    if nr == nt
+        match = findfirst(SubString(ref_loop, 1, floor(Int, (nr + 1) / 2)), tgt_loop)
         if !isnothing(match)
-            aligned_blocks = [(one(Int32), Int32(match[1]), Int32(length(ref_loop)))]
+            aligned_blocks = [(one(Int32), Int32(first(match)), Int32(nr))]
             return aligned_blocks, rev ? revCompBlocks(aligned_blocks, length(ref_SA), length(tgt_SA)) : nothing
         end
     end
-    function align(ref::String,
-                   src::DNAString, srcSA::SuffixArray, srcRA::SuffixArray,
-                   tgt::DNAString, tgtSA::SuffixArray, tgtRA::SuffixArray)
-        # ~30% for alignSAs and 60% for fillAllGaps!
-        lcps = alignSAs(src, srcSA, tgt, tgtSA)
-        aligned_blocks = lcps2AlignmentBlocks(lcps, true, matchLengthThreshold(length(srcSA), length(tgtSA)))
-        aligned_blocks = fillAllGaps!(aligned_blocks, src, srcSA, srcRA, tgt, tgtSA, tgtRA)
-        @debug "alignLoops: [$(src_id)]$(ref) lcps#=$(length(lcps)) -> aligned#=$(length(aligned_blocks))"
-        aligned_blocks
-    end
 
-    block = Vector{AlignedBlocks}(undef, 2)
     function rt()
-        block[1] = align("+", ref_loop, ref_SA, ref_RA, tgt_loop, tgt_SA, tgt_RA)
+        alignHelper(src_id, '+', ref_loop, ref_SA, ref_RA, tgt_loop, tgt_SA, tgt_RA)
     end
     function tr()
-        block[2] = align("-", tgt_loop, tgt_SA, tgt_RA, ref_loop, ref_SA, ref_RA)
+        alignHelper(src_id, '-', tgt_loop, tgt_SA, tgt_RA, ref_loop, ref_SA, ref_RA)
     end
 
-    Threads.@threads for worker in [rt, tr]
-        worker()
-    end
+    blockf, blockr = fetch.((Threads.@spawn w()) for w in [rt, tr])
 
-    merged_blocks = mergeBlockArrays(block[1], block[2])
+    merged_blocks = mergeBlockArrays(blockf, blockr)
     return merged_blocks, rev ? revCompBlocks(merged_blocks, length(ref_SA), length(tgt_SA)) : nothing
 end

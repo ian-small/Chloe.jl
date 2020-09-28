@@ -261,7 +261,7 @@ def addresses(f):
 @click.option(
     "--workers",
     default=0,
-    help="send annotation requests in parallel using this many workers",
+    help="send annotation requests in parallel using this many workers (default is cpu count)",
 )
 @click.option(
     "-o",
@@ -272,6 +272,10 @@ def addresses(f):
 @click.argument("fastas", nargs=-1)
 def annotate(timeout, address, fastas, output, workers):
     """Annotate fasta files using a distributed chloe server."""
+    from multiprocessing import cpu_count
+
+    if workers == 0:
+        workers = cpu_count()
 
     def dt(code, d):
         if code == 200:
@@ -322,14 +326,19 @@ def gzcompress(b):
 @click.option(
     "--workers",
     default=0,
-    help="send annotation requests in parallel using this many workers",
+    help="send annotation requests in parallel using this many workers (default is cpu count)",
 )
 @click.option("-o", "--output", help="output .sff filename or directory")
 @click.option("--compress", is_flag=True, help="send fasta compressed")
 @click.argument("fastas", nargs=-1)
 def annotate2(timeout, address, compress, fastas, workers, output):
     """Annotate fasta files (send and receive file content)."""
+    from multiprocessing import cpu_count
+
     socket = Socket(address, timeout)
+
+    if workers == 0:
+        workers = cpu_count()
 
     def get_fasta(fasta):
         if compress:
