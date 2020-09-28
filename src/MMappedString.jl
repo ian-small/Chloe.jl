@@ -51,7 +51,7 @@ end
 @inline Base.hash(s::MMappedString, h::UInt) = Base.hash(s.ptr, h)
 
 Base.show(io::IO, s::MMappedString) = begin
-    print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr)) of type $(Base.codeunit(s))")
+    print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr))")
 end
 
 
@@ -128,7 +128,7 @@ Base.pointer(x::SubString{MMappedString}, i::Integer) = pointer(x.string.ptr) + 
 # do a scan of the bytes to find the number of characters
 
 Base.show(io::IO, s::MMappedString{ASCII}) = begin
-    print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr)) of type $(Base.codeunit(s)) ASCII only")
+    print(io, "MMappedString[$(length(s.ptr))] @ $(pointer(s.ptr)) ASCII only")
 end
 
 @propagate_inbounds Base.iterate(s::MMappedString{ASCII}, i::Int=firstindex(s)) = ascii_iterate(s.ptr, i)
