@@ -4,6 +4,8 @@ AlignedBlocks = Vector{AlignedBlock}
 
 import .MappedString: MMappedString, ASCII
 
+datasize(a::AlignedBlocks) = length(a) * sizeof(AlignedBlock)
+
 @inline function compareSubStrings(a::SubString{MMappedString{ASCII}}, 
                                    b::SubString{MMappedString{ASCII}})::Tuple{Int32,Int}
     la, lb = length(a), length(b)

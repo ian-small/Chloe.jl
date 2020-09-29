@@ -65,6 +65,15 @@ function Base.show(io::IO, r::SingleReference)
 
 end
 
+function Base.show(io::IO, r::FwdRev{FwdRev{AlignedBlocks}})
+    total = datasize(r)
+    ff = length(r.forward.forward)
+    fr = length(r.forward.reverse)
+    rf = length(r.reverse.forward)
+    rr = length(r.reverse.reverse)
+    print(io, "Chloë Alignment: [($ff,$fr),($rf,$rr)] total=$(human(total))")
+end
+
 struct StrandSingleReference
     refsrc::String
     refloops::MappedPtrString
@@ -201,7 +210,10 @@ function read_gwsas(gwsas::String, id::String; forward_only::Bool=false)
 end
 
 function verify_refs(refsdir, template)
- 
+    # used by master process to check reference directory
+    # *before* starting worker processes...
+
+    # TODO: read json file and really check...
     if !isdir(refsdir)
         msg = "Reference directory $(refsdir) is not a directory!"
         @error msg
@@ -215,14 +227,19 @@ function verify_refs(refsdir, template)
             throw(ArgumentError(msg))
         end
     end
-
-    files = findall(x -> endswith(x, r"\.(gwsas|mmap)"), readdir(refsdir))
-    if length(files) == 0
+    files = readdir(refsdir)
+    mmaps = findall(x -> endswith(x, r"\.(gwsas|mmap)"), files)
+    if length(mmaps) == 0
         msg = "please run `julia chloe.jl mmap $(refsdir)/*.{fa,fasta}`"
         @error msg
         throw(ArgumentError(msg))
     end
-    
+    sff = findall(x -> endswith(x, ".sff"), files)
+    if length(sff) == 0
+        msg = "no reference .sff files in $(refsdir)!"
+        @error msg
+        throw(ArgumentError(msg))
+    end
 end
 
 function readSingleReference(mmap::String, features::String;
