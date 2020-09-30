@@ -6,12 +6,11 @@ from cryptography.utils import CryptographyDeprecationWarning
 
 filterwarnings("ignore", category=CryptographyDeprecationWarning)
 
-
 remote_dir = "/var/www/websites3/annotator"
 
-HOSTS = ["ianc@croppal"]
+HOSTS = ["croppal"]
 
-STILETTO = ["ianc@chloe-stiletto"]
+STILETTO = ["chloe-stiletto"]
 
 
 def git_uptodate(res):
@@ -33,7 +32,7 @@ def update(c):
         if not res.failed and not git_uptodate(res):
             secho('restarting service use: "fab ping" to check restart', fg="magenta")
             # hopefully supervisor will restart (see etc/supervisor-chloe-celery.conf)
-            c.run("python bin/chloe.py terminate")
+            c.run("python bin/chloe.py exit", pty=True)
 
 
 @task(hosts=STILETTO)
@@ -45,18 +44,26 @@ def update_stiletto(c):
         result = c.run("uname -a", hide=True)
         # ,result.failed,result.return_code,result.succeeded
         echo(color(result.stdout.strip(), fg="green"))
-        c.run("git pull")
+        c.run("git pull", pty=True)
 
 
 @task(hosts=HOSTS)
 def restart(c):
     """Restart annotator service."""
     with c.cd(remote_dir):
-        c.run("python bin/chloe.py terminate")
+        c.run("python bin/chloe.py exit", pty=True)
+
+
+@task(hosts=HOSTS)
+def status(c, cmd=None):
+    """Show status of supervisor."""
+    cmd = cmd or "status"
+    with c.cd(remote_dir):
+        c.run(f"supervisorctl {cmd}")
 
 
 @task(hosts=HOSTS)
 def ping(c):
     """Ping annotator service."""
     with c.cd(remote_dir):
-        c.run("python bin/chloe.py ping")
+        c.run("python bin/chloe.py ping", pty=True)

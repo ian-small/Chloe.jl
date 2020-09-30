@@ -37,4 +37,4 @@ done
 shift $((OPTIND -1))
 
 export JULIA_NUM_THREADS=$threads
-exec julia --color=yes $proj/src/chloe_distributed.jl -l $level --workers=$workers --address=tcp://127.0.0.1:9467 --broker=ipc:///tmp/chloe-client
+exec julia --color=yes $proj/distributed.jl -l $level --workers=$workers --address=tcp://127.0.0.1:9467 --broker=ipc:///tmp/chloe-client

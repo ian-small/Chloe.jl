@@ -5,3 +5,5 @@ testo/*
 Manifest.toml
 .ipynb_checkpoints/
 Untitled*.ipynb
+*.mmap
+.vscode/

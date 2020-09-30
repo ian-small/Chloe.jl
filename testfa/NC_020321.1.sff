@@ -37,7 +37,7 @@ rrn23/1/rRNA/1	+	98570	2645	0	1.013	0.781	0.972
 rrn23/1/rRNA/2	+	101215	199	0	1.000	0.918	0.960	
 rrn4.5/1/rRNA/1	+	101414	102	0	0.990	0.835	0.892	
 rrn5/1/rRNA/1	+	101702	121	0	1.000	0.939	1.000	
-trnA-UGC/1/tRNA/2	+	98347	35	0	1.000	0.971	0.971	possible pseudogene, missing exon(s) 
+trnA-UGC/1/tRNA/2	+	98347	35	0	1.000	0.971	0.971	possible pseudogene, missing exon(s)
 trnD-GUC/1/tRNA/1	+	22740	74	0	1.000	0.998	1.000	
 trnE-UUC/1/tRNA/1	+	22320	73	0	1.000	0.858	1.000	
 trnF-GAA/1/tRNA/1	+	44531	73	0	1.000	0.965	1.000	

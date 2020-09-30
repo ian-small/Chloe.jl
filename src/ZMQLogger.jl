@@ -1,12 +1,17 @@
-import Logging
+module ZMQLogging
+
+export TASK_KEY, set_global_logger, ZMQLogger
+
 import ZMQ
-using UUIDs: UUID
+MayBeString = Union{String,Nothing}
 
-const TASK_KEY = UUID("30c48ab6-eb66-4e00-8274-c879a8246cdb")
+include("globals.jl")
 
-ANNO_TASK = Dict{UUID,String}()
+const TASK_KEY = "CURRENT_TASK"
 
-function annotation_local_storage(key::UUID, value::MayBeString)
+const ANNO_TASK = Dict{String,String}()
+
+function annotation_local_storage(key::String, value::MayBeString)
     if value === nothing
         delete!(ANNO_TASK, key)
     else
@@ -15,7 +20,7 @@ function annotation_local_storage(key::UUID, value::MayBeString)
     nothing
 end
 
-function annotation_local_storage(key::UUID)::MayBeString
+function annotation_local_storage(key::String)::MayBeString
     get(ANNO_TASK, key, nothing)
 end
 struct ZMQLogger <: Logging.AbstractLogger
@@ -64,7 +69,7 @@ function Logging.handle_message(logger::ZMQLogger, level, message, _module, grou
         if task_id !== nothing
             topic = "$(topic).$(task_id)"
         end
-
+        # julia Strings are already utf-8: Vector{UInt8}(msg)
         ZMQ.send(logger.socket, ZMQ.Message(topic); more=true)
         ZMQ.send(logger.socket, ZMQ.Message(msg); more=false)
     end
@@ -82,11 +87,8 @@ function Logging.catch_exceptions(logger::ZMQLogger)
     false
 end
 
-const LEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, 
-                    "warn" => Logging.Warn, "error" => Logging.Error)
-MayBeString = Union{Nothing,String}
 
-function set_global_logger(logfile::MayBeString, level::String="warn"; quiet::Bool=true, topic="")
+function set_global_logger(level::String="warn", endpoint::MayBeString=nothing; quiet::Bool=true, topic="")
     
     # don't add any line number guff even for debugging
     function quiet_metafmt(level, _module, group, id, file, line)
@@ -95,12 +97,13 @@ function set_global_logger(logfile::MayBeString, level::String="warn"; quiet::Bo
         return color, prefix, ""
 
     end
-    llevel = get(LEVELS, level, Logging.Warn)
+    llevel = get(LOGLEVELS, level, Logging.Warn)
 
-    if logfile === nothing
+    if endpoint === nothing
         logger = Logging.ConsoleLogger(stderr, llevel, meta_formatter=quiet ? quiet_metafmt : Logging.default_metafmt)
     else
-        logger = ZMQLogger(logfile::String, llevel; topic=topic)
+        logger = ZMQLogger(endpoint::String, llevel; topic=topic)
     end
     Logging.global_logger(logger) 
 end
+end # module

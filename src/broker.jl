@@ -1,7 +1,55 @@
+module Broker
+
+export broker_main, check_endpoints, remove_endpoints
+
 import ZMQ
 import ZeroMQ_jll
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 
+function remove_endpoints(endpoints::String...)
+    # this doesn't seem to work
+    # a test bind to an already bound
+    # ipc:///named-socket seems to stuff
+    # everything up.....
+    function cleanup(fname)
+        atexit(() -> rm(fname; force=true))
+    end
+    for endpoint in endpoints
+        if startswith(endpoint, "ipc:///")
+            cleanup(endpoint[7:end])
+        end
+    end
+end
+
+function check_endpoints(endpoints::String...)
+    # this doesn't seem to work
+    # a test bind to an already bound
+    # ipc:///named-socket seems to stuff
+    # everything up.....
+    for endpoint in endpoints
+        if startswith(endpoint, "ipc:///")
+            fname = endpoint[7:end]
+            if isfile(fname)
+                return "$(endpoint) in use"
+            else
+                continue
+            end
+        end
+        router = ZMQ.Socket(ZMQ.ROUTER)
+
+        try
+            ZMQ.bind(router, endpoint)
+            continue
+        catch e
+            return "$endpoint $(e.msg)"
+        finally
+            ZMQ.set_linger(router, 0)
+            ZMQ.close(router)
+        end
+    end
+    nothing # OK
+
+end
 function start_broker(worker_url::String, client_url::String)
 
     # ctx = Context()
@@ -18,7 +66,7 @@ function start_broker(worker_url::String, client_url::String)
             rc = ccall((:zmq_proxy, ZeroMQ_jll.libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
             @info "done zmq_proxy $(rc)"
         catch
-            @info "exception!"
+            @error "zmq_proxy exception!"
         end
     finally
         # control never comes here... clean up anyway.
@@ -54,6 +102,9 @@ function broker_main()
     start_broker(args[:worker], args[:client])
 end
 
+end # module
+
 if abspath(PROGRAM_FILE) == @__FILE__
+    import .Broker: broker_main
     broker_main()
 end

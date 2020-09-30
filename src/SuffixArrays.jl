@@ -1,6 +1,9 @@
-SuffixArray = Array{Int32,1}
-DNAString = String
 
+import JLD
+
+SuffixArray = Vector{Int32}
+
+datasize(a::SuffixArray) = length(a) * sizeof(Int32)
 struct GenomeWithSAs
     id::String
     sequence::String
@@ -8,15 +11,27 @@ struct GenomeWithSAs
     reverseSA::SuffixArray
 end
 
-function makeSuffixArray(source::DNAString, circular::Bool)::SuffixArray
+datasize(g::GenomeWithSAs) = begin
+    sizeof(GenomeWithSAs) + sizeof(g.id) + sizeof(g.sequence) + datasize(g.forwardSA) + datasize(g.reverseSA)
+end
 
+# define equality between GenomeWithSAs
+Base.:(==)(x::GenomeWithSAs, y::GenomeWithSAs) = begin
+    return x.id == y.id && x.sequence == y.sequence && 
+        x.forwardSA == y.forwardSA && x.reverseSA == y.reverseSA;
+end
+
+function makeSuffixArray(source::AbstractString, circular::Bool)::SuffixArray
+    if length(source) == 0
+        return SuffixArray()
+    end
     if circular
 		last = Int((length(source) + 1) / 2)
     else
         last = length(source)
     end
 
-    suffixes = Array{SubString}(undef, last)
+    suffixes = Vector{SubString}(undef, last)
     for offset = 1:last
         suffixes[offset] = SubString(source, offset)
     end
@@ -28,10 +43,12 @@ function makeSuffixArray(source::DNAString, circular::Bool)::SuffixArray
 
 end
 
-function makeSuffixArrayT(seqloop::DNAString)::SuffixArray # assumes seqloop is circular
-
+function makeSuffixArrayT(seqloop::AbstractString)::SuffixArray # assumes seqloop is circular
+    if length(source) == 0
+        return SuffixArray()
+    end
 	last::Int32 = trunc(Int32, cld((length(seqloop) + 1) / 2, 3))
-	suffixes = Array{SubString}(undef, last * 3)
+	suffixes = Vector{SubString}(undef, last * 3)
 
 	frame = translateDNA(seqloop)
 	for offset = 1:last
@@ -50,8 +67,10 @@ function makeSuffixArrayT(seqloop::DNAString)::SuffixArray # assumes seqloop is 
 	return makeSuffixArray(suffixes)
 end
 
-function makeSuffixArray(suffixes::Array{SubString})::SuffixArray
-
+function makeSuffixArray(suffixes::Vector{SubString})::SuffixArray
+    if length(suffixes) == 0
+        return SuffixArray()
+    end
     suffixArray = SuffixArray(undef, length(suffixes))
     suffixArray = sortperm!(suffixArray, suffixes)
 
@@ -68,16 +87,14 @@ function makeSuffixArrayRanksArray(SA::SuffixArray)::SuffixArray
     return RA
 end
 
-import JLD: jldopen
-
 function writeGenomeWithSAs(filename::String, genome::GenomeWithSAs)
-    jldopen(filename, "w") do file
+    JLD.jldopen(filename, "w") do file
         write(file, genome.id, genome)
     end
 end
 
 function readGenomeWithSAs(filename::String, id::String)::GenomeWithSAs
-    jldopen(filename, "r") do file
+    JLD.jldopen(filename, "r") do file
         return read(file, id)
     end
 end
