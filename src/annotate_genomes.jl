@@ -519,7 +519,7 @@ function inverted_repeat(target::SingleReference)::AlignedBlock
     ir = if length(f_aligned_blocks) > 0
         f_aligned_blocks[1]
     else
-        AlignedBlock(0, 0, 0)
+        AlignedBlock((Int32(0), Int32(0), Int32(0)))
     end
     ir
 end
