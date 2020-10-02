@@ -57,6 +57,14 @@ datasize(f::FeatureArray) = begin
     sizeof(FeatureArray) + sizeof(f.genome_id)  + datasize(f.interval_tree)
 end
 
+function allFeatures(fa::FeatureArray)::Vector{Feature}
+    afeatures =  Vector{Feature}()
+    for feature in fa.interval_tree
+        push!(afeatures, feature)
+    end
+    afeatures
+end
+
 function readFeatures(file::String)::FwdRev{FeatureArray}
     open(file) do f
         header = split(readline(f), '\t')
