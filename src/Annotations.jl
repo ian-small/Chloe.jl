@@ -426,7 +426,7 @@ function groupFeaturesIntoGeneModels(features::AFeature)::AAFeature
             sort!(current_model, by=x -> x.start)
             push!(gene_models, current_model)
             current_model = Feature[]
-            # push!(current_model, feature)
+            push!(current_model, feature)
         end
     end
     if length(current_model) > 0

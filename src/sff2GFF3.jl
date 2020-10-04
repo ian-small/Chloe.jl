@@ -90,7 +90,7 @@ function writeGFF3(outfile, genemodel::ModelArray; sep::Bool=true)
             type = "exon"
         end
         
-        start, finish, length = wrap(feature, genemodel.strand, genemodel.genome_length)
+        start, finish, _ = wrap(feature, genemodel.strand, genemodel.genome_length)
         
         phase = type == "CDS" ? string(feature.phase) : "."
         write_line(type, start, finish, feature.path, parent, phase)
