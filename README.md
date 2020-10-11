@@ -228,6 +228,12 @@ apicall(i, "exit")
 
 Nothing interesting beyond here....
 
+Install package with
+
+```julia
+Pkg.clone("https://github.com:arabidopsis/chloe.git")
+```
+
 To stop julia vomiting unhelpful stacktraces when `^Ctrl-C`ing
 run julia with `--handle-signals=no`. Don't know what it does
 but `distributed.jl` will just exit on Ctrl-C.
@@ -260,7 +266,7 @@ all needed code on all nodes as early as possible.
 
 ---
 
-This only really is of interest with using the `add_worker` method that tries 
+This only really is of interest with using the `add_worker` method that tries
 to add new workers to the running server. If the server was
 started by loading `Chloe` as a package then you can't add new workers by just sending
 the required code: The new worker seems to be expecting a Chloe module.
