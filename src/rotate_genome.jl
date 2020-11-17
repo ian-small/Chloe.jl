@@ -35,8 +35,8 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
             s = sum(x != y for (x, y) in zip(s1, s2))
             @error "s1 != s2: $(IR_length) diff=$(s)"
         end
-        s = genome_wrap(target_length, target_length - ir2  - IR_length + 2)
-        s3 = revComp(SubString(target.refloops.forward, s, s + IR_length - 1))
+        p = genome_wrap(target_length, target_length - ir2  - IR_length + 2)
+        s3 = revComp(SubString(target.refloops.forward, p, p + IR_length - 1))
         if s1 != s3
             s = sum(x != y for (x, y) in zip(s1, s3))
             @error "s1 != s3: $(IR_length) diff=$(s)"
@@ -71,13 +71,17 @@ function rotateGenome(target_id::String, target_seqf::DNAString, flip_LSC::Bool,
         end
     
         ss = (rng::UnitRange) -> SubString(target.refloops.forward, rng)
-        rotation1 = rotation = target_length - last(IR2)
-        rotation2 = target_length - last(IR1)
+        
+        rotation = target_length - last(IR2)
+        rotation1 = target_length - last(IR1)
         LSC, IR1, SSC, IR2, rest = map(ss, [LSC, IR1, SSC, IR2, rest])
+        # rest goes before LSC to make IR2 at the end
         LSC = length(rest) > 0 ? join([rest, LSC], "") : LSC
+        
         if length(LSC) < length(SSC)
+            # this is a rotation to put IR1 at end
             LSC, IR1, SSC, IR2 = SSC, IR2, LSC, IR1
-            rotation = rotation2
+            rotation = rotation1
         end
         rotated = [
                 flip_LSC ? revComp(LSC) : LSC,

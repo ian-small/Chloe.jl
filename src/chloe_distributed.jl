@@ -17,12 +17,13 @@ import Dates: now, toms
 import Crayons: @crayon_str
 import StringEncodings: encode
 import ZMQ
+import CodecZlib: GzipDecompressorStream
 
 import .WebAPI: TerminatingJSONMsgFormat
 import .Annotator: readReferences, Reference, MayBeString, verify_refs
 import .ZMQLogging: set_global_logger
 import .Broker: check_endpoints, remove_endpoints
-
+ 
 include("globals.jl")
 
 

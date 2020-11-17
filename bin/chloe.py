@@ -335,8 +335,6 @@ def annotate2(timeout, address, compress, fastas, workers, output):
     """Annotate fasta files (send and receive file content)."""
     from multiprocessing import cpu_count
 
-    socket = Socket(address, timeout)
-
     if workers == 0:
         workers = cpu_count()
 

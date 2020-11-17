@@ -1,6 +1,6 @@
 
-using Test
-import Test: @test
+using Base.Test
+import Base.Test: @test
 
 include("../src/UInt8Utf8.jl")
 include("../src/MMappedString.jl")
@@ -232,4 +232,4 @@ function runall()
     end
 end
 
-runall() 
+runall()

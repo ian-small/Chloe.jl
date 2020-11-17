@@ -1,7 +1,7 @@
 module Sff2Gff
-export writeallGFF3
+export writeallGFF3, writeOneGFF3
 
-import ..Annotator: getFeatureType, Feature, readFeatures, groupFeaturesIntoGeneModels
+import ..Annotator: getFeatureType, Feature, readFeatures, groupFeaturesIntoGeneModels, FeatureArray, allFeatures
 
 struct ModelArray
     genome_id::String
@@ -9,7 +9,7 @@ struct ModelArray
     strand::Char
     features::Vector{Feature}
 end
-function mergeAdjacentFeaturesinModel!(model::Vector{Feature}, genome_id, genome_length, strand)
+function mergeAdjacentFeaturesinModel!(model::Vector{Feature}, genome_id::String, genome_length::Integer, strand::Char)
     f1_index = 1
     f2_index = 2
     while f2_index <= length(model)
@@ -47,8 +47,7 @@ function writeGFF3(outfile, genemodel::ModelArray; sep::Bool=true)
     
     function write_line(type, start, finish, id, parent, phase="."; key="Parent")
         l = [genemodel.genome_id, "Chloe", type, start, finish, ".", genemodel.strand, phase]
-        write(outfile, join(l, "\t"))
-        write(outfile, "\t", "ID=", id, ";", key, "=", parent, "\n")
+        write(outfile, join(l, "\t"), "\t", "ID=", id, ";", key, "=", parent, "\n")
     end
 
     features = genemodel.features
@@ -91,7 +90,7 @@ function writeGFF3(outfile, genemodel::ModelArray; sep::Bool=true)
             type = "exon"
         end
         
-        start, finish, length = wrap(feature, genemodel.strand, genemodel.genome_length)
+        start, finish, _ = wrap(feature, genemodel.strand, genemodel.genome_length)
         
         phase = type == "CDS" ? string(feature.phase) : "."
         write_line(type, start, finish, feature.path, parent, phase)
@@ -101,14 +100,11 @@ function writeGFF3(outfile, genemodel::ModelArray; sep::Bool=true)
     end
 end
 
-function writeallGFF3(;sff_files=String[], directory=nothing, sep::Bool=true)
+function writeOneGFF3(infile::String, directory::Union{String,Nothing}=nothing, sep::Bool=true)
     
-    function add_models!(models_as_feature_arrays, features, strand)
+    function add_models!(models_as_feature_arrays, features::FeatureArray, strand::Char)
         # afeatures = collect(features.interval_tree, Vector{Feature}())
-        afeatures =  Vector{Feature}()
-        for feature in features.interval_tree
-            push!(afeatures, feature)
-        end
+        afeatures = allFeatures(features)
         sort!(afeatures, by=f -> f.path)
         models = groupFeaturesIntoGeneModels(afeatures)
         for model in models
@@ -118,32 +114,37 @@ function writeallGFF3(;sff_files=String[], directory=nothing, sep::Bool=true)
             push!(models_as_feature_arrays, mergeAdjacentFeaturesinModel!(model, features.genome_id, features.genome_length, strand))
         end
     end
+
+    features = readFeatures(infile)
+    models_as_feature_arrays = Vector{ModelArray}()
+    # for each strand group into gene models
+    add_models!(models_as_feature_arrays, features.forward, '+')
+    add_models!(models_as_feature_arrays, features.reverse, '-')
+
+    # interleave gene models from both strands
+    sort!(models_as_feature_arrays, by=m -> m.features[1].start)
+
+    # write models in GFF3 format
+    fname = features.forward.genome_id * ".gff3";
+    if directory !== nothing
+        fname = joinpath(directory, fname)
+    else
+        d = splitpath(infile)
+        fname = joinpath(d[1:end - 1]..., fname)
+    end
+    @info "writing gff3: $fname"
+    open(fname, "w") do outfile
+        write(outfile, "##gff-version 3.2.1\n")
+        for model in models_as_feature_arrays
+            writeGFF3(outfile, model; sep=sep)
+        end
+    end
+
+end
+function writeallGFF3(;sff_files=String[], directory::Union{String,Nothing}=nothing, sep::Bool=true)
     
     for infile in sff_files
-        features = readFeatures(infile)
-        models_as_feature_arrays = Vector{ModelArray}()
-        # for each strand group into gene models
-        add_models!(models_as_feature_arrays, features.forward, '+')
-        add_models!(models_as_feature_arrays, features.reverse, '-')
-
-        # interleave gene models from both strands
-        sort!(models_as_feature_arrays, by=m -> m.features[1].start)
-
-        # write models in GFF3 format
-        fname = features.forward.genome_id * ".gff3";
-        if directory !== nothing
-            fname = joinpath(directory, fname)
-        else
-            d = splitpath(infile)
-            fname = joinpath(d[1:end - 1]..., fname)
-        end
-        @info "writing gff3: $fname"
-        open(fname, "w") do outfile
-            write(outfile, "##gff-version 3.2.1\n")
-            for model in models_as_feature_arrays
-                writeGFF3(outfile, model; sep=sep)
-            end
-        end
+        writeOneGFF3(infile, directory, sep)
     end
 end
 end # module
