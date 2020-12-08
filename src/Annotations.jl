@@ -318,20 +318,20 @@ end
 
 function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowStack)::Tuple{Int32,Int32}
     stack = feature_stack.stack
-    glen = length(stack)
+    stack_length = length(stack)
     median_length = feature_stack.template.median_length
     score = 0
     @inbounds for nt = 1:median_length
-        gw = genome_wrap(glen, nt)
+        gw = genome_wrap(stack_length, nt)
         score += stack[gw] + shadowstack[gw]
     end
     max_score = score
     best_hit = 1
 
-    @inbounds for nt = 2:glen
-        st = shadowstack[nt]
-        score -= stack[nt - 1] + st
-        score += stack[genome_wrap(glen, nt + median_length - 1)] + st
+    @inbounds for nt = 2:stack_length
+        mt = genome_wrap(stack_length, nt + median_length - 1)
+        score -= stack[nt - 1] + shadowstack[nt - 1] # remove tail
+        score += stack[mt    ] + shadowstack[mt    ] # add head
         if score > max_score
             max_score = score
             best_hit = nt
