@@ -1,0 +1,4 @@
+click>=7.1.1
+fabric>=2.4.0
+cryptography>=2.8
+pyzmq>=19.0.1
