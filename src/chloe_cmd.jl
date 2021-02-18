@@ -9,7 +9,7 @@ import ..Annotator
 import ..Sff2Gff
 
 include("globals.jl")
-include("rotate_genome.jl")
+#include("rotate_genome.jl")
 
 function quiet_metafmt(level, _module, group, id, file, line)
     color = Logging.default_logcolor(level)
@@ -17,7 +17,7 @@ function quiet_metafmt(level, _module, group, id, file, line)
     return color, prefix, ""
 end
 
-function chloe(;refsdir=DEFAULT_REFS, hashfile=DEFAULT_HASHES, fasta_files=String[],
+function chloe(;refsdir=DEFAULT_REFS, numrefs=DEFAULT_NUMREFS, hashfile=DEFAULT_HASHES, fasta_files=String[],
     template=DEFAULT_TEMPLATE, output::Union{Nothing,String}=nothing, verbose::Bool=true)
     if refsdir == "default"
         refsdir = normpath(joinpath(HERE, "..", DEFAULT_REFS))
@@ -28,8 +28,7 @@ function chloe(;refsdir=DEFAULT_REFS, hashfile=DEFAULT_HASHES, fasta_files=Strin
     if template == "default"
         template = normpath(joinpath(HERE, "..", DEFAULT_TEMPLATE))
     end
-    Annotator.annotate(refsdir, hashfile, template, fasta_files, output; 
-        verbose=verbose)
+    Annotator.annotate(refsdir, numrefs, hashfile, template, fasta_files, output)
 end
 
 function getargs()
@@ -102,6 +101,11 @@ function getargs()
             dest_name = "refsdir"
             metavar = "DIRECTORY"
             help = "reference directory [default: $(DEFAULT_REFS)]"
+        "--numrefs", "-n"
+            arg_type = Int
+            default = DEFAULT_NUMREFS
+            dest_name = "numrefs"
+            help = "number of references to compare to [default: $(DEFAULT_NUMREFS)]"
         "--minhashes"
             arg_type = String
             default = "default"
@@ -167,7 +171,7 @@ function cmd_main()
         elseif cmd == :annotate
             chloe(;a...)
         elseif cmd == :rotate
-            rotateGenome(;a...)
+            #rotateGenome(;a...)
         end
     end
 

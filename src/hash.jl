@@ -8,8 +8,9 @@ SKETCHSIZE = 400
 function minhash_references(; fasta_files=Vector{String}, output=output)
     seqs = Vector{FASTA.Record}()
     for file in fasta_files
+        println(file)
         if isdir(file)
-            minhash_references(fasta_files=filter(x->endswith(x, ".fa"), readdir(directory, join = true)), output=output)
+            minhash_references(fasta_files=filter(x->endswith(x, ".fasta"), readdir(file, join = true)), output=output)
         end
         reader = open(FASTA.Reader, file)
         record = FASTA.Record() 

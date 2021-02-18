@@ -40,7 +40,7 @@ end
     return index > fulcrum ? true : false
 end
 
-function align2seqs(seq1::LongDNASeq,seq2::LongDNASeq)::Chain{AlignedBlock}
+function align2seqs(seq1::LongDNASeq,seq2::LongDNASeq)::BlockChain{AlignedBlock}
     #extend and join strings; currently assumes both sequence are circular
     #TO DO: generalise for either or both of seq1, seq2 as linear sequences
     alignment = Alignment(seq1, seq2)
@@ -111,7 +111,7 @@ function matchLengthThreshold(m::Int32, n::Int32)::Int32
     return 26
 end
 
-function gapfill!(mainchain::Chain{AlignedBlock}, head::ChainLink{AlignedBlock}, tail::ChainLink{AlignedBlock}, alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, minblocksize::Int32)
+function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBlock}, tail::ChainLink{AlignedBlock}, alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, minblocksize::Int32)
     @debug "gapfilling from $(head.data) to $(tail.data) minblocksize = $(minblocksize)"
     src_length = length(alignment.seq1)
     tgt_length = length(alignment.seq2)
@@ -141,9 +141,9 @@ function gapfill!(mainchain::Chain{AlignedBlock}, head::ChainLink{AlignedBlock},
     return mainchain
 end
     
-function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, srcgap, tgtgap, minblocksize)::Chain{AlignedBlock}
+function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, srcgap, tgtgap, minblocksize)::BlockChain{AlignedBlock}
     @debug "blockchain from $srcgap to $tgtgap minblocksize = $minblocksize"
-    blocks = Chain{AlignedBlock}()
+    blocks = BlockChain{AlignedBlock}()
     src_length = length(alignment.seq1)
     tgt_length = length(alignment.seq2)
     f = fulcrum(alignment)

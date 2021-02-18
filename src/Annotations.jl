@@ -70,6 +70,7 @@ function readFeatures(file::String)::FwdRev{FeatureArray}
         while !eof(f)
             fields = split(readline(f), '\t')
             feature = Feature(fields[1], parse(Int, fields[3]), parse(Int, fields[4]), parse(Int, fields[5]))
+            length(fields) ≥ 9 && occursin("pseudo", fields[9]) && continue #don't use annotations considered as pseudogenes
             if fields[2][1] == '+'
                 push!(f_features, feature)
             else
@@ -182,7 +183,7 @@ end
 
 struct FeatureStack
     path::String # == template.path
-    stack::Vector{Int32}
+    stack::CircularVector
     template::FeatureTemplate
 end
 datasize(f::FeatureStack) = sizeof(FeatureStack) + sizeof(f.path) + length(f.stack) * sizeof(Int32)
@@ -190,7 +191,7 @@ datasize(f::FeatureStack) = sizeof(FeatureStack) + sizeof(f.path) + length(f.sta
 DFeatureStack = Dict{String,FeatureStack}
 AFeatureStack = Vector{FeatureStack}
 # AFeatureStack = Dict{String,FeatureStack}
-ShadowStack = Vector{Int32}
+ShadowStack = CircularVector
 
 function fillFeatureStack(target_length::Int32, annotations::Vector{Annotation},
     feature_templates::Dict{String,FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
@@ -204,7 +205,7 @@ function fillFeatureStack(target_length::Int32, annotations::Vector{Annotation},
     stacks = AFeatureStack()
     sizehint!(stacks, length(feature_templates))
     indexmap = Dict{String,Int}()
-    shadowstack::ShadowStack = fill(Int32(-1), target_length) # will be negative image of all stacks combined,
+    shadowstack::ShadowStack = ShadowStack(fill(Int32(-1), target_length)) # will be negative image of all stacks combined,
     # initialised to small negative number; acts as prior expectation for feature-finding
     for annotation in annotations
         template = get(feature_templates, annotation.path, nothing)
@@ -215,17 +216,17 @@ function fillFeatureStack(target_length::Int32, annotations::Vector{Annotation},
         end
         index = get(indexmap, annotation.path, nothing)
         if index === nothing
-            stack = FeatureStack(annotation.path, zeros(Int32, target_length), template)
+            stack = FeatureStack(annotation.path, CircularVector(zeros(Int32, target_length)), template)
             push!(stacks, stack)
             indexmap[annotation.path] = length(stacks)
         else
             stack = stacks[index]
         end
         stack_stack = stack.stack
+
         @inbounds for i = annotation.start:annotation.start + annotation.length - one
-            gw = genome_wrap(target_length, i)
-            stack_stack[gw] += 3 # +1 to counteract shadowstack initialisation, +1 to counteract addition to shadowstack
-            shadowstack[gw] -= 1
+            stack_stack[i] += Int32(3) # +1 to counteract shadowstack initialisation, +1 to counteract addition to shadowstack
+            shadowstack[i] -= one
         end
     end
     @debug "found ($(length(stacks))) $(human(datasize(stacks) + datasize(shadowstack))) FeatureStacks from $(length(annotations)) annotations"
@@ -241,7 +242,7 @@ function expandBoundaryInChunks(feature_stack::FeatureStack, shadowstack::Shadow
         for i = direction:direction * chunksize:direction * max
             sumscore = 0
             for j = 1:chunksize
-                sumscore += feature_stack.stack[genome_wrap(glen, index + direction * j)] + shadowstack[genome_wrap(glen, index + direction * j)]
+                sumscore += feature_stack.stack[index + direction * j] + shadowstack[index + direction * j]
             end
             sumscore < 0 && break
             index += direction * chunksize
@@ -255,22 +256,21 @@ function expandBoundary(feature_stack::FeatureStack, shadowstack::ShadowStack, o
     stack_stack = feature_stack.stack
     index = origin
     @inbounds for i = direction:direction:direction * max
-        gw = genome_wrap(glen, index + direction)
-        sumscore = stack_stack[gw] + shadowstack[gw]
+        sumscore = stack_stack[index + direction] + shadowstack[index + direction]
         sumscore < 0 && break
         index += direction
     end
     return index # not wrapped
 end
 
-function getDepthAndCoverage(feature_stack::FeatureStack, left::Int32, len::Int32)::Tuple{Float64,Float64}
+function getDepthAndCoverage(feature_stack::FeatureStack, left::Int32, len::Int32, numrefs::Int)::Tuple{Float64,Float64}
     coverage = 0
     max_count = 0
     sum_count = 0
     stack_stack = feature_stack.stack
     stack_len = length(stack_stack)
-    @inbounds for nt = left:left + len - 1
-        count = stack_stack[genome_wrap(stack_len, nt)]
+    @inbounds for nt::Int32 = left:left + len - one
+        count = stack_stack[nt]
         if count > 0
             coverage += 1
             sum_count += count
@@ -282,7 +282,7 @@ function getDepthAndCoverage(feature_stack::FeatureStack, left::Int32, len::Int3
     if max_count == 0
         depth = 0
     else
-        depth = sum_count / (max_count * len)
+        depth = sum_count / (numrefs * len)
     end
     return depth, coverage / len
 end
@@ -292,16 +292,15 @@ function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowSt
     glen = length(stack)
     median_length = feature_stack.template.median_length
     score = 0
-    @inbounds for nt = 1:median_length
-        gw = genome_wrap(glen, nt)
-        score += stack[gw] + shadowstack[gw]
+    @inbounds for nt::Int32 = one:median_length
+        score += stack[nt] + shadowstack[nt]
     end
     max_score = score
     best_hit = 1
 
-    @inbounds for nt = 2:glen
-        mt = genome_wrap(glen, nt + median_length - 1)
-        score -= stack[nt - 1] + shadowstack[nt - 1] # remove tail
+    @inbounds for nt::Int32 = 2:glen
+        mt::Int32 = nt + median_length - one
+        score -= stack[nt - one] + shadowstack[nt - one] # remove tail
         score += stack[mt    ] + shadowstack[mt    ] # add head
         if score > max_score
             max_score = score
@@ -630,20 +629,19 @@ end
 
 function refineBoundariesbyScore!(feat1::Feature, feat2::Feature, genome_length::Int32, stacks::DFeatureStack)
     # feat1 should be before feat2
-    start = feat1.start + feat1.length - 1
+    start = feat1.start + feat1.length - one
     range_to_test = min(start, feat2.start):max(start, feat2.start)
     
     feat1_stack = stacks[feat1.path].stack
     feat2_stack = stacks[feat2.path].stack
 
     # score = sum(@view feat2_stack[range_to_test]) - sum(@view feat1_stack[range_to_test])
-    score = sum(iter_wrap(range_to_test, feat2_stack)) - sum(iter_wrap(range_to_test, feat1_stack))
+    score = sum(feat2_stack[range_to_test]) - sum(feat1_stack[range_to_test])
     maxscore = score
-    fulcrum = first(range_to_test) - 1
+    fulcrum = first(range_to_test) - one
     @inbounds for i in range_to_test
-        gw = genome_wrap(genome_length, i)
-        score += 2 * feat1_stack[gw]
-        score -= 2 * feat2_stack[gw]
+        score += 2 * feat1_stack[i]
+        score -= 2 * feat2_stack[i]
         if score > maxscore
             maxscore = score
             fulcrum = i
@@ -718,9 +716,8 @@ struct SFF
     feature::Feature
     gene_length::Int
     exon_count::Int
-    avg::Float64
+    relative_length::Float64
     depth::Float64
-    coverage::Float64
     hasStart::Bool
     hasPrematureStop::Bool
 end
@@ -733,7 +730,7 @@ gene_length(model::Vector{SFF}) = begin
     maximum([m.feature.start + m.feature.length for m in model]) - minimum([m.feature.start for m in model])
 end
 
-function toSFF(model::Vector{Feature}, target_seq::CircularSequence, feature_stacks::DFeatureStack)::Vector{SFF}
+function toSFF(model::Vector{Feature}, target_seq::CircularSequence, feature_stacks::DFeatureStack, numrefs::Int)::Vector{SFF}
     first_model = first(model)
     gene = getFeatureName(first_model)
     ret = []
@@ -768,18 +765,14 @@ function toSFF(model::Vector{Feature}, target_seq::CircularSequence, feature_sta
     genelength <= 0 && return ret
     
     for feature in model
-        # stack = feature_stacks[findfirst(x -> x.path == f.path, feature_stacks)]
         stack = get(feature_stacks, feature.path, nothing)
-        if stack === nothing
-            @error "$(gene): no stack for path $(f.path)"
-            continue
+        stackdepth = 0
+        relative_length = 0
+        if !isnothing(stack)
+            stackdepth = sum(stack.stack[range(feature.start, length=feature.length)]) / (3 * numrefs * feature.length)
+            relative_length = feature.length / stack.template.median_length
         end
-
-        depth, coverage = getDepthAndCoverage(stack, feature.start, feature.length)
-        depth == 0 && continue
-        coverage == 0 && continue
-        avg = feature.length / stack.template.median_length
-        push!(ret, SFF(gene, feature, genelength, exon_count, avg, depth, coverage, hasStart, hasPrematureStop))
+        push!(ret, SFF(gene, feature, genelength, exon_count, relative_length, stackdepth, hasStart, hasPrematureStop))
     end
     return ret
 end
@@ -798,7 +791,7 @@ function writeModelToSFF(outfile::IO, model_id::String,
         write(outfile, "\t")
         write(outfile, join([strand,string(feature.start),string(feature.length),string(feature.phase)], "\t"))
         write(outfile, "\t")
-        write(outfile, join([@sprintf("%.3f",sff.avg),@sprintf("%.3f",sff.depth),@sprintf("%.3f",sff.coverage)], "\t"))
+        write(outfile, join([@sprintf("%.3f",sff.relative_length),@sprintf("%.3f",sff.depth)], "\t"))
         write(outfile, "\t")
 
         pseudo = "possible pseudogene"
@@ -891,30 +884,4 @@ function writeSFF(outfile::Union{String,IO},
     else
         out(outfile)
     end
-end
-
-function isStartCodon(codon::Tuple{DNA,DNA,DNA}, allow_editing::Bool, allow_GTG::Bool)::Bool
-    if codon[1] == DNA_A || (allow_GTG && codon[1] == DNA_G)
-        if codon[2] == DNA_T || (allow_editing && codon[2] == DNA_C)
-            if codon[3] == DNA_G #ATG / GTG / ACG (GCG)
-                return true
-            end
-        end
-    end
-    return false
-end
-
-function isStopCodon(codon::Tuple{DNA,DNA,DNA}, allow_editing::Bool)::Bool
-    #println(codon)
-    if codon[1] == DNA_T || (allow_editing && codon[1] == DNA_C)
-        if codon[2] == DNA_A
-            if codon[3] == DNA_A || codon[3] == DNA_G    #TAA, TAG / CAA, CAG
-                return true
-            end
-        elseif codon[2] == DNA_G && codon[3] == DNA_A  #TGA / CGA
-            return true
-        end
-    end
-    #println("false")
-    return false;
 end

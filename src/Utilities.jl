@@ -17,6 +17,32 @@ datasize(f::FwdRev{T}) where T = sizeof(FwdRev{T}) + datasize(f.forward) + datas
 datasize(v::Vector{T}) where T = length(v) == 0 ? 0 : sum(datasize(a) for a in v)
 datasize(t::Dict{K,V}) where {K,V} = length(t) == 0 ? 0 : sum(datasize(e.first) + datasize(e.second) for e in t)
 
+struct CircularVector
+    v::Vector{Int32}
+end
+
+@inline Base.length(cv::CircularVector) = Int32(length(cv.v))
+@inline Base.getindex(cv::CircularVector, i::Int32) = @inbounds getindex(cv.v, mod1(i, length(cv)))
+function Base.getindex(cv::CircularVector, r::UnitRange{<:Integer})
+    len = length(cv)
+	start = mod1(r.start, len)
+    stop = mod1(r.stop, len)
+	if start < stop
+		return cv.v[start:stop]
+    else
+        return vcat(cv.v[start:end],cv.v[1:stop])
+    end
+end
+@inline Base.setindex!(cv::CircularVector, value::Int32, i::Int32) = @inbounds setindex!(cv.v, value, mod1(i, length(cv)))
+@inline Base.push!(cv::CircularVector, value::Int32) = @inbounds push!(cv.v, value)
+function Base.sum(cv::CircularVector, r::UnitRange{<:Integer})
+    sum = 0
+    for i in r
+        sum += cv[i]
+    end
+    return sum
+end
+
 using BioSequences
 
 struct CircularSequence
@@ -168,6 +194,10 @@ end
     position
 end
 
+@inline function circulardistance(start, stop, seqlength)
+    return stop ≥ start ? stop - start : stop + seqlength - start
+end
+
 
 @inline function rangesOverlap(start1::Int32, length1::Int32, start2::Int32, length2::Int32)::Bool
     if start1 >= start2 + length2 || start2 >= start1 + length1
@@ -273,7 +303,7 @@ function str_truncate(s::String, width=80)
     end
 end
 
-function findfastafile(dir::String, base::String)::Union{String,Nothing}
+function findfastafile(dir::String, base::AbstractString)::Union{String,Nothing}
     suffixes = [".fa", ".fna", ".fasta"]
     for suffix in suffixes
         path = normpath(joinpath(dir, base * suffix))

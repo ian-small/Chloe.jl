@@ -22,11 +22,11 @@ mutable struct ChainLink{AlignedBlock}
     end
 end
 
-mutable struct Chain{AlignedBlock}
+mutable struct BlockChain{AlignedBlock}
     links::Integer
     firstlink::ChainLink{AlignedBlock}
     lastlink::ChainLink{AlignedBlock}
-    function Chain{AlignedBlock}()
+    function BlockChain{AlignedBlock}()
         chain = new()
         link = ChainLink{AlignedBlock}()
         chain.links = 0
@@ -34,7 +34,7 @@ mutable struct Chain{AlignedBlock}
         chain.lastlink = link
         return chain
     end
-    function Chain{AlignedBlock}(data::AlignedBlock)
+    function BlockChain{AlignedBlock}(data::AlignedBlock)
         chain = new()
         link = ChainLink{AlignedBlock}(data)
         chain.links = 1
@@ -44,11 +44,11 @@ mutable struct Chain{AlignedBlock}
     end
 end
 
-function Base.length(chain::Chain{AlignedBlock})
+function Base.length(chain::BlockChain{AlignedBlock})
     return chain.links
 end
 
-function Base.isempty(chain::Chain{AlignedBlock})
+function Base.isempty(chain::BlockChain{AlignedBlock})
     return chain.links == 0 ? true : false
 end
 
@@ -68,7 +68,7 @@ function Base.print(io::IO, link::ChainLink{AlignedBlock})
     return print(string(link))
 end
 
-function Base.append!(chain::Chain{AlignedBlock}, b::AlignedBlock)
+function Base.append!(chain::BlockChain{AlignedBlock}, b::AlignedBlock)
     #check if the blocks overlap before appending
     if chain.lastlink.data.src_index + chain.lastlink.data.blocklength ≥ b.src_index
         if chain.lastlink.data.blocklength ≥ b.blocklength
@@ -89,7 +89,7 @@ function Base.append!(chain::Chain{AlignedBlock}, b::AlignedBlock)
     return chain
 end
 
-function Base.append!(mainchain::Chain{AlignedBlock}, appendage::Chain{AlignedBlock})
+function Base.append!(mainchain::BlockChain{AlignedBlock}, appendage::BlockChain{AlignedBlock})
     if isempty(chain)
         mainchain.firstlink = appendage.firstlink
     end
@@ -119,7 +119,7 @@ function contiguousblockgaps(link1::ChainLink{AlignedBlock}, link2::ChainLink{Al
     return (srcgapstart:srcgapend, tgtgapstart:tgtgapend)
 end
 
-function circularise(chain::Chain{AlignedBlock}, genome_length::Int32)
+function circularise(chain::BlockChain{AlignedBlock}, genome_length::Int32)
     #last link may overlap first link; if so remove firstlink and link to firstlink.next
     if mod1(chain.lastlink.data.src_index + chain.lastlink.data.blocklength, genome_length) == chain.firstlink.data.src_index + chain.firstlink.data.blocklength
         chain.lastlink.next = chain.firstlink.next
@@ -131,7 +131,7 @@ function circularise(chain::Chain{AlignedBlock}, genome_length::Int32)
     return chain
 end
 
-function trymergelinks!(chain::Chain{AlignedBlock}, link1::ChainLink{AlignedBlock}, lenseq1, lenseq2)
+function trymergelinks!(chain::BlockChain{AlignedBlock}, link1::ChainLink{AlignedBlock}, lenseq1, lenseq2)
     link2 = link1.next
     link1 == link2 && return link1
     #println("attempting to merge: ",link1,"    ",link2)
@@ -154,17 +154,17 @@ end
 
 #Iteration
 
-@inline function Base.iterate(chain::Chain{AlignedBlock})
+@inline function Base.iterate(chain::BlockChain{AlignedBlock})
     return (chain.firstlink,chain.firstlink)
 end
 
-@inline function Base.iterate(chain::Chain{AlignedBlock}, link::ChainLink{AlignedBlock})
+@inline function Base.iterate(chain::BlockChain{AlignedBlock}, link::ChainLink{AlignedBlock})
     link.next == link && return nothing #end of linear chain
     link.next == chain.firstlink && return nothing #end of circular chain
     return (link.next,link.next)
 end
 
-function gaps(chain::Chain{AlignedBlock})::Vector{Tuple{ChainLink{AlignedBlock},ChainLink{AlignedBlock}}}
+function gaps(chain::BlockChain{AlignedBlock})::Vector{Tuple{ChainLink{AlignedBlock},ChainLink{AlignedBlock}}}
     circular = chain.lastlink.next == chain.firstlink ? true : false
     if circular; gapslength = length(chain)
     else; gapslength = length(chain) + 1; end
@@ -202,7 +202,7 @@ end
 AlignedBlocks = Vector{AlignedBlock}
 datasize(a::AlignedBlocks) = length(a) * sizeof(AlignedBlock)
 
-function ll2vector(chain::Chain{AlignedBlock})::AlignedBlocks
+function ll2vector(chain::BlockChain{AlignedBlock})::AlignedBlocks
     v = AlignedBlocks(undef,chain.links)
     length(v) == 0 && return v
     for (i,link) in enumerate(chain)
