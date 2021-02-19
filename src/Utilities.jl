@@ -313,3 +313,14 @@ function findfastafile(dir::String, base::AbstractString)::Union{String,Nothing}
     end
     return nothing
 end
+
+using GenomicAnnotations
+function genbank2fasta(files::String)
+    for file in filter(x->endswith(x, ".gb"), readdir(files, join = true))
+        chr = readgbk(file)[1]
+        outfilename = replace(split(basename(file),".")[1]," "=>"_")
+        open(FASTA.Writer, outfilename*".fasta") do w
+            write(w, FASTA.Record(chr.name, chr.sequence))
+        end
+    end
+end

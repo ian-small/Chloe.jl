@@ -410,20 +410,25 @@ function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}
 
     for infile in fa_files
         reader = open(FASTA.Reader, infile)
-        frecord = FASTA.Record()
-        read!(reader, frecord)
-        rrecord = FASTA.Record()
-        read!(reader, rrecord)
-        fseq = CircularSequence(FASTA.sequence(frecord))
-        if FASTA.hassequence(rrecord)
-            rseq = CircularSequence(FASTA.sequence(rrecord))
+        records = Vector{FASTA.Record}()
+        for record in reader
+            push!(records, record)
+        end
+        if isempty(records)
+            @error "unable to read sequence from $infile"
+        elseif length(records) > 2
+            @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
+        end
+        fseq = CircularSequence(FASTA.sequence(records[1]))
+        if length(records) == 2
+            rseq = CircularSequence(FASTA.sequence(records[2]))
         else
             rseq = reverse_complement(fseq)
         end
         if length(fseq) != length(rseq)
             @error "unequal lengths for forward and reverse strands"
         end
-        annotate_one(refsdir, numrefs, refhashes, templates, FASTA.identifier(frecord), fseq, rseq, output)
+        annotate_one(refsdir, numrefs, refhashes, templates, FASTA.identifier(records[1]), fseq, rseq, output)
         close(reader)
     end
 end
