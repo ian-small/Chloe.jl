@@ -150,9 +150,11 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
     # so... features will be ordered by annotations.path
 
     for stack in strand_feature_stacks
-        left_border, length = alignTemplateToStack(stack, shadow)
-        left_border == 0 && continue
-        push!(features, Feature(stack.path, left_border, length, 0))
+        hits, length = alignTemplateToStack(stack, shadow)
+        isempty(hits) && continue
+        for hit in hits
+            push!(features, Feature(stack.path, hit[1], length, 0))
+        end
         if haskey(path_to_stack, stack.path)
             @error "duplicate feature path: $(stack.path)"
         end

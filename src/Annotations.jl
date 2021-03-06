@@ -69,8 +69,10 @@ function readFeatures(file::String)::FwdRev{FeatureArray}
         f_features = AFeature()
         while !eof(f)
             fields = split(readline(f), '\t')
-            feature = Feature(fields[1], parse(Int, fields[3]), parse(Int, fields[4]), parse(Int, fields[5]))
+            startswith(fields[1], "unassigned") && continue #don't use unassigned annotations
+            startswith(fields[1], "predicted") && continue #don't use annotations considered as predictions
             length(fields) ≥ 9 && occursin("pseudo", fields[9]) && continue #don't use annotations considered as pseudogenes
+            feature = Feature(fields[1], parse(Int, fields[3]), parse(Int, fields[4]), parse(Int, fields[5]))
             if fields[2][1] == '+'
                 push!(f_features, feature)
             else
@@ -287,28 +289,44 @@ function getDepthAndCoverage(feature_stack::FeatureStack, left::Int32, len::Int3
     return depth, coverage / len
 end
 
-function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowStack)::Tuple{Int32,Int32}
+function alignTemplateToStack(feature_stack::FeatureStack, shadowstack::ShadowStack)::Tuple{Vector{Tuple{Int32,Int}}, Int32}
     stack = feature_stack.stack
     glen = length(stack)
     median_length = feature_stack.template.median_length
+
+    hits = Vector{Tuple{Int32,Int}}()
     score = 0
     @inbounds for nt::Int32 = one:median_length
         score += stack[nt] + shadowstack[nt]
     end
-    max_score = score
-    best_hit = 1
 
+    if score > 0; push!(hits, (one, score)); end
+    
     @inbounds for nt::Int32 = 2:glen
         mt::Int32 = nt + median_length - one
         score -= stack[nt - one] + shadowstack[nt - one] # remove tail
         score += stack[mt    ] + shadowstack[mt    ] # add head
-        if score > max_score
-            max_score = score
-            best_hit = nt
+        if score > 0
+            if isempty(hits)
+                push!(hits, (nt, score))
+            else
+                previous = last(hits)
+                if nt ≥ previous[1] + median_length
+                    push!(hits, (nt, score))
+                elseif score > previous[2]  #if hits overlap, keep the best one
+                    pop!(hits)
+                    push!(hits, (nt, score))
+                end
+            end   
         end
     end
-    max_score <= 0 && return 0, 0
-    return best_hit, median_length
+    isempty(hits) && return hits, median_length
+    #sort by descending score
+    sort!(hits, by = x -> x[2], rev = true)
+    maxscore = hits[1][2]
+    #retain all hits scoring over 90% of the the top score
+    filter!(x -> x[2] ≥ maxscore*0.9, hits)
+    return hits, median_length
 end
 
 function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Vector{Annotation})::Int8
