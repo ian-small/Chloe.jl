@@ -8,8 +8,8 @@ import Base
 include("Utilities.jl")
 include("hash.jl")
 include("AlignGenomes.jl")
-include("orfs.jl")
 include("Annotations.jl")
+include("orfs.jl")
 
 # import Dates: Time, Nanosecond
 
@@ -17,7 +17,7 @@ import Printf: @sprintf
 import JSON
 import Crayons: @crayon_str
 using StatsBase
-using Flux
+using GLM
 
 const success = crayon"bold green"
 const MINIMUM_UNASSIGNED_ORF_LENGTH = Int32(270)
@@ -132,7 +132,7 @@ function do_annotations(numrefs:: Int, target_id::String, strand::Char, refs::Ve
 end
 
 function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32},
-    strand::Char, blocks_aligned_to_target::AAlignedBlocks, feature_templates::Dict{String,FeatureTemplate})::Strand
+    strand::Char, blocks_aligned_to_target::AAlignedBlocks, feature_templates::Dict{String,FeatureTemplate})::Tuple{Vector{Vector{SFF_Feature}},Dict{String,FeatureStack}}
 
     t4 = time_ns()
     annotations = do_annotations(numrefs, target_id, strand, refs, blocks_aligned_to_target)
@@ -145,12 +145,12 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
     @info "[$target_id]$strand built feature stacks ($(length(strand_feature_stacks))) $(human(datasize(strand_feature_stacks))): $(ns(t5 - t4))"
 
     #orfmap = threeframes(target_seq)
-    features = Vector{Feature}()
+    features = Feature[]
     path_to_stack = Dict{String,FeatureStack}()
     # so... features will be ordered by annotations.path
 
     for stack in strand_feature_stacks
-        hits, length = alignTemplateToStack(stack, shadow)
+        hits, length = alignTemplateToStack(stack)
         isempty(hits) && continue
         for hit in hits
             push!(features, Feature(stack.path, hit[1], length, 0))
@@ -164,25 +164,58 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
     # t6 = time_ns()
     # @info "[$target_id]$strand transferring annotations ($(length(features))): $(ns(t6 - start_ns))"
 
-    for feature in features
+    stackdepth = 0
+    relative_length = 0
+    gmatch = mean(values(coverages))
+    sff_features = Vector{SFF_Feature}(undef, length(features))
+    for (i,feature) in enumerate(features)
         refineMatchBoundariesByOffsets!(feature, annotations, target_length, coverages)
+        #classify features as true or false positives
+        stack = path_to_stack[annotationPath(feature)]
+        stackdepth = Float32(sum(stack.stack[range(feature.start, length=feature.length)]) / (length(refs) * feature.length))
+        relative_length = feature.length / stack.template.median_length
+        feature_prob = feature_glm(stack.template, relative_length, stackdepth, gmatch)
+        coding_prob = 0
+        if feature.type == "CDS"
+            coding_prob = glm_coding_classifier(countcodons(feature,target_seq))
+        end
+        #add relative_length, stack_depth and classifier predictions to feature info
+        sff_features[i] = SFF_Feature(feature, relative_length, stackdepth, gmatch, feature_prob, coding_prob)
+        #println(feature, '\t', sff_features[i])
     end
 
     # t7 = time_ns()
     # @info "[$target_id]$strand refining match boundaries: $(ns(t7 - t6))"
 
-    # group by feature name on **ordered** features getFeatureName()
-    target_strand_models = groupFeaturesIntoGeneModels(features)
+    # group by feature name on **ordered** features 
+    target_strand_models::Vector{Vector{SFF_Feature}} = groupFeaturesIntoGeneModels(sff_features)
+
+    orfs = getallorfs(target_seq, strand, Int32(0))
     # this toys with the feature start, phase etc....
-    target_strand_models = refineGeneModels!(target_strand_models, target_seq, annotations, path_to_stack)
+    # refineGeneModels! does not (yet) use the relative_length, stackdepth, feature_prob, coding_prob values but could...
+    refineGeneModels!(target_strand_models, target_seq, annotations, path_to_stack, orfs)
+
+    #this inefficiently updates all features, even those unchanged by refineGeneModels!
+    for m in target_strand_models, sf in m
+        #update feature data
+        f = sf.feature
+        stack = path_to_stack[annotationPath(f)]
+        sf.stackdepth = sum(stack.stack[range(f.start, length=f.length)]) / (length(refs) * f.length)
+        sf.relative_length = f.length / stack.template.median_length
+        sf.feature_prob = feature_glm(stack.template, sf.relative_length, sf.stackdepth, gmatch)
+        if f.type == "CDS"
+            sf.coding_prob = glm_coding_classifier(countcodons(f,target_seq))
+        end
+    end
 
     #add any unassigned orfs
-    uorfs = getallorfs(target_seq, strand, MINIMUM_UNASSIGNED_ORF_LENGTH)
-    for uorf in uorfs
+    for uorf in orfs
+        uorf.length < MINIMUM_UNASSIGNED_ORF_LENGTH && continue
         #println(uorf)
         unassigned = true
         orf_frame = mod1(uorf.start, 3)
-        for f in features
+        for m in target_strand_models, sf in m
+            f = sf.feature
             #println(f)
             f_frame = mod1(f.start + f.phase, 3)
             if orf_frame == f_frame && rangesOverlap(uorf.start, uorf.length, f.start, f.length)
@@ -192,21 +225,9 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         if unassigned
             #count codons
             codonfrequencies = countcodons(uorf,target_seq)
-            #predict with FluxCodingClassifier: 1 = coding, 2 = non-coding
-            prediction = Flux.onecold(FluxCodingClassifier(codonfrequencies))
-            if prediction == 1
-                #predict with FluxGeneClassifier
-                probs = FluxGeneClassifier(codonfrequencies)
-                if maximum(probs) > 0.999 #sanity check to avoid daft predictions
-                    prediction = Flux.onecold(probs)
-                    #println(exon_indices[prediction],'\t', maximum(probs))
-                    newtags = split(exon_indices[prediction], "/")
-                    uorf._path_components[1] = "predicted_"*newtags[1]
-                    uorf._path_components[4] = newtags[2]
-                    uorf.path = annotationPath(uorf)
-                end
-                push!(target_strand_models, [uorf])
-            end
+            #predict with GLMCodingClassifier
+            coding_prob = glm_coding_classifier(codonfrequencies)
+            push!(target_strand_models, [SFF_Feature(uorf, 0.0, 0.0, gmatch, coding_prob, coding_prob)])
         end
     end
 
@@ -254,8 +275,6 @@ function avg_coverage(target::SingleReference, a::FwdRev{FwdRev{AlignedBlocks}})
     avg_coverage(target, a.forward)
 end
 
-Models = Vector{Vector{SFF}}
-
 """
     annotate_one(references::Reference, seq_id::String, seq::String, [,output_sff_file])
 
@@ -275,7 +294,7 @@ with the annotation within it
 
 `reference` are the reference annotations (see `readReferences`)
 """
-function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Dict{String,Vector{Int64}}}, templates_file::String, target_id::String,
+function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Dict{String,Vector{Int64}}}, templates_file::String, sensitivity::Float16, target_id::String,
      target_forward_strand::CircularSequence, target_reverse_strand::CircularSequence, output::MayBeIO)::Tuple{Union{String,IO},String}
 
     t1 = time_ns()
@@ -351,7 +370,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
         models, stacks = do_strand(numrefs, target_id, target_forward_strand, refs, coverages,
             '+', blocks_aligned_to_targetf, feature_templates)
 
-        [toSFF(model, target_forward_strand, stacks, numrefs) 
+        [toSFF(model, target_forward_strand, stacks, numrefs, sensitivity) 
             for model in filter(m -> !isempty(m), models)]
     end
 
@@ -359,17 +378,13 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
         models, stacks = do_strand(numrefs, target_id, target_reverse_strand, refs, coverages,
         '-', blocks_aligned_to_targetr, feature_templates)
 
-        [toSFF(model, target_reverse_strand, stacks, numrefs) 
+        [toSFF(model, target_reverse_strand, stacks, numrefs, sensitivity) 
             for model in filter(m -> !isempty(m), models)]
     end
 
     # from https://discourse.julialang.org/t/threads-threads-to-return-results/47382
 
     sffs_fwd, sffs_rev, ir = fetch.((Threads.@spawn w()) for w in [watson, crick, () -> inverted_repeat(target_forward_strand, target_reverse_strand)]) 
-    
-    # sffs_fwd = watson()
-    # sffs_rev = crick()
-    # ir = inverted_repeat(target_seq, rev_target_seq)
    
     if ir.blocklength >= 1000
         @info "[$target_id] inverted repeat $(ir.blocklength)"
@@ -377,7 +392,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
         ir = nothing
     end
     
-    writeSFF(fname, target_id, target_length, FwdRev(sffs_fwd, sffs_rev), ir)
+    writeSFF(fname, target_id, target_length, geomean(values(coverages)), FwdRev(sffs_fwd, sffs_rev), ir)
 
     @info success("[$target_id] Overall: $(elapsed(t1))")
     return fname, target_id
@@ -406,8 +421,8 @@ returns a 2-tuple (sff annotation as an IOBuffer, sequence id)
 #     end
 # end
 
-function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}, templates::String, fa_files::Vector{String}, output::MayBeString)
-
+function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}, templates::String, fa_files::Vector{String}, sensitivity::Float16, output::MayBeString)
+    
     numrefs == 1 ? refhashes = nothing : refhashes = readminhashes(hashfile)
 
     for infile in fa_files
@@ -430,7 +445,7 @@ function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}
         if length(fseq) != length(rseq)
             @error "unequal lengths for forward and reverse strands"
         end
-        annotate_one(refsdir, numrefs, refhashes, templates, FASTA.identifier(records[1]), fseq, rseq, output)
+        annotate_one(refsdir, numrefs, refhashes, templates, sensitivity, FASTA.identifier(records[1]), fseq, rseq, output)
         close(reader)
     end
 end

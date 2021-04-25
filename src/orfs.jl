@@ -126,7 +126,7 @@ end
  =#
 function getallorfs(seq::CircularSequence, strand::Char, minorflength::Int32)
     stops = framedstops(seq)
-    orfs = AFeature()
+    orfs = Feature[]
     orf_counter = 1
     strandprefix = strand == '+' ? "f" : "r"
     for f in 1:3
@@ -135,7 +135,7 @@ function getallorfs(seq::CircularSequence, strand::Char, minorflength::Int32)
         for stop in frame[2:length(frame)]
             distance_from_pstop = circulardistance(pstop, stop, length(seq))
             if distance_from_pstop ≥ minorflength
-                push!(orfs, Feature("unassigned_orf_" * strandprefix * string(orf_counter) * "/?/CDS/1", pstop+3, distance_from_pstop-3, 0))
+                push!(orfs, Feature("unassigned_orf_" * strandprefix * string(orf_counter) * "/CDS/1", pstop+3, distance_from_pstop-3, 0))
                 orf_counter += 1
             end
             pstop = stop
@@ -146,22 +146,13 @@ function getallorfs(seq::CircularSequence, strand::Char, minorflength::Int32)
         dist = circulardistance(last(f1.v), first(f2.v), length(seq))
         if dist % 3 == 0 #in frame
             if dist ≥ minorflength
-                push!(orfs, Feature("unassigned_orf_" * strandprefix * string(orf_counter) * "/?/CDS/1", last(f1.v)+3, dist-3, 0))
+                push!(orfs, Feature("unassigned_orf_" * strandprefix * string(orf_counter) * "/CDS/1", last(f1.v)+3, dist-3, 0))
             end
             continue
         end
     end
-    return orfs
+    return sort!(orfs, by = x -> x.length, rev = true)
 end
-
-using BSON: @load
-#needs to be in Main, not a module, for BSON to work
-Core.eval(Main, :(import Flux))
-Core.eval(Main, :(import NNlib))
-@load joinpath(@__DIR__,"fluxcodingmodel.bson") model
-const FluxCodingClassifier = model
-@load joinpath(@__DIR__,"fluxgenemodel.bson") model
-const FluxGeneClassifier = model
 
 const exon_indices = Dict{Int, String}()
 open(joinpath(@__DIR__, "exon_indices.txt")) do exons
@@ -177,28 +168,66 @@ const codons = Dict{Codon, Int16}()
 for i in [DNA_A, DNA_C, DNA_G, DNA_T], j in [DNA_A, DNA_C, DNA_G, DNA_T], k in [DNA_A, DNA_C, DNA_G, DNA_T]
     codons[(i, j, k)] = 0
 end
+const codon_strings = Vector{String}(undef, length(codons))
+for (i,k) in enumerate(sort(collect(keys(codons))))
+    codon_strings[i] = String([convert(Char, k[1]), convert(Char, k[2]), convert(Char, k[3])])
+end
 
-function countcodons(orf, seq)
+function countcodons(orf::Feature, seq::CircularSequence)::Vector{Float64}
     #initialise codon counts
     for (k,v) in codons
         codons[k] = 0
     end
-    stopcount = orf.start
-    #count codons backwards from last one
-    codonstart::Int32 = orf.start + orf.length - 3
-    while codonstart ≥ stopcount
+    stopcount = orf.start + orf.length - 2
+    codonstart::Int32 = orf.start + orf.phase
+    while codonstart < stopcount
         codon = (seq[codonstart], seq[Int32(codonstart+1)], seq[Int32(codonstart+2)])
         if haskey(codons, codon)
             count = codons[codon]
             codons[codon] = count + 1
         end
-        codonstart -= 3
+        codonstart += 3
     end
     #convert counts to frequencies
     sortedcounts = sort(collect(codons))
     countsum = sum(map(x -> x[2], sortedcounts))
-    codonfrequencies = map(x -> x[2]/countsum, sortedcounts)
+    codonfrequencies::Vector{Float64} = map(x -> x[2]/countsum, sortedcounts)
     #add the relative length of the ORF; assuming no ORFs are > 3000 codons this should be between 0-1
     push!(codonfrequencies, countsum/3000)
     return codonfrequencies
+end
+
+function readGLMCodingClassifer()
+    glm_coding_coeffs = Dict{String, Float64}()
+    open(joinpath(@__DIR__, "GLMCodingClassifier.tsv")) do coding_coeffs
+        readline(coding_coeffs) # skip header
+        for line in readlines(coding_coeffs)
+            fields = split(line, "\t")
+            glm_coding_coeffs[fields[1]] = parse(Float64,fields[2])
+        end
+    end
+    return glm_coding_coeffs
+end
+
+const GLM_Coding_Coeffs = readGLMCodingClassifer()
+
+function glm_coding_classifier(codonfrequencies::Vector{Float64})::Float32
+    #explicit test for stop codons
+    codonfrequencies[49] > 0 && return Float32(0.0) #TAA
+    codonfrequencies[51] > 0 && return Float32(0.0) #TAG
+    codonfrequencies[57] > 0 && return Float32(0.0) #TGA
+    #test with GLM
+    pred = 0.0
+    for (i,v) in enumerate(codonfrequencies)
+        if i < 65
+            key = codon_strings[i]
+        else
+            key = "orf_length"
+        end
+        coef = get(GLM_Coding_Coeffs, key, 0.0)
+        pred += coef * v
+    end
+    pred += get(GLM_Coding_Coeffs, "(Intercept)", 0.0)
+    odds = exp(pred)
+    return Float32(odds / (1.0 + odds))
 end
