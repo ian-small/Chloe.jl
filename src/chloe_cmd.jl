@@ -83,6 +83,21 @@ function getargs()
     end
 
     @add_arg_table! cmd_args["align"]  begin
+        "query"
+            arg_type = String
+            required = true
+            action = :store_arg
+            help = "query sequence (fasta format)"
+        "target"
+            arg_type = String
+            nargs = '+'
+            required = true
+            action = :store_arg
+            help = "target sequence(s): fasta file(s) to process (or directory of files)"
+        "--output", "-o"
+            arg_type = String
+            default = "default"
+            help = "output file"
     end 
 
     @add_arg_table! cmd_args["annotate"]  begin
@@ -174,7 +189,7 @@ function cmd_main()
         elseif cmd == :minhash
             Annotator.minhash_references(;a...)
         elseif cmd == :align
-            ;
+            Annotator.align(;a...);
         elseif cmd == :annotate
             chloe(;a...)
         elseif cmd == :rotate

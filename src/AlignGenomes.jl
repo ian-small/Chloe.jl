@@ -6,30 +6,28 @@ global const MINIMUMFILLABLEGAP = 20
 global const MAXIMUMMERGEABLEGAP = 400
 global const one = Int32(1)
 
-function align(; fasta_files=Vector{String}, directory=nothing)
-    reader = open(FASTA.Reader, fasta_files[1])
+function align(;query, target, output=Base.stdout)
+    reader = open(FASTA.Reader, query)
     record = FASTA.Record()
     read!(reader, record)
     seq1 = FASTA.sequence(record)
     close(reader)
-    reader = open(FASTA.Reader, fasta_files[2])
-    record = FASTA.Record()
-    read!(reader, record)
-    seq2 = FASTA.sequence(record)
-    close(reader)
-    
-    local mainchain
-    for i in 1:11
-        @time align2strings(seq1,seq2)
+    for target_file in target
+        reader = open(FASTA.Reader, target_file)
+        record = FASTA.Record()
+        read!(reader, record)
+        seq2 = FASTA.sequence(record)
+        alignment = Alignment(seq1, seq2)
+        chain = align2seqs(seq1,seq2)
+        for link in chain
+            block = link.data
+            query_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in block.src_index:block.src_index+block.blocklength - 1))
+            target_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in fulcrum(alignment) + block.tgt_index:fulcrum(alignment) + block.tgt_index + block.blocklength - 1))
+            println("$(block.src_index)\t$query_segment\t$(block.src_index+block.blocklength - 1)")
+            println("$(block.tgt_index)\t$target_segment\t$(block.tgt_index+block.blocklength - 1)\n")
+        end
+        close(reader)
     end
-
-    # open("At_vs_Nt.sais.merged.txt", "w") do outfile
-    #     # println(length(mainchain))
-    #     for link in mainchain
-    #         write(outfile,string(link),'\n')
-    #     end
-    # end
-    #coverage(mainchain, length(seq1), length(seq2))
 end
 
 @inline function is_source(index::Int32, fulcrum::Int32)
