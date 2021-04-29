@@ -1,20 +1,20 @@
 module Sff2Gff
 export writeallGFF3
 
-import ..Annotator: Feature, readFeatures, groupFeaturesIntoGeneModels
+import ..Annotator: Feature, SFF_Feature, readFeatures, groupFeaturesIntoGeneModels
 
 struct ModelArray
     genome_id::String
     genome_length::Int32
     strand::Char
-    features::Vector{Feature}
+    features::Vector{SFF_Feature}
 end
-function mergeAdjacentFeaturesinModel!(model::Vector{Feature}, genome_id, genome_length, strand)
+function mergeAdjacentFeaturesinModel!(model::Vector{SFF_Feature}, genome_id, genome_length, strand)
     f1_index = 1
     f2_index = 2
     while f2_index <= length(model)
-        f1 = model[f1_index]
-        f2 = model[f2_index]
+        f1 = model[f1_index].feature
+        f2 = model[f2_index].feature
         # if adjacent features are same type, merge them into a single feature
         if f1.type == f2.type && f2.start - f1.start - f1.length ≤ 100
             @debug "[$(genome_id)]$(strand) merging adjacent $(f1.path) and $(f2.path)"
@@ -28,7 +28,7 @@ function mergeAdjacentFeaturesinModel!(model::Vector{Feature}, genome_id, genome
     return ModelArray(genome_id, genome_length, strand, model)
 end
 
-function wrap(f::Feature, strand::Char, genome_length::Integer)
+function sff2gffcoords(f::Feature, strand::Char, genome_length::Integer)
     start = f.start
     finish = f.start + f.length - 1
     length = finish - start + 1
@@ -52,14 +52,20 @@ function writeGFF3(outfile, genemodel::ModelArray; sep::Bool=true)
     end
 
     features = genemodel.features
-    path_components = split(first(features).path, '/')
+    id = first(features).feature.gene
     id = path_components[1]
     if parse(Int, path_components[2]) > 1
         id = id * "-" * path_components[2]
     end
 
     start = minimum(f.start for f in features)
+
+    if ft == "CDS" && !startswith(id, "rps12A")
+        last(features).length += 3 #add stop codon
+    end
     finish = maximum(f.start + f.length - 1 for f in features)
+    ft = getFeatureType(first(features))
+
     length = finish - start + 1
     
     if genemodel.strand == '-'
@@ -73,7 +79,6 @@ function writeGFF3(outfile, genemodel::ModelArray; sep::Bool=true)
     # gene
     write_line("gene", start, finish, id, path_components[1]; key="Name")
     # RNA product
-    ft = getFeatureType(first(features))
     parent = id
     if ft == "CDS"
         parent =  id * ".mRNA"
@@ -105,11 +110,11 @@ function writeallGFF3(;sff_files=String[], directory=nothing, sep::Bool=true)
     
     function add_models!(models_as_feature_arrays, features, strand)
         # afeatures = collect(features.interval_tree, Vector{Feature}())
-        afeatures =  Vector{Feature}()
+        afeatures =  Vector{SFF_Feature}()
         for feature in features.interval_tree
-            push!(afeatures, feature)
+            push!(afeatures, SFF_Feature(feature, 0.0, 0.0, 0.0, 0.0, 0.0))
         end
-        sort!(afeatures, by=f -> f.path)
+        sort!(afeatures, by=f -> [f.feature.gene, f.feature.order])
         models = groupFeaturesIntoGeneModels(afeatures)
         for model in models
             if isempty(model)
@@ -127,7 +132,7 @@ function writeallGFF3(;sff_files=String[], directory=nothing, sep::Bool=true)
         add_models!(models_as_feature_arrays, features.reverse, '-')
 
         # interleave gene models from both strands
-        sort!(models_as_feature_arrays, by=m -> m.features[1].start)
+        sort!(models_as_feature_arrays, by=m -> m.features[1].feature.start)
 
         # write models in GFF3 format
         fname = features.forward.genome_id * ".gff3";

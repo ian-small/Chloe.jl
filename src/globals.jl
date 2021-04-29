@@ -7,7 +7,7 @@ const ZMQ_CLIENT = "ipc:///tmp/chloe-client"
 const DEFAULT_REFS = "chloe_references"
 const DEFAULT_NUMREFS = 16
 const DEFAULT_HASHES = "chloe_references/reference_minhashes.hash"
-const DEFAULT_TEMPLATE = "chloe_references/templates.tsv"
+const DEFAULT_TEMPLATE = "chloe_references/general_glm_templates.tsv"
 const DEFAULT_SENSITIVITY = Float16(0.5)
 # change this if you change the API!
 const VERSION = "1.2"

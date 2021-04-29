@@ -647,6 +647,8 @@ function refineGeneModels!(gene_models::Vector{Vector{SFF_Feature}}, target_seq:
                           feature_stacks::DFeatureStack,
                           orfs::Vector{Feature})
 
+    ## add code to make use of the feature_prob field in the SFF_Features
+
     genome_length = Int32(length(target_seq))
     last_cds_examined = nothing
     for model in gene_models
@@ -662,8 +664,8 @@ function refineGeneModels!(gene_models::Vector{Vector{SFF_Feature}}, target_seq:
             end
             last_cds_examined = last_exon
         end
-        
-        @inbounds for i in length(model) - 1:-1:1
+        features_to_remove = SFF_Feature[]
+        for i in length(model) - 1:-1:1
             feature = model[i].feature
             next_feature = model[i + 1].feature
             # check adjacent to last exon, if not...
@@ -672,6 +674,8 @@ function refineGeneModels!(gene_models::Vector{Vector{SFF_Feature}}, target_seq:
                 refineBoundariesbyScore!(feature, next_feature, genome_length, feature_stacks)
                 gap = next_feature.start - (feature.start + feature.length)
             end
+            feature.length ≤ 0 && push!(features_to_remove, model[i])
+            next_feature.length ≤ 0 && push!(features_to_remove, model[i+1])
             # if CDS, check phase is compatible
             if feature.type == "CDS"
                 feature.phase = getFeaturePhaseFromAnnotationOffsets(feature, annotations)
@@ -681,6 +685,7 @@ function refineGeneModels!(gene_models::Vector{Vector{SFF_Feature}}, target_seq:
                 last_cds_examined = feature
             end
         end
+        setdiff!(model, features_to_remove)
         # if CDS, find start codon and set feature.start
         first_exon = first(model).feature
         if first_exon.type == "CDS"
@@ -693,9 +698,11 @@ function refineGeneModels!(gene_models::Vector{Vector{SFF_Feature}}, target_seq:
     end
 end
 
-struct SFF_Model
+mutable struct SFF_Model
     gene::String
-    exon_count::Int
+    strand::Char
+    gene_count::Int8
+    exon_count::Int8
     features::Vector{SFF_Feature}
     hasStart::Bool
     hasPrematureStop::Bool
@@ -709,25 +716,23 @@ gene_length(model::Vector{SFF_Model}) = begin
     maximum([m.feature.start + m.feature.length for m in model]) - minimum([m.feature.start for m in model])
 end
 
-function toSFF(model::Vector{SFF_Feature}, target_seq::CircularSequence, feature_stacks::DFeatureStack, numrefs::Int, sensitivity::Float16)::Union{Nothing, SFF_Model}
+function toSFF(model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Float16)::Union{Nothing, SFF_Model}
     first_model = first(model)
     gene = first_model.feature.gene
     exon_count = 0
     cds = false
 
     exceeds_sensitivity = false
-    for sff_feature in model
-        #keep model if at least one feature exceeds the sensitivity threshold
-        if sff_feature.feature_prob ≥ sensitivity
-            exceeds_sensitivity = true
-        end
-        t = sff_feature.feature.type
-        if t == "CDS"
-            cds = true
-        end
-        if t ≠ "intron"
+    mean_feature_prob = 0.0
+    for (n, sff_feature) in enumerate(model)
+        #keep model if mean feature probability exceeds the sensitivity threshold
+        mean_feature_prob = n == 1 ? sff_feature.feature_prob : mean_feature_prob + (sff_feature.feature_prob - mean_feature_prob)/n
+        if sff_feature.feature.type ≠ "intron"
             exon_count += 1
         end
+    end
+    if mean_feature_prob ≥ sensitivity
+        exceeds_sensitivity = true
     end
     hasStart = true
     hasPrematureStop = false
@@ -743,15 +748,14 @@ function toSFF(model::Vector{SFF_Feature}, target_seq::CircularSequence, feature
         #    hasPrematureStop = true
         #end
     end
-    return exceeds_sensitivity ? SFF_Model(gene, exon_count, model, hasStart, hasPrematureStop) : nothing
+    return exceeds_sensitivity ? SFF_Model(gene, strand, 1, exon_count, model, hasStart, hasPrematureStop) : nothing
 end
 
-function writeModelToSFF(outfile::IO, model_id::String,
-                        model::Union{Nothing, SFF_Model},
-                        strand::Char)
+function writeModelToSFF(outfile::IO, model::SFF_Model)
 
     isnothing(model) && return
-    !model.hasStart && @warn("$(model_id) has no start codon")
+    model_id = model.gene * "/" * string(model.gene_count)
+    !model.hasStart && !startswith(model.gene, "IR") && @warn("$(model_id) has no start codon")
     model.hasPrematureStop && @warn("$(model_id) has (a) premature stop codon(s)")
     
     for sff in model.features
@@ -762,7 +766,7 @@ function writeModelToSFF(outfile::IO, model_id::String,
         write(outfile, "/")
         write(outfile, string(f.order))
         write(outfile, "\t")
-        write(outfile, join([strand,string(f.start),string(f.length),string(f.phase)], "\t"))
+        write(outfile, join([model.strand,string(f.start),string(f.length),string(f.phase)], "\t"))
         write(outfile, "\t")
         write(outfile, join([@sprintf("%.3f",sff.relative_length),@sprintf("%.3f",sff.stackdepth),@sprintf("%.3f",sff.gmatch),
             @sprintf("%.3f",sff.feature_prob), @sprintf("%.3f",sff.coding_prob)], "\t"))
@@ -795,26 +799,25 @@ end
 
 MaybeIR = Union{AlignedBlock,Nothing}
 
+function getModelID!(model_ids::Dict{String,Int32}, model::SFF_Model)
+    gene_name = model.gene
+    instance_count::Int8 = 1
+    model_id = "$(gene_name)_$(instance_count)"
+    while get(model_ids, model_id, 0) ≠ 0
+        instance_count += 1
+        model_id = "$(gene_name)_$(instance_count)"
+    end
+    model_ids[model_id] = instance_count
+    model.gene_count = instance_count
+end
+
 function writeSFF(outfile::Union{String,IO},
                 id::String, # NCBI id
                 genome_length::Int32,
                 mean_coverage::Float32,
-                models::FwdRev{Vector{Union{Nothing, SFF_Model}}},
+                models::FwdRev{Vector{SFF_Model}},
                 ir::MaybeIR=nothing)
 
-
-    function getModelID!(model_ids::Dict{String,Int32}, model::SFF_Model)
-        gene_name = model.gene
-        instance_count::Int32 = 1
-        model_id = "$(gene_name)/$(instance_count)"
-        while get(model_ids, model_id, 0) ≠ 0
-            instance_count += 1
-            model_id = "$(gene_name)/$(instance_count)"
-        end
-        model_ids[model_id] = instance_count
-        return model_id
-    end
-    
     function out(outfile::IO)
         model_ids = Dict{String,Int32}()
         write(outfile, id, "\t", string(genome_length), "\t", @sprintf("%.3f",mean_coverage), "\n")
@@ -822,17 +825,13 @@ function writeSFF(outfile::Union{String,IO},
             isnothing(model) && continue
             isempty(model.features) && continue
             model_id = getModelID!(model_ids, model)
-            writeModelToSFF(outfile, model_id, model, '+')
+            writeModelToSFF(outfile, model)
         end
         for model in models.reverse
             isnothing(model) && continue
             isempty(model.features) && continue
             model_id = getModelID!(model_ids, model)
-            writeModelToSFF(outfile, model_id, model, '-')
-        end
-        if ir !== nothing
-            println(outfile, "IR/1/repeat_region/1\t+\t$(ir.src_index)\t$(ir.blocklength)\t0\t0\t0\t0\t")
-            println(outfile, "IR/2/repeat_region/1\t-\t$(ir.tgt_index)\t$(ir.blocklength)\t0\t0\t0\t0\t")
+            writeModelToSFF(outfile, model)
         end
     end
     if outfile isa String
@@ -842,4 +841,122 @@ function writeSFF(outfile::Union{String,IO},
     else
         out(outfile)
     end
+end
+
+function sff2gffcoords(f::Feature, strand::Char, genome_length::Integer)
+    start = f.start
+    finish = f.start + f.length - 1
+    length = finish - start + 1
+    
+    if strand == '-'
+        start = genome_length - finish + 1
+        if start < 1
+            start += genome_length
+        end
+        finish = start + length - 1
+    end
+    return (start, finish, length)
+end
+
+function writeGFF3(outfile::Union{String,IO},
+    genome_id::String, # NCBI id
+    genome_length::Int32,
+    models::FwdRev{Vector{SFF_Model}},
+    ir::MaybeIR=nothing)
+
+    function out(outfile::IO)
+        model_ids = Dict{String,Int32}()
+        write(outfile, "##gff-version 3.2.1\n")
+        if ir !== nothing
+            push!(models.forward, SFF_Model("IR-1", '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
+            push!(models.reverse, SFF_Model("IR-2", '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
+        end
+        for model in models.forward
+            isnothing(model) && continue
+            isempty(model.features) && continue
+            model.gene_count = getModelID!(model_ids, model)
+        end
+        for model in models.reverse
+            isnothing(model) && continue
+            isempty(model.features) && continue
+            model.gene_count = getModelID!(model_ids, model)
+        end
+        allmodels = sort(vcat(models.forward, models.reverse), by = m -> sff2gffcoords(first(m.features).feature, m.strand, genome_length)[1])
+        for model in allmodels
+            writeModelToGFF3(outfile, model, genome_id, genome_length)
+        end
+    end
+
+    if outfile isa String
+        maybe_gzwrite(outfile::String) do io
+        out(io)
+    end
+    else
+        out(outfile)
+    end
+end
+
+function writeModelToGFF3(outfile, model::SFF_Model, genome_id::String, genome_length::Int32)
+    
+    function write_line(type, start, finish, id, parent, phase="."; key="Parent")
+        l = [genome_id, "Chloe", type, start, finish, ".", model.strand, phase]
+        write(outfile, join(l, "\t"))
+        write(outfile, "\t", "ID=", id, ";", key, "=", parent, "\n")
+    end
+
+    features = model.features
+    id = model.gene
+    if model.gene_count > 1
+        id = id * "-" * string(model.gene_count)
+    end
+
+    start = minimum(f.feature.start for f in features)
+    ft = first(features).feature.type
+    if ft == "CDS" && !startswith(id, "rps12A")
+        last(features).feature.length += 3 #add stop codon
+    end
+    finish = maximum(f.feature.start + f.feature.length - 1 for f in features)
+    length = finish - start + 1
+    
+    if model.strand == '-'
+        start = genome_length - finish + 1
+        if start < 1
+            start += genome_length
+        end
+        finish = start + length - 1
+    end
+
+    # gene
+    if startswith(model.gene, "IR")
+        write_line("repeat_region", start, finish, id, model.gene; key="Name")
+        write(outfile, "###\n")
+        return
+    else
+        write_line("gene", start, finish, id, model.gene; key="Name")
+    end
+    # RNA product
+    parent = id
+    if ft == "CDS"
+        parent =  id * ".mRNA"
+        write_line("mRNA", start, finish, parent, id)
+    elseif ft == "rRNA"
+        parent = id * ".rRNA"
+        write_line("rRNA", start, finish, parent, id)
+    elseif ft == "tRNA"
+        parent =  id * ".tRNA"
+        write_line("tRNA", start, finish, parent, id)
+    end
+    #exons
+    for sff in model.features
+        f = sff.feature
+        type = f.type
+        if type == "tRNA" || type == "rRNA"
+            type = "exon"
+        end
+        start, finish, length = sff2gffcoords(f, model.strand, genome_length)
+        
+        phase = type == "CDS" ? string(f.phase) : "."
+        write_line(type, start, finish, annotationPath(f), parent, phase)
+    end
+    write(outfile, "###\n")
 end

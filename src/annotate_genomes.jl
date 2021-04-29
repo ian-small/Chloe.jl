@@ -295,7 +295,7 @@ with the annotation within it
 `reference` are the reference annotations (see `readReferences`)
 """
 function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Dict{String,Vector{Int64}}}, templates_file::String, sensitivity::Float16, target_id::String,
-     target_forward_strand::CircularSequence, target_reverse_strand::CircularSequence, output::MayBeIO)::Tuple{Union{String,IO},String}
+     target_forward_strand::CircularSequence, target_reverse_strand::CircularSequence, output::MayBeIO, gff3::Bool)::Tuple{Union{String,IO},String}
 
     t1 = time_ns()
 
@@ -370,16 +370,24 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
         models, stacks = do_strand(numrefs, target_id, target_forward_strand, refs, coverages,
             '+', blocks_aligned_to_targetf, feature_templates)
 
-        [toSFF(model, target_forward_strand, stacks, numrefs, sensitivity) 
-            for model in filter(m -> !isempty(m), models)]
+        final_models = SFF_Model[]
+        for model in filter(m -> !isempty(m), models)
+            sff = toSFF(model, '+', target_forward_strand, sensitivity)
+            !isnothing(sff) && push!(final_models, sff)
+        end
+        final_models
     end
 
     function crick()
         models, stacks = do_strand(numrefs, target_id, target_reverse_strand, refs, coverages,
         '-', blocks_aligned_to_targetr, feature_templates)
 
-        [toSFF(model, target_reverse_strand, stacks, numrefs, sensitivity) 
-            for model in filter(m -> !isempty(m), models)]
+        final_models = SFF_Model[]
+        for model in filter(m -> !isempty(m), models)
+            sff = toSFF(model, '-', target_reverse_strand, sensitivity) 
+            !isnothing(sff) && push!(final_models, sff)
+        end
+        final_models
     end
 
     # from https://discourse.julialang.org/t/threads-threads-to-return-results/47382
@@ -392,6 +400,9 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
         ir = nothing
     end
     
+    if gff3
+        writeGFF3(join(split(fname, ".")[1:end-1], ".") * ".gff3", target_id, target_length, FwdRev(sffs_fwd, sffs_rev), ir)
+    end
     writeSFF(fname, target_id, target_length, geomean(values(coverages)), FwdRev(sffs_fwd, sffs_rev), ir)
 
     @info success("[$target_id] Overall: $(elapsed(t1))")
@@ -421,7 +432,7 @@ returns a 2-tuple (sff annotation as an IOBuffer, sequence id)
 #     end
 # end
 
-function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}, templates::String, fa_files::Vector{String}, sensitivity::Float16, output::MayBeString)
+function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}, templates::String, fa_files::Vector{String}, sensitivity::Float16, output::MayBeString, gff3::Bool)
     
     numrefs == 1 ? refhashes = nothing : refhashes = readminhashes(hashfile)
 
@@ -445,22 +456,9 @@ function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}
         if length(fseq) != length(rseq)
             @error "unequal lengths for forward and reverse strands"
         end
-        annotate_one(refsdir, numrefs, refhashes, templates, sensitivity, FASTA.identifier(records[1]), fseq, rseq, output)
+        annotate_one(refsdir, numrefs, refhashes, templates, sensitivity, FASTA.identifier(records[1]), fseq, rseq, output, gff3)
         close(reader)
     end
 end
 
 end # module
-
-function allonall()
-	Logging.disable_logging(Logging.Warn)
-	files = filter(x->endswith(x, ".fa"), readdir("/Users/ian/github/chloe_references/", join = true))
-	for file1 in files
-		id1 = split(basename(file1),"/")[1]
-		for file2 in files
-			id2 = split(basename(file2),"/")[1]
-			o = join(["/Users/ian/Data/cp_genomes/refseq/Spermatophyta/oneonone/",id1,"_",id2,".sff"])
-			Annotator.annotate(file1, 1, nothing, "/Users/ian/github/chloe_references/empty_templates.tsv", [file2], o)
-		end
-	end
-end

@@ -18,7 +18,7 @@ function quiet_metafmt(level, _module, group, id, file, line)
 end
 
 function chloe(;refsdir=DEFAULT_REFS, numrefs=DEFAULT_NUMREFS, hashfile=DEFAULT_HASHES, fasta_files=String[],
-    template=DEFAULT_TEMPLATE, sensitivity=DEFAULT_SENSITIVITY, output::Union{Nothing,String}=nothing, verbose::Bool=true)
+    template=DEFAULT_TEMPLATE, sensitivity=DEFAULT_SENSITIVITY, output::Union{Nothing,String}=nothing, gff::Bool=false, verbose::Bool=true)
     if refsdir == "default"
         refsdir = normpath(joinpath(HERE, "..", DEFAULT_REFS))
     end
@@ -28,7 +28,7 @@ function chloe(;refsdir=DEFAULT_REFS, numrefs=DEFAULT_NUMREFS, hashfile=DEFAULT_
     if template == "default"
         template = normpath(joinpath(HERE, "..", DEFAULT_TEMPLATE))
     end
-    Annotator.annotate(refsdir, numrefs, hashfile, template, fasta_files, sensitivity, output)
+    Annotator.annotate(refsdir, numrefs, hashfile, template, fasta_files, sensitivity, output, gff)
 end
 
 function getargs()
@@ -121,6 +121,9 @@ function getargs()
             arg_type = Float16
             default = DEFAULT_SENSITIVITY
             help = "probability threshold for reporting features [default: $(DEFAULT_SENSITIVITY)]"
+        "--gff", "-g"
+            action = :store_true
+            help = "save output in gff3 format instead of sff"
     end
 
     @add_arg_table! cmd_args["rotate"] begin
