@@ -43,6 +43,41 @@ function Base.sum(cv::CircularVector, r::UnitRange{<:Integer})
     return sum
 end
 
+struct CircularMask
+    m::BitVector
+end
+
+@inline Base.length(cm::CircularMask) = Int32(length(cm.m))
+@inline Base.getindex(cm::CircularMask, i::Int32) = @inbounds getindex(cm.m, mod1(i, length(cm)))
+function Base.getindex(cm::CircularMask, r::UnitRange{<:Integer})
+    len = length(cm)
+	start = mod1(r.start, len)
+    stop = mod1(r.stop, len)
+	if start < stop
+		return cm.m[start:stop]
+    else
+        return vcat(cm.m[start:end],cm.m[1:stop])
+    end
+end
+@inline Base.setindex!(cm::CircularMask, value::Bool, i::Int32) = @inbounds setindex!(cm.m, value, mod1(i, length(cm)))
+function Base.setindex!(cm::CircularMask, value::Bool, r::UnitRange{<:Integer})
+    for i in r
+        setindex!(cm.m, value, mod1(i, length(cm)))
+    end
+end
+function Base.sum(cm::CircularMask, r::UnitRange{<:Integer})
+    len = length(cm)
+	start = mod1(r.start, len)
+    stop = mod1(r.stop, len)
+	if start < stop
+		return sum(cm.m[start:stop])
+    else
+        return sum(cm.m[start:end]) + sum(cm.m[1:stop])
+    end
+end
+Base.iterate(cm::CircularMask) = iterate(cm.m)
+Base.iterate(cm::CircularMask, state) = iterate(cm.m, state)
+
 using BioSequences
 
 struct CircularSequence

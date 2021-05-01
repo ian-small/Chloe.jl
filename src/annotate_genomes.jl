@@ -239,14 +239,14 @@ end
 # Union{IO,String}: read fasta from IO buffer or a file (String)
 MayBeIO = Union{String,IO,Nothing}
 
-function align(ref::SingleReference, tgt_id::String, tgt_seq::CircularSequence, rev_tgt_seq::CircularSequence)::Tuple{FwdRev{FwdRev{AlignedBlocks}},Float32}
+function align(ref::SingleReference, tgt_id::String, tgt_seq::CircularSequence, rev_tgt_seq::CircularSequence, mask = nothing)::Tuple{FwdRev{FwdRev{AlignedBlocks}},Float32}
     start = time_ns()
     #align2seqs returns linked list
     #but subsequent functions expecting Vector
-    ff::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq.sequence, tgt_seq.sequence))
+    ff::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq, tgt_seq, mask))
     rr = revCompBlocks(ff,length(ref.ref_seq.sequence), length(tgt_seq.sequence))
     
-    fr::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq.sequence,rev_tgt_seq.sequence))
+    fr::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq, rev_tgt_seq, mask))
     rf = revCompBlocks(fr,length(ref.ref_seq.sequence), length(tgt_seq.sequence))
 
     coverage = Float32(100 * target_coverage(ff, rf, length(tgt_seq)))
@@ -258,7 +258,7 @@ function align(ref::SingleReference, tgt_id::String, tgt_seq::CircularSequence, 
 end
 
 function inverted_repeat(target::CircularSequence, revtarget::CircularSequence)::AlignedBlock
-    fr::AlignedBlocks = ll2vector(align2seqs(target.sequence,revtarget.sequence))
+    fr::AlignedBlocks = ll2vector(align2seqs(target,revtarget;))
     # sort blocks by length
     fr = sort!(fr, by= b -> b.blocklength, rev=true)
     ir = length(fr) > 0 ? fr[1] : AlignedBlock(0, 0, 0)
@@ -332,8 +332,14 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     @info "[$target_id] seq length: $(target_length)bp"
 
     # find best references
+    #need entropy mask HERE
+    emask = entropy_mask(CircularSequence(target_forward_strand.sequence), Int32(KMERSIZE))
+    nmaskedtarget = copy(target_forward_strand.sequence)
+    for (i, bit) in enumerate(emask)
+        if bit; nmaskedtarget[i] = DNA_N; end
+    end
     if !isnothing(refhashes)
-        hash = minhash(target_forward_strand.sequence, KMERSIZE, SKETCHSIZE)
+        hash = minhash(nmaskedtarget, KMERSIZE, SKETCHSIZE)
         numrefs = min(numrefs, length(refhashes))
         refpicks = searchhashes(hash, refhashes)[1:numrefs]
     else
@@ -352,7 +358,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
 
     Threads.@threads for i in 1:numrefs
         ref = readSingleReference(refsdir, refpicks[i][1])
-        a = align(ref, target_id, target_forward_strand, target_reverse_strand)
+        a = align(ref, target_id, target_forward_strand, target_reverse_strand, emask)
         blocks_aligned_to_targetf[i] = a[1].forward
         blocks_aligned_to_targetr[i] = a[1].reverse
         lock(REENTRANT_LOCK)
@@ -393,6 +399,8 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     # from https://discourse.julialang.org/t/threads-threads-to-return-results/47382
 
     sffs_fwd, sffs_rev, ir = fetch.((Threads.@spawn w()) for w in [watson, crick, () -> inverted_repeat(target_forward_strand, target_reverse_strand)]) 
+
+    filter_gene_models!(sffs_fwd, sffs_rev, numrefs)
    
     if ir.blocklength >= 1000
         @info "[$target_id] inverted repeat $(ir.blocklength)"

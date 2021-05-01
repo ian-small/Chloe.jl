@@ -410,16 +410,26 @@ end
 function groupFeaturesIntoGeneModels(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_Feature}}
     gene_models = [SFF_Feature[]]
     current_model = SFF_Feature[]
+    left_border::Int32 = typemax(Int32)
+    right_border::Int32 = 0
     for sff_feature in sff_features
         if isempty(current_model)
             push!(current_model, sff_feature)
-        elseif current_model[1].feature.gene == sff_feature.feature.gene
+            left_border = sff_feature.feature.start
+            right_border = sff_feature.feature.start + sff_feature.feature.length - 1
+        #add feature to model if the gene names match and they are less than 3kb apart; 3kb is an arbitrary limit set to include the longest intron (trnK, ~2.5kb) and may need to be reduced
+        #a shorter distance limit would require the features to be pre-sorted by position, not name, so that we know they are being added in order
+        elseif current_model[1].feature.gene == sff_feature.feature.gene && min(left_border - (sff_feature.feature.start + sff_feature.feature.length - 1), sff_feature.feature.start - right_border) < 3000
             push!(current_model, sff_feature)
+            left_border = min(left_border, sff_feature.feature.start)
+            right_border = max(right_border, sff_feature.feature.start + sff_feature.feature.length - 1)
         else
             sort!(current_model, by = x -> x.feature.start)
             push!(gene_models, current_model)
             current_model = SFF_Feature[]
             push!(current_model, sff_feature)
+            left_border = sff_feature.feature.start
+            right_border = sff_feature.feature.start + sff_feature.feature.length - 1
         end
     end
     if length(current_model) > 0
@@ -700,12 +710,27 @@ end
 
 mutable struct SFF_Model
     gene::String
+    gene_prob::Float32 #mean of probs of comonent features
     strand::Char
     gene_count::Int8
     exon_count::Int8
     features::Vector{SFF_Feature}
     hasStart::Bool
     hasPrematureStop::Bool
+end
+
+function get_gene_boundaries(model::SFF_Model)::UnitRange{Int32}
+    start = first(model.features).feature.start
+    length = last(model.features).feature.start + last(model.features).feature.length - start
+    return range(start, length = length)
+end
+
+function mean_stackdepth(model::SFF_Model)::Float64
+    sum = 0.0
+    for sff in model.features
+        sum += sff.stackdepth
+    end
+    return sum/length(model.features)
 end
 
 gene_length(model::Vector{Feature}) = begin
@@ -721,8 +746,6 @@ function toSFF(model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSeq
     gene = first_model.feature.gene
     exon_count = 0
     cds = false
-
-    exceeds_sensitivity = false
     mean_feature_prob = 0.0
     for (n, sff_feature) in enumerate(model)
         #keep model if mean feature probability exceeds the sensitivity threshold
@@ -731,6 +754,7 @@ function toSFF(model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSeq
             exon_count += 1
         end
     end
+    exceeds_sensitivity = false
     if mean_feature_prob ≥ sensitivity
         exceeds_sensitivity = true
     end
@@ -748,7 +772,7 @@ function toSFF(model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSeq
         #    hasPrematureStop = true
         #end
     end
-    return exceeds_sensitivity ? SFF_Model(gene, strand, 1, exon_count, model, hasStart, hasPrematureStop) : nothing
+    return exceeds_sensitivity ? SFF_Model(gene, mean_feature_prob, strand, 1, exon_count, model, hasStart, hasPrematureStop) : nothing
 end
 
 function writeModelToSFF(outfile::IO, model::SFF_Model)
@@ -795,6 +819,76 @@ function feature_glm(template::FeatureTemplate, flength::Float32, fdepth::Float3
     pred = template.intercept + template.length_coef * flength + template.depth_coef * fdepth + template.match_coef * gmatch + fdepth * flength * template.depth_length_coef + fdepth * gmatch * template.depth_match_coef
     odds = exp(pred)
     return Float32(odds / (1.0 + odds))
+end
+
+# only some gene_models are allowed to overlap
+function allowed_model_overlap(m1, m2)::Bool
+    if m1.gene == "trnK-UUU" && m2.gene == "matK"; return true; end
+    if m1.gene == "matK" && m2.gene == "trnK-UUU"; return true; end
+    if m1.gene == "ndhC" && m2.gene == "ndhK"; return true; end
+    if m1.gene == "ndhK" && m2.gene == "ndhC"; return true; end
+    if m1.gene == "psbC" && m2.gene == "psbD"; return true; end
+    if m1.gene == "psbD" && m2.gene == "psbC"; return true; end
+    if m1.gene == "atpB" && m2.gene == "atpE"; return true; end
+    if m1.gene == "atpE" && m2.gene == "atpB"; return true; end
+    if m1.gene == "rps3" && m2.gene == "rpl22"; return true; end
+    if m1.gene == "rpl22" && m2.gene == "rps3"; return true; end
+    return false
+end
+
+function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model}, numrefs::Int)
+    #filter out models of genes where better model of same gene exists
+    #filter out models of genes where better model of overlapping gene in same frame exists
+    #filter on stackdepth(sanity check in case of GLM failure)
+    fwd_models_to_delete = SFF_Model[]
+    for (i, model1) in enumerate(fwd_models)
+        if mean_stackdepth(model1) < 1/(2 * numrefs); push!(fwd_models_to_delete, model1); continue; end
+        for j in i + 1:length(fwd_models)
+            model2 = fwd_models[j]
+            bmodel1 = get_gene_boundaries(model1)
+            bmodel2 = get_gene_boundaries(model2)
+            if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2))> 0 && !allowed_model_overlap(model1, model2))
+                if model1.gene_prob > 1.05 * model2.gene_prob ##small tolerance for unequal probs
+                    push!(fwd_models_to_delete, model2)
+                elseif model2.gene_prob > 1.05 * model1.gene_prob
+                    push!(fwd_models_to_delete, model1)
+                end
+            end
+        end
+    end
+    setdiff!(fwd_models, fwd_models_to_delete)
+
+    rev_models_to_delete = SFF_Model[]
+    for (i, model1) in enumerate(rev_models)
+        if mean_stackdepth(model1) < 1/(2 * numrefs); push!(rev_models_to_delete, model1); continue; end
+        for j in i + 1:length(fwd_models)
+            model2 = fwd_models[j]
+            bmodel1 = get_gene_boundaries(model1)
+            bmodel2 = get_gene_boundaries(model2)
+            if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2)) > 0 && bmodel1[1] % 3 == bmodel2[1] % 3)
+                if model1.gene_prob > 1.05 * model2.gene_prob ##small tolerance for unequal probs
+                    push!(rev_models_to_delete, model2)
+                elseif model2.gene_prob > 1.05 * model1.gene_prob
+                    push!(rev_models_to_delete, model1)
+                end
+            end
+        end
+    end
+    setdiff!(rev_models, rev_models_to_delete)
+
+    empty!(fwd_models_to_delete)
+    empty!(rev_models_to_delete)
+    for model1 in fwd_models, model2 in rev_models
+        if model1.gene == model2.gene
+            if model1.gene_prob > 1.05 * model2.gene_prob ##small tolerance for unequal probs
+                push!(rev_models_to_delete, model2)
+            elseif model2.gene_prob > 1.05 * model1.gene_prob
+                push!(fwd_models_to_delete, model1)
+            end
+        end
+    end
+    setdiff!(fwd_models, fwd_models_to_delete)
+    setdiff!(rev_models, rev_models_to_delete)
 end
 
 MaybeIR = Union{AlignedBlock,Nothing}
@@ -868,8 +962,8 @@ function writeGFF3(outfile::Union{String,IO},
         model_ids = Dict{String,Int32}()
         write(outfile, "##gff-version 3.2.1\n")
         if ir !== nothing
-            push!(models.forward, SFF_Model("IR-1", '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
-            push!(models.reverse, SFF_Model("IR-2", '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
+            push!(models.forward, SFF_Model("IR-1", 0.0, '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
+            push!(models.reverse, SFF_Model("IR-2", 0.0, '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
         end
         for model in models.forward
             isnothing(model) && continue
@@ -896,13 +990,33 @@ function writeGFF3(outfile::Union{String,IO},
     end
 end
 
+function mergeAdjacentFeaturesinModel!(model::SFF_Model)
+    f1_index = 1
+    f2_index = 2
+    while f2_index <= length(model.features)
+        f1 = model.features[f1_index].feature
+        f2 = model.features[f2_index].feature
+        # if adjacent features are same type, merge them into a single feature
+        if f1.type == f2.type && f2.start - f1.start - f1.length ≤ 100
+            @debug "[$(genome_id)]$(strand) merging adjacent $(f1.path) and $(f2.path)"
+            f1.length = f2.start - f1.start + f2.length
+            deleteat!(model.features, f2_index)
+        else
+            f1_index += 1
+            f2_index += 1
+        end
+    end
+end
+
 function writeModelToGFF3(outfile, model::SFF_Model, genome_id::String, genome_length::Int32)
     
-    function write_line(type, start, finish, id, parent, phase="."; key="Parent")
-        l = [genome_id, "Chloe", type, start, finish, ".", model.strand, phase]
+    function write_line(type, start, finish, pvalue, id, parent, phase="."; key="Parent")
+        l = [genome_id, "Chloe", type, start, finish, @sprintf("%.3e",pvalue), model.strand, phase]
         write(outfile, join(l, "\t"))
         write(outfile, "\t", "ID=", id, ";", key, "=", parent, "\n")
     end
+
+    mergeAdjacentFeaturesinModel!(model)
 
     features = model.features
     id = model.gene
@@ -928,23 +1042,23 @@ function writeModelToGFF3(outfile, model::SFF_Model, genome_id::String, genome_l
 
     # gene
     if startswith(model.gene, "IR")
-        write_line("repeat_region", start, finish, id, model.gene; key="Name")
+        write_line("repeat_region", start, finish, model.gene_prob, id, model.gene; key="Name")
         write(outfile, "###\n")
         return
     else
-        write_line("gene", start, finish, id, model.gene; key="Name")
+        write_line("gene", start, finish, 1.0 - model.gene_prob, id, model.gene; key="Name")
     end
     # RNA product
     parent = id
     if ft == "CDS"
         parent =  id * ".mRNA"
-        write_line("mRNA", start, finish, parent, id)
+        write_line("mRNA", start, finish, 1.0 - model.gene_prob, parent, id)
     elseif ft == "rRNA"
         parent = id * ".rRNA"
-        write_line("rRNA", start, finish, parent, id)
+        write_line("rRNA", start, finish, 1.0 - model.gene_prob, parent, id)
     elseif ft == "tRNA"
         parent =  id * ".tRNA"
-        write_line("tRNA", start, finish, parent, id)
+        write_line("tRNA", start, finish, 1.0 - model.gene_prob, parent, id)
     end
     #exons
     for sff in model.features
@@ -956,7 +1070,7 @@ function writeModelToGFF3(outfile, model::SFF_Model, genome_id::String, genome_l
         start, finish, length = sff2gffcoords(f, model.strand, genome_length)
         
         phase = type == "CDS" ? string(f.phase) : "."
-        write_line(type, start, finish, annotationPath(f), parent, phase)
+        write_line(type, start, finish, 1.0 - sff.feature_prob, annotationPath(f), parent, phase)
     end
     write(outfile, "###\n")
 end

@@ -2,8 +2,8 @@ using BioSequences
 using FASTX
 using Statistics
 
-KMERSIZE = 10
-SKETCHSIZE = 400
+const KMERSIZE = 10
+const SKETCHSIZE = 400
 
 function minhash_references(; fasta_files=Vector{String}, output=output)
     seqs = Vector{FASTA.Record}()
@@ -20,8 +20,16 @@ function minhash_references(; fasta_files=Vector{String}, output=output)
     end
 
     hashes = Dict{String,Vector{Int64}}()
-    for seq in seqs
-        hashes[FASTA.identifier(seq)] = minhash(FASTA.sequence(seq), KMERSIZE, SKETCHSIZE).sketch
+    for seqrec in seqs
+        seq = FASTA.sequence(seqrec)
+        #calculate entropy mask
+        emask = entropy_mask(CircularSequence(seq), Int32(KMERSIZE))
+        #convert low entropy regions to Ns
+        for (i, bit) in enumerate(emask)
+            if bit; seq[i] = DNA_N; end
+        end
+        #hash
+        hashes[FASTA.identifier(seqrec)] = minhash(seq, KMERSIZE, SKETCHSIZE).sketch
     end
     writeminhashes(output, hashes)
 end

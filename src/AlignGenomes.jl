@@ -18,7 +18,8 @@ function align(;query, target, output=Base.stdout)
         read!(reader, record)
         seq2 = FASTA.sequence(record)
         alignment = Alignment(seq1, seq2)
-        chain = align2seqs(seq1,seq2)
+        emask = entropy_mask(seq1, Int32(KMERSIZE))
+        chain = align2seqs(CircularSequence(seq1), CircularSequence(seq2), emask)
         for link in chain
             block = link.data
             query_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in block.src_index:block.src_index+block.blocklength - 1))
@@ -38,10 +39,10 @@ end
     return index > fulcrum ? true : false
 end
 
-function align2seqs(seq1::LongDNASeq,seq2::LongDNASeq)::BlockChain{AlignedBlock}
+function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask = nothing)::BlockChain{AlignedBlock}
     #extend and join strings; currently assumes both sequence are circular
     #TO DO: generalise for either or both of seq1, seq2 as linear sequences
-    alignment = Alignment(seq1, seq2)
+    alignment = Alignment(seq1.sequence, seq2.sequence)
     sa = sais(alignment, zeros(Int32,length(alignment)), 0, length(alignment), 16) .+= 1 #shift to 1-based julia indexes
     ra = invperm(sa)
     lcps = lcparray(alignment, sa, ra)
@@ -53,7 +54,7 @@ function align2seqs(seq1::LongDNASeq,seq2::LongDNASeq)::BlockChain{AlignedBlock}
     #     println(sa[sa_index+i], '\t', lcps[sa_index+i], '\t', joinedstring[sa[sa_index+i]:min(sa[sa_index+i]+50,end)])
     # end
 
-    src2tgt = blockchain(alignment, sa, ra, lcps, one:lenseq1, one:lenseq2, matchLengthThreshold(lenseq1, lenseq2))
+    src2tgt = blockchain(alignment, sa, ra, lcps, one:lenseq1, one:lenseq2, matchLengthThreshold(lenseq1, lenseq2), mask)
     src2tgt = circularise(src2tgt, lenseq1)
 
     @debug "links before gapfilling: $(src2tgt.links)"
@@ -67,7 +68,7 @@ function align2seqs(seq1::LongDNASeq,seq2::LongDNASeq)::BlockChain{AlignedBlock}
         (srcgap, tgtgap) = contiguousblockgaps(gap[1], gap[2], lenseq1, lenseq2)
         length(srcgap) < MINIMUMFILLABLEGAP && length(tgtgap) < MINIMUMFILLABLEGAP && continue #gap too short to attempt to fill
         length(srcgap) == length(tgtgap) && length(srcgap) ≤ MAXIMUMMERGEABLEGAP && continue #gap is going to be merged, don't bother trying to fill
-        gapfill!(src2tgt, gap[1], gap[2], alignment, sa, ra, lcps, matchLengthThreshold(Int32(length(srcgap)), Int32(length(tgtgap))))
+        gapfill!(src2tgt, gap[1], gap[2], alignment, sa, ra, lcps, matchLengthThreshold(Int32(length(srcgap)), Int32(length(tgtgap))), mask)
     end
 
     @debug "links after gapfilling: $(src2tgt.links)"
@@ -109,12 +110,12 @@ function matchLengthThreshold(m::Int32, n::Int32)::Int32
     return 26
 end
 
-function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBlock}, tail::ChainLink{AlignedBlock}, alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, minblocksize::Int32)
+function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBlock}, tail::ChainLink{AlignedBlock}, alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, minblocksize::Int32, mask = nothing)
     @debug "gapfilling from $(head.data) to $(tail.data) minblocksize = $(minblocksize)"
     src_length = length(alignment.seq1)
     tgt_length = length(alignment.seq2)
     (srcgap, tgtgap) = contiguousblockgaps(head, tail, src_length, tgt_length)
-    chain = blockchain(alignment, sa, ra, lcps, srcgap, tgtgap, minblocksize)
+    chain = blockchain(alignment, sa, ra, lcps, srcgap, tgtgap, minblocksize, mask)
     # println("chain length: ", length(chain))
     # for link in chain
     #     println(link)
@@ -134,12 +135,12 @@ function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBl
         mlt = matchLengthThreshold(Int32(length(srcgap)), Int32(length(tgtgap)))
         #println("mlt: ", mlt)
         mlt ≥ minblocksize && continue #gap has already been searched with this minblocksize
-        gapfill!(mainchain, gap[1], gap[2], alignment, sa, ra, lcps, mlt)
+        gapfill!(mainchain, gap[1], gap[2], alignment, sa, ra, lcps, mlt, mask)
     end
     return mainchain
 end
     
-function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, srcgap, tgtgap, minblocksize)::BlockChain{AlignedBlock}
+function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, srcgap, tgtgap, minblocksize, mask = nothing)::BlockChain{AlignedBlock}
     @debug "blockchain from $srcgap to $tgtgap minblocksize = $minblocksize"
     blocks = BlockChain{AlignedBlock}()
     src_length = length(alignment.seq1)
@@ -181,7 +182,9 @@ function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, 
         toplcp < minblocksize && continue
         if toplcp > minlcp; tgt_start = toptgt_start; end
         new_block = AlignedBlock(mod1(nt, src_length), mod1(tgt_start, tgt_length), mod1(toplcp, min(src_length, tgt_length)))
-        append!(blocks, new_block)
+        if isnothing(mask) || sum(mask[new_block.tgt_index:new_block.tgt_index + new_block.blocklength - 1]) == 0 ##only add block if it doesn't intersect low complexity region
+            append!(blocks, new_block)
+        end
         # if new_block.blocklength > 10000
         #     @error "excessive blocklength in blockchain() $(new_block)"
         #     println(nt,"\toffset: ", offset, "\tsa_index: ", sa_index, "\tsa length: ", length(sa), "\tsa: ", sa[sa_index + offset], "\ttgt_start: ", tgt_start, "\tmlt: ", mlt, "\ttoplcp: ", toplcp)
@@ -209,4 +212,59 @@ function target_coverage(ff, rf, tgt_length::Integer)
         end
     end
     return sum(tgt_coverage)/tgt_length
+end
+
+function entropy_mask(cs::CircularSequence, window_length::Int32)::CircularMask
+
+    comp = zeros(Int32, 4)
+    mask = CircularMask(falses(length(cs)))
+    entropy = 0.0
+    for i::Int32 in 1:window_length
+        if cs[i] == DNA_A
+            comp[1] += 1
+        elseif cs[i] == DNA_C
+            comp[2] += 1
+        elseif cs[i] == DNA_G
+            comp[3] += 1
+        else cs[i] == DNA_T
+            comp[4] += 1
+        end
+    end
+    
+    for v in comp
+        prob = v/window_length
+        prob == 0 && continue
+        entropy -= prob * log2(prob)
+    end
+    entropy < 1.0 && setindex!(mask, true, 1:window_length)
+    
+    for i::Int32 in 1:length(cs) - 1
+        if cs[i] == DNA_A
+            comp[1] -= 1
+        elseif cs[i] == DNA_C
+            comp[2] -= 1
+        elseif cs[i] == DNA_G
+            comp[3] -= 1
+        else cs[i] == DNA_T
+            comp[4] -= 1
+        end
+        if cs[i+window_length] == DNA_A
+            comp[1] += 1
+        elseif cs[i+window_length] == DNA_C
+            comp[2] += 1
+        elseif cs[i+window_length] == DNA_G
+            comp[3] += 1
+        else cs[i+window_length] == DNA_T
+            comp[4] += 1
+        end
+        entropy = 0.0
+        for v in comp
+            prob = v/window_length
+            prob == 0 && continue
+            entropy -= prob * log2(prob)
+        end
+        entropy < 1.0 && setindex!(mask, true, i:i+window_length-1)
+    end
+    
+    return mask
 end
