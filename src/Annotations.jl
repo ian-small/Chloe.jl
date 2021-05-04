@@ -111,20 +111,27 @@ datasize(a::Annotation) = sizeof(Annotation)  + sizeof(a.path)# genome_id is sha
 datasize(v::Vector{Annotation}) = sum(datasize(a) for a in v)
 
 function addAnnotation(genome_id::String, feature::Feature, block::AlignedBlock)::Union{Nothing,Annotation}
-    startA = max(feature.start, block.src_index)
-    flength = min(feature.start + feature.length, block.src_index + block.blocklength) - startA
-    flength <= 0 && return nothing
-    offset5 = startA - feature.start
+    #println(block)
+    #coordinates in source genome
+    src_start = max(feature.start, block.src_index)
+    src_end::Int32 = min(feature.start + feature.length, block.src_index + block.blocklength) - 1
+    src_length::Int32 = src_end - src_start + 1
+    src_length <= 0 && return nothing
+    offset5 = src_start - feature.start
+    offset3 = src_end - (feature.start + feature.length -1)
     if (feature.type == "CDS")
         phase = phaseCounter(feature.phase, offset5)
     else
         phase = 0
     end
+    #coordinates in target genome
+    tgt_start = src_start > feature.start ? block.tgt_index : block.tgt_index + (feature.start - block.src_index)
+
     annotation_path = annotationPath(feature)
     Annotation(genome_id, annotation_path, 
-                            startA - block.src_index + block.tgt_index, # shift from reference position to target
-                            flength, offset5,
-                            feature.length - (startA - feature.start) - flength,
+                            tgt_start,
+                            src_length, offset5,
+                            offset3,
                             phase)
 end
 
@@ -337,7 +344,7 @@ function alignTemplateToStack(feature_stack::FeatureStack)::Tuple{Vector{Tuple{I
     return hits, median_length
 end
 
-function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Vector{Annotation})::Int8
+#= function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Vector{Annotation})::Int8
     phases = Int8[]
     for annotation in annotations[findall(x -> x.path == annotationPath(feat), annotations)]
         if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
@@ -349,8 +356,9 @@ function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Vector
     if length(phases) == 0
         return Int8(0)
     end
+    println(feat, '\t', phases)
     return StatsBase.mode(phases) # return most common phase
-end
+end =#
 
 function weightedMode(values::Vector{Int32}, weights::Vector{Float32})::Int32
     w, v = findmax(StatsBase.addcounts!(Dict{Int32,Float32}(), values, weights))
@@ -360,27 +368,28 @@ end
 # uses weighted mode, weighting by alignment length and distance from boundary
 function refineMatchBoundariesByOffsets!(feat::Feature, annotations::Vector{Annotation}, 
             target_length::Integer, coverages::Dict{String,Float32})
-    # grab all the matching features
-    matching_annotations = findall(x -> x.path == annotationPath(feat), annotations)
+    # grab all the matching features and sort by start in genome of origin to ensure that when iterated in order, most 5' match is found first
+    matching_annotations = sort(annotations[findall(x -> x.path == annotationPath(feat), annotations)], by = a -> a.start)
     isempty(matching_annotations) && return #  feat, [], []
     overlapping_annotations = Annotation[]
     minstart = target_length
     maxend = 1
-    for annotation in annotations[matching_annotations]
+
+    ## Fix 5' boundary and feature phase
+    for annotation in matching_annotations
         annotation.offset5 >= feat.length && continue
-        annotation.offset3 >= feat.length && continue
         if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
-            minstart = min(minstart, annotation.start)
-            maxend = max(maxend, annotation.start + annotation.length - 1)
-            push!(overlapping_annotations, annotation)
+            #ignore if we already have an annotation from this genome
+            if isnothing(findfirst(a -> a.genome_id == annotation.genome_id, overlapping_annotations))
+                minstart = min(minstart, annotation.start)
+                push!(overlapping_annotations, annotation)
+            end
         end
     end
     n = length(overlapping_annotations)
     end5s = Vector{Int32}(undef, n)
     end5ws = Vector{Float32}(undef, n)
-    end3s = Vector{Int32}(undef, n)
-    end3ws = Vector{Float32}(undef, n)
-
+    phases = Vector{Int32}(undef, n)
     @inbounds for (i, annotation) in enumerate(overlapping_annotations)
         # predicted 5' end is annotation start - offset5
         end5s[i] = annotation.start - annotation.offset5
@@ -388,23 +397,45 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::Vector{Anno
         coverage = coverages[annotation.genome_id]
         weight = ((feat.length - (annotation.start - minstart)) / feat.length) * coverage
         end5ws[i] =  weight * weight
-        # predicted 3' end is feature start + feature length + offset3 - 1
-        end3s[i] = annotation.start + annotation.length + annotation.offset3 - 1
-        # weights
-        weight = ((feat.length - (maxend - (annotation.start + annotation.length - 1))) / feat.length) * coverage
-        end3ws[i] = weight * weight
+        phases[i] = Int32(phaseCounter(annotation.phase, -annotation.offset5))
+        #println(feat, '\t', annotation)
     end
     left = feat.start
-    right = feat.start + feat.length - 1
     if !isempty(end5s)
         left = weightedMode(end5s, end5ws)
     end
+    feat.start = genome_wrap(target_length, left)
+    feat.phase = isempty(phases) ? 0 : weightedMode(phases, end5ws)
+    #println(annotationPath(feat) , '\t', phases, '\t', feat.phase)
+
+    ## Fix 3' boundary
+    empty!(overlapping_annotations)
+    for annotation in Iterators.reverse(matching_annotations) #iterate in reverse to ensure 3' annotations are reached first
+        annotation.offset3 >= feat.length && continue
+        if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
+            #ignore if we already have an annotation from this genome
+            if isnothing(findfirst(a -> a.genome_id == annotation.genome_id, overlapping_annotations))
+                maxend = max(maxend, annotation.start + annotation.length -1)
+                push!(overlapping_annotations, annotation)
+            end
+        end
+    end
+    n = length(overlapping_annotations)
+    end3s = Vector{Int32}(undef, n)
+    end3ws = Vector{Float32}(undef, n)
+    @inbounds for (i, annotation) in enumerate(overlapping_annotations)
+        # predicted 3' end is feature start + feature length + offset3 - 1
+        end3s[i] = annotation.start + annotation.length - annotation.offset3 - 1
+        # weights
+        coverage = coverages[annotation.genome_id]
+        weight = ((feat.length - (maxend - (annotation.start + annotation.length - 1))) / feat.length) * coverage
+        end3ws[i] = weight * weight
+    end
+    right = feat.start + feat.length - 1
     if !isempty(end3s)
         right = weightedMode(end3s, end3ws)
     end
-    feat.start = genome_wrap(target_length, left)
     feat.length = right - left + 1
-    # return feat # , end5s, end5ws
 end
 
 function groupFeaturesIntoGeneModels(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_Feature}}
@@ -600,6 +631,7 @@ end
 function setLongestORF!(sfeat::SFF_Feature, orfs::Vector{Feature})
     #find in-frame orf with longest overlap with feature
     #orfs are sorted by descending length
+    #println(sfeat)
     f = sfeat.feature
     original_start = f.start
     original_length = f.length
@@ -668,7 +700,7 @@ function refineGeneModels!(gene_models::Vector{Vector{SFF_Feature}}, target_seq:
         last_exon = last(model).feature
         # if CDS, find phase, stop codon and set feature.length
         if last_exon.type == "CDS"
-            last_exon.phase = getFeaturePhaseFromAnnotationOffsets(last_exon, annotations)
+            #last_exon.phase = getFeaturePhaseFromAnnotationOffsets(last_exon, annotations)
             if last_exon.gene ≠ "rps12A"
                 setLongestORF!(last(model), orfs)
             end
@@ -688,7 +720,7 @@ function refineGeneModels!(gene_models::Vector{Vector{SFF_Feature}}, target_seq:
             next_feature.length ≤ 0 && push!(features_to_remove, model[i+1])
             # if CDS, check phase is compatible
             if feature.type == "CDS"
-                feature.phase = getFeaturePhaseFromAnnotationOffsets(feature, annotations)
+                #feature.phase = getFeaturePhaseFromAnnotationOffsets(feature, annotations)
                 if last_cds_examined !== nothing && phaseCounter(feature.phase, feature.length % Int32(3)) != last_cds_examined.phase
                     # refine boundaries (how?)
                 end
@@ -699,7 +731,7 @@ function refineGeneModels!(gene_models::Vector{Vector{SFF_Feature}}, target_seq:
         # if CDS, find start codon and set feature.start
         first_exon = first(model).feature
         if first_exon.type == "CDS"
-            first_exon.phase = getFeaturePhaseFromAnnotationOffsets(first_exon, annotations)
+            #first_exon.phase = getFeaturePhaseFromAnnotationOffsets(first_exon, annotations)
             if last_exon.gene ≠ "rps12B"
                 findStartCodon!(first_exon, genome_length, target_seq)
                 # first_exon = findStartCodon2!(first_exon,genome_length,targetloop)
@@ -746,16 +778,17 @@ function toSFF(model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSeq
     gene = first_model.feature.gene
     exon_count = 0
     cds = false
-    mean_feature_prob = 0.0
+    model_prob = 0.0
     for (n, sff_feature) in enumerate(model)
         #keep model if mean feature probability exceeds the sensitivity threshold
-        mean_feature_prob = n == 1 ? sff_feature.feature_prob : mean_feature_prob + (sff_feature.feature_prob - mean_feature_prob)/n
+        model_prob = n == 1 ? 1 - sff_feature.feature_prob : model_prob * (1 - sff_feature.feature_prob)
         if sff_feature.feature.type ≠ "intron"
             exon_count += 1
         end
     end
+    model_prob = 1 - model_prob
     exceeds_sensitivity = false
-    if mean_feature_prob ≥ sensitivity
+    if model_prob ≥ sensitivity || isnan(model_prob)
         exceeds_sensitivity = true
     end
     hasStart = true
@@ -772,7 +805,7 @@ function toSFF(model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSeq
         #    hasPrematureStop = true
         #end
     end
-    return exceeds_sensitivity ? SFF_Model(gene, mean_feature_prob, strand, 1, exon_count, model, hasStart, hasPrematureStop) : nothing
+    return exceeds_sensitivity ? SFF_Model(gene, model_prob, strand, 1, exon_count, model, hasStart, hasPrematureStop) : nothing
 end
 
 function writeModelToSFF(outfile::IO, model::SFF_Model)
@@ -838,11 +871,12 @@ end
 
 function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model}, numrefs::Int)
     #filter out models of genes where better model of same gene exists
-    #filter out models of genes where better model of overlapping gene in same frame exists
+    #filter out models of genes where better model of overlapping gene exists
     #filter on stackdepth(sanity check in case of GLM failure)
+
     fwd_models_to_delete = SFF_Model[]
     for (i, model1) in enumerate(fwd_models)
-        if mean_stackdepth(model1) < 1/(2 * numrefs); push!(fwd_models_to_delete, model1); continue; end
+        if mean_stackdepth(model1) < 1/(4 * numrefs); push!(fwd_models_to_delete, model1); continue; end
         for j in i + 1:length(fwd_models)
             model2 = fwd_models[j]
             bmodel1 = get_gene_boundaries(model1)
@@ -856,11 +890,12 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
             end
         end
     end
+    #println(fwd_models_to_delete)
     setdiff!(fwd_models, fwd_models_to_delete)
-
+    
     rev_models_to_delete = SFF_Model[]
     for (i, model1) in enumerate(rev_models)
-        if mean_stackdepth(model1) < 1/(2 * numrefs); push!(rev_models_to_delete, model1); continue; end
+        if mean_stackdepth(model1) < 1/(4 * numrefs); push!(rev_models_to_delete, model1); continue; end
         for j in i + 1:length(fwd_models)
             model2 = fwd_models[j]
             bmodel1 = get_gene_boundaries(model1)
@@ -887,6 +922,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
             end
         end
     end
+    println(fwd_models_to_delete)
     setdiff!(fwd_models, fwd_models_to_delete)
     setdiff!(rev_models, rev_models_to_delete)
 end
@@ -909,8 +945,7 @@ function writeSFF(outfile::Union{String,IO},
                 id::String, # NCBI id
                 genome_length::Int32,
                 mean_coverage::Float32,
-                models::FwdRev{Vector{SFF_Model}},
-                ir::MaybeIR=nothing)
+                models::FwdRev{Vector{SFF_Model}})
 
     function out(outfile::IO)
         model_ids = Dict{String,Int32}()
@@ -955,16 +990,11 @@ end
 function writeGFF3(outfile::Union{String,IO},
     genome_id::String, # NCBI id
     genome_length::Int32,
-    models::FwdRev{Vector{SFF_Model}},
-    ir::MaybeIR=nothing)
+    models::FwdRev{Vector{SFF_Model}})
 
     function out(outfile::IO)
         model_ids = Dict{String,Int32}()
         write(outfile, "##gff-version 3.2.1\n")
-        if ir !== nothing
-            push!(models.forward, SFF_Model("IR-1", 0.0, '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
-            push!(models.reverse, SFF_Model("IR-2", 0.0, '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
-        end
         for model in models.forward
             isnothing(model) && continue
             isempty(model.features) && continue

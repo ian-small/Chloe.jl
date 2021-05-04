@@ -134,8 +134,12 @@ end
 function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32},
     strand::Char, blocks_aligned_to_target::AAlignedBlocks, feature_templates::Dict{String,FeatureTemplate})::Tuple{Vector{Vector{SFF_Feature}},Dict{String,FeatureStack}}
 
+    #println(strand, '\t', blocks_aligned_to_target)
+
     t4 = time_ns()
     annotations = do_annotations(numrefs, target_id, strand, refs, blocks_aligned_to_target)
+
+    #println(strand, '\t', annotations)
 
     # strand_feature_stacks is basically grouped by annotations.path
     target_length = Int32(length(target_seq))
@@ -160,6 +164,8 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         end
         path_to_stack[stack.path] = stack
     end
+
+    #println(strand, '\t', features)
 
     # t6 = time_ns()
     # @info "[$target_id]$strand transferring annotations ($(length(features))): $(ns(t6 - start_ns))"
@@ -227,7 +233,7 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
             codonfrequencies = countcodons(uorf,target_seq)
             #predict with GLMCodingClassifier
             coding_prob = glm_coding_classifier(codonfrequencies)
-            push!(target_strand_models, [SFF_Feature(uorf, 0.0, 0.0, gmatch, coding_prob, coding_prob)])
+            push!(target_strand_models, [SFF_Feature(uorf, 0.0, 0.0, gmatch, coding_prob/2, coding_prob)])
         end
     end
 
@@ -245,8 +251,8 @@ function align(ref::SingleReference, tgt_id::String, tgt_seq::CircularSequence, 
     #but subsequent functions expecting Vector
     ff::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq, tgt_seq, mask))
     rr = revCompBlocks(ff,length(ref.ref_seq.sequence), length(tgt_seq.sequence))
-    
-    fr::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq, rev_tgt_seq, mask))
+    #reverse mask for alignments to reverse strand TO DO: prebuild reverse mask so don't have to reconstruct it each time
+    fr::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq, rev_tgt_seq, CircularMask(reverse(mask.m))))
     rf = revCompBlocks(fr,length(ref.ref_seq.sequence), length(tgt_seq.sequence))
 
     coverage = Float32(100 * target_coverage(ff, rf, length(tgt_seq)))
@@ -324,8 +330,8 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     n = count(isgap, target_forward_strand.sequence)
     if n > 0
         @warn("sequence [$(target_id)] contains gaps which will be removed before analysis")
-        target_forward_strand = ungap!(target_forward_strand)
-        target_reverse_strand = ungap!(target_reverse_strand)
+        target_forward_strand = ungap!(target_forward_strand.sequence)
+        target_reverse_strand = ungap!(target_reverse_strand.sequence)
         target_length = Int32(length(target_forward_strand))
     end
     
@@ -375,7 +381,6 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     function watson()
         models, stacks = do_strand(numrefs, target_id, target_forward_strand, refs, coverages,
             '+', blocks_aligned_to_targetf, feature_templates)
-
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
             sff = toSFF(model, '+', target_forward_strand, sensitivity)
@@ -387,7 +392,6 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     function crick()
         models, stacks = do_strand(numrefs, target_id, target_reverse_strand, refs, coverages,
         '-', blocks_aligned_to_targetr, feature_templates)
-
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
             sff = toSFF(model, '-', target_reverse_strand, sensitivity) 
@@ -404,15 +408,17 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
    
     if ir.blocklength >= 1000
         @info "[$target_id] inverted repeat $(ir.blocklength)"
+        push!(sffs_fwd, SFF_Model("IR-1", 0.0, '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
+        push!(sffs_rev, SFF_Model("IR-2", 0.0, '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
     else
         ir = nothing
     end
     
+    writeSFF(fname, target_id, target_length, geomean(values(coverages)), FwdRev(sffs_fwd, sffs_rev))
     if gff3
-        writeGFF3(join(split(fname, ".")[1:end-1], ".") * ".gff3", target_id, target_length, FwdRev(sffs_fwd, sffs_rev), ir)
+        writeGFF3(join(split(fname, ".")[1:end-1], ".") * ".gff3", target_id, target_length, FwdRev(sffs_fwd, sffs_rev))
     end
-    writeSFF(fname, target_id, target_length, geomean(values(coverages)), FwdRev(sffs_fwd, sffs_rev), ir)
-
+    
     @info success("[$target_id] Overall: $(elapsed(t1))")
     return fname, target_id
 

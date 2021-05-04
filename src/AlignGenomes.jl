@@ -18,8 +18,9 @@ function align(;query, target, output=Base.stdout)
         read!(reader, record)
         seq2 = FASTA.sequence(record)
         alignment = Alignment(seq1, seq2)
-        emask = entropy_mask(seq1, Int32(KMERSIZE))
-        chain = align2seqs(CircularSequence(seq1), CircularSequence(seq2), emask)
+        cseq1 = CircularSequence(seq1)
+        emask = entropy_mask(cseq1, Int32(KMERSIZE))
+        chain = align2seqs(cseq1, CircularSequence(seq2), emask)
         for link in chain
             block = link.data
             query_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in block.src_index:block.src_index+block.blocklength - 1))
@@ -263,7 +264,8 @@ function entropy_mask(cs::CircularSequence, window_length::Int32)::CircularMask
             prob == 0 && continue
             entropy -= prob * log2(prob)
         end
-        entropy < 1.0 && setindex!(mask, true, i:i+window_length-1)
+        #entropy 0 = homopolymer run
+        entropy ≤ 0 && setindex!(mask, true, i:i+window_length-1)
     end
     
     return mask
