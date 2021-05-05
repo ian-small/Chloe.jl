@@ -227,7 +227,7 @@ function entropy_mask(cs::CircularSequence, window_length::Int32)::CircularMask
             comp[2] += 1
         elseif cs[i] == DNA_G
             comp[3] += 1
-        else cs[i] == DNA_T
+        elseif cs[i] == DNA_T
             comp[4] += 1
         end
     end
@@ -237,7 +237,7 @@ function entropy_mask(cs::CircularSequence, window_length::Int32)::CircularMask
         prob == 0 && continue
         entropy -= prob * log2(prob)
     end
-    entropy < 1.0 && setindex!(mask, true, 1:window_length)
+    entropy ≤ 0 && setindex!(mask, true, 1:window_length)
     
     for i::Int32 in 1:length(cs) - 1
         if cs[i] == DNA_A
@@ -246,7 +246,7 @@ function entropy_mask(cs::CircularSequence, window_length::Int32)::CircularMask
             comp[2] -= 1
         elseif cs[i] == DNA_G
             comp[3] -= 1
-        else cs[i] == DNA_T
+        elseif cs[i] == DNA_T
             comp[4] -= 1
         end
         if cs[i+window_length] == DNA_A
@@ -255,7 +255,7 @@ function entropy_mask(cs::CircularSequence, window_length::Int32)::CircularMask
             comp[2] += 1
         elseif cs[i+window_length] == DNA_G
             comp[3] += 1
-        else cs[i+window_length] == DNA_T
+        elseif cs[i+window_length] == DNA_T
             comp[4] += 1
         end
         entropy = 0.0

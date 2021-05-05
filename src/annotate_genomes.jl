@@ -245,14 +245,13 @@ end
 # Union{IO,String}: read fasta from IO buffer or a file (String)
 MayBeIO = Union{String,IO,Nothing}
 
-function align(ref::SingleReference, tgt_id::String, tgt_seq::CircularSequence, rev_tgt_seq::CircularSequence, mask = nothing)::Tuple{FwdRev{FwdRev{AlignedBlocks}},Float32}
+function align(ref::SingleReference, tgt_id::String, tgt_seq::CircularSequence, rev_tgt_seq::CircularSequence, mask::Union{Nothing,FwdRev{CircularMask}} = nothing)::Tuple{FwdRev{FwdRev{AlignedBlocks}},Float32}
     start = time_ns()
     #align2seqs returns linked list
     #but subsequent functions expecting Vector
-    ff::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq, tgt_seq, mask))
+    ff::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq, tgt_seq, mask.forward))
     rr = revCompBlocks(ff,length(ref.ref_seq.sequence), length(tgt_seq.sequence))
-    #reverse mask for alignments to reverse strand TO DO: prebuild reverse mask so don't have to reconstruct it each time
-    fr::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq, rev_tgt_seq, CircularMask(reverse(mask.m))))
+    fr::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq, rev_tgt_seq, mask.reverse))
     rf = revCompBlocks(fr,length(ref.ref_seq.sequence), length(tgt_seq.sequence))
 
     coverage = Float32(100 * target_coverage(ff, rf, length(tgt_seq)))
@@ -330,8 +329,8 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     n = count(isgap, target_forward_strand.sequence)
     if n > 0
         @warn("sequence [$(target_id)] contains gaps which will be removed before analysis")
-        target_forward_strand = ungap!(target_forward_strand.sequence)
-        target_reverse_strand = ungap!(target_reverse_strand.sequence)
+        ungap!(target_forward_strand.sequence)
+        ungap!(target_reverse_strand.sequence)
         target_length = Int32(length(target_forward_strand))
     end
     
@@ -361,10 +360,11 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     blocks_aligned_to_targetr = AAlignedBlocks(undef, numrefs)
     coverages = Dict{String,Float32}()
     refs = Vector{SingleReference}(undef, numrefs)
+    masks = FwdRev(emask, CircularMask(reverse(emask.m)))
 
     Threads.@threads for i in 1:numrefs
         ref = readSingleReference(refsdir, refpicks[i][1])
-        a = align(ref, target_id, target_forward_strand, target_reverse_strand, emask)
+        a = align(ref, target_id, target_forward_strand, target_reverse_strand, masks)
         blocks_aligned_to_targetf[i] = a[1].forward
         blocks_aligned_to_targetr[i] = a[1].reverse
         lock(REENTRANT_LOCK)
@@ -394,7 +394,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
         '-', blocks_aligned_to_targetr, feature_templates)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
-            sff = toSFF(model, '-', target_reverse_strand, sensitivity) 
+            sff = toSFF(model, '-', target_reverse_strand, sensitivity)
             !isnothing(sff) && push!(final_models, sff)
         end
         final_models

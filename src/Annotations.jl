@@ -149,7 +149,7 @@ function findOverlaps(ref_features::FeatureArray, aligned_blocks::AlignedBlocks)
     annotations
 end
 
-struct FeatureTemplate
+#= struct FeatureTemplate
     path::String  # similar to .sff path
     median_length::Float32 #median length of feature
     #GLM coefficients
@@ -159,6 +159,18 @@ struct FeatureTemplate
     match_coef::Float64
     depth_length_coef::Float64
     depth_match_coef::Float64
+end
+ =#
+struct FeatureTemplate
+    path::String  # similar to .sff path
+    median_length::Float32 #median length of feature
+    #stats to calculate zscores
+    median_rlength::Float32
+    std_rlength::Float32
+    median_stackdepth::Float32
+    std_stackdepth::Float32
+    median_match::Float32
+    std_match::Float32
 end
 
 datasize(s::FeatureTemplate) = sizeof(FeatureTemplate) + sizeof(s.path)
@@ -185,8 +197,10 @@ function readTemplates(file::String)::Dict{String,FeatureTemplate}
             if path_components[2] ≠ "intron"
                 push!(gene_exons, path_components[1])
             end
-            template = FeatureTemplate(fields[1], parse(Float32, fields[2]), parse(Float64, fields[3]), parse(Float64, fields[4]),
-                 parse(Float64, fields[5]), parse(Float64, fields[6]), parse(Float64, fields[7]), parse(Float64, fields[8]))
+            #template = FeatureTemplate(fields[1], parse(Float32, fields[2]), parse(Float64, fields[3]), parse(Float64, fields[4]),
+            #     parse(Float64, fields[5]), parse(Float64, fields[6]), parse(Float64, fields[7]), parse(Float64, fields[8]))
+            template = FeatureTemplate(fields[1], parse(Float32, fields[2]), parse(Float32, fields[3]), parse(Float32, fields[4]),
+                 parse(Float32, fields[5]), parse(Float32, fields[6]), parse(Float32, fields[7]), parse(Float32, fields[8]))
             if haskey(templates, template.path)
                 @error "duplicate path: $(template.path) in \"$file\""
             end
@@ -450,7 +464,7 @@ function groupFeaturesIntoGeneModels(sff_features::Vector{SFF_Feature})::Vector{
             right_border = sff_feature.feature.start + sff_feature.feature.length - 1
         #add feature to model if the gene names match and they are less than 3kb apart; 3kb is an arbitrary limit set to include the longest intron (trnK, ~2.5kb) and may need to be reduced
         #a shorter distance limit would require the features to be pre-sorted by position, not name, so that we know they are being added in order
-        elseif current_model[1].feature.gene == sff_feature.feature.gene && min(left_border - (sff_feature.feature.start + sff_feature.feature.length - 1), sff_feature.feature.start - right_border) < 3000
+        elseif current_model[1].feature.gene == sff_feature.feature.gene && max(left_border, sff_feature.feature.start) - min(right_border, sff_feature.feature.start + sff_feature.feature.length -1) < 3000
             push!(current_model, sff_feature)
             left_border = min(left_border, sff_feature.feature.start)
             right_border = max(right_border, sff_feature.feature.start + sff_feature.feature.length - 1)
@@ -781,12 +795,11 @@ function toSFF(model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSeq
     model_prob = 0.0
     for (n, sff_feature) in enumerate(model)
         #keep model if mean feature probability exceeds the sensitivity threshold
-        model_prob = n == 1 ? 1 - sff_feature.feature_prob : model_prob * (1 - sff_feature.feature_prob)
+        model_prob = sff_feature.feature_prob > model_prob ? sff_feature.feature_prob : model_prob
         if sff_feature.feature.type ≠ "intron"
             exon_count += 1
         end
     end
-    model_prob = 1 - model_prob
     exceeds_sensitivity = false
     if model_prob ≥ sensitivity || isnan(model_prob)
         exceeds_sensitivity = true
@@ -848,8 +861,19 @@ function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String
     maxlengths
 end
 
-function feature_glm(template::FeatureTemplate, flength::Float32, fdepth::Float32, gmatch::Float32)::Float32
+#= function feature_glm(template::FeatureTemplate, flength::Float32, fdepth::Float32, gmatch::Float32)::Float32
     pred = template.intercept + template.length_coef * flength + template.depth_coef * fdepth + template.match_coef * gmatch + fdepth * flength * template.depth_length_coef + fdepth * gmatch * template.depth_match_coef
+    odds = exp(pred)
+    return Float32(odds / (1.0 + odds))
+end =#
+
+function feature_glm(template::FeatureTemplate, flength::Float32, fdepth::Float32, gmatch::Float32)::Float32
+    flength ≤ 0 && return Float32(0.0)
+    fdepth ≤ 0 && return Float32(0.0)
+    length = log(flength)
+    depth = log(fdepth)
+    match = gmatch/100
+    pred = 4.143258100565117 + 4.598237141011156 * length + -0.6252555757863558 * depth + 1.8287484073546152 * match + depth * length * 0.8532808688684391 + depth * match * 4.656493140147233
     odds = exp(pred)
     return Float32(odds / (1.0 + odds))
 end
@@ -876,34 +900,42 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
 
     fwd_models_to_delete = SFF_Model[]
     for (i, model1) in enumerate(fwd_models)
-        if mean_stackdepth(model1) < 1/(4 * numrefs); push!(fwd_models_to_delete, model1); continue; end
+        if mean_stackdepth(model1) < 1/(3 * numrefs); push!(fwd_models_to_delete, model1); continue; end
         for j in i + 1:length(fwd_models)
             model2 = fwd_models[j]
             bmodel1 = get_gene_boundaries(model1)
             bmodel2 = get_gene_boundaries(model2)
             if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2))> 0 && !allowed_model_overlap(model1, model2))
-                if model1.gene_prob > 1.05 * model2.gene_prob ##small tolerance for unequal probs
+                if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
                     push!(fwd_models_to_delete, model2)
-                elseif model2.gene_prob > 1.05 * model1.gene_prob
+                elseif model2.gene_prob > model1.gene_prob
+                    push!(fwd_models_to_delete, model1)
+                elseif mean_stackdepth(model1) > mean_stackdepth(model2) #if probs are equal, decide on stackdepth
+                    push!(fwd_models_to_delete, model2)
+                elseif mean_stackdepth(model2) > mean_stackdepth(model1)
                     push!(fwd_models_to_delete, model1)
                 end
             end
         end
     end
-    #println(fwd_models_to_delete)
     setdiff!(fwd_models, fwd_models_to_delete)
     
     rev_models_to_delete = SFF_Model[]
     for (i, model1) in enumerate(rev_models)
-        if mean_stackdepth(model1) < 1/(4 * numrefs); push!(rev_models_to_delete, model1); continue; end
-        for j in i + 1:length(fwd_models)
-            model2 = fwd_models[j]
+        if mean_stackdepth(model1) < 1/(3 * numrefs); push!(rev_models_to_delete, model1); continue; end
+        for j in i + 1:length(rev_models)
+            model2 = rev_models[j]
             bmodel1 = get_gene_boundaries(model1)
             bmodel2 = get_gene_boundaries(model2)
-            if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2)) > 0 && bmodel1[1] % 3 == bmodel2[1] % 3)
-                if model1.gene_prob > 1.05 * model2.gene_prob ##small tolerance for unequal probs
+            if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2)) > 0 && !allowed_model_overlap(model1, model2))
+                println(model1, '\t', model2)
+                if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
                     push!(rev_models_to_delete, model2)
-                elseif model2.gene_prob > 1.05 * model1.gene_prob
+                elseif model2.gene_prob > model1.gene_prob
+                    push!(rev_models_to_delete, model1)
+                elseif mean_stackdepth(model1) > mean_stackdepth(model2) #if probs are equal, decide on stackdepth
+                    push!(rev_models_to_delete, model2)
+                elseif mean_stackdepth(model2) > mean_stackdepth(model1)
                     push!(rev_models_to_delete, model1)
                 end
             end
@@ -915,14 +947,13 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
     empty!(rev_models_to_delete)
     for model1 in fwd_models, model2 in rev_models
         if model1.gene == model2.gene
-            if model1.gene_prob > 1.05 * model2.gene_prob ##small tolerance for unequal probs
+            if model1.gene_prob > 1.05 * model2.gene_prob ##small tolerance for unequal probs to avoid deleting real duplicates in IRs
                 push!(rev_models_to_delete, model2)
             elseif model2.gene_prob > 1.05 * model1.gene_prob
                 push!(fwd_models_to_delete, model1)
             end
         end
     end
-    println(fwd_models_to_delete)
     setdiff!(fwd_models, fwd_models_to_delete)
     setdiff!(rev_models, rev_models_to_delete)
 end
@@ -976,13 +1007,12 @@ function sff2gffcoords(f::Feature, strand::Char, genome_length::Integer)
     start = f.start
     finish = f.start + f.length - 1
     length = finish - start + 1
+    finish %= genome_length
     
     if strand == '-'
         start = genome_length - finish + 1
-        if start < 1
-            start += genome_length
-        end
         finish = start + length - 1
+        finish %= genome_length
     end
     return (start, finish, length)
 end
@@ -1100,7 +1130,7 @@ function writeModelToGFF3(outfile, model::SFF_Model, genome_id::String, genome_l
         start, finish, length = sff2gffcoords(f, model.strand, genome_length)
         
         phase = type == "CDS" ? string(f.phase) : "."
-        write_line(type, start, finish, 1.0 - sff.feature_prob, annotationPath(f), parent, phase)
+        write_line(type, start, finish, 1.0 - sff.feature_prob, id * "." * type * "." * f.order, parent, phase)
     end
     write(outfile, "###\n")
 end
