@@ -928,7 +928,6 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
             bmodel1 = get_gene_boundaries(model1)
             bmodel2 = get_gene_boundaries(model2)
             if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2)) > 0 && !allowed_model_overlap(model1, model2))
-                println(model1, '\t', model2)
                 if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
                     push!(rev_models_to_delete, model2)
                 elseif model2.gene_prob > model1.gene_prob
