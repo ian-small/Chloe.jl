@@ -50,11 +50,6 @@ function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask = nothi
     lenseq1 = Int32(length(seq1))
     lenseq2 = Int32(length(seq2))
 
-    # sa_index = ra[1]
-    # for i in -5:5
-    #     println(sa[sa_index+i], '\t', lcps[sa_index+i], '\t', joinedstring[sa[sa_index+i]:min(sa[sa_index+i]+50,end)])
-    # end
-
     src2tgt = blockchain(alignment, sa, ra, lcps, one:lenseq1, one:lenseq2, matchLengthThreshold(lenseq1, lenseq2), mask)
     src2tgt = circularise(src2tgt, lenseq1)
 
@@ -117,10 +112,6 @@ function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBl
     tgt_length = length(alignment.seq2)
     (srcgap, tgtgap) = contiguousblockgaps(head, tail, src_length, tgt_length)
     chain = blockchain(alignment, sa, ra, lcps, srcgap, tgtgap, minblocksize, mask)
-    # println("chain length: ", length(chain))
-    # for link in chain
-    #     println(link)
-    # end
     length(chain) == 0 && return mainchain
     lock(REENTRANT_LOCK)
     head.next = chain.firstlink
@@ -129,12 +120,10 @@ function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBl
     unlock(REENTRANT_LOCK)
     #recursion
     for gap in gaps(head,tail,chain.links+1)
-        #println("maybe fill gap: ", gap)
         (srcgap, tgtgap) = contiguousblockgaps(gap[1], gap[2], src_length, tgt_length)
         length(srcgap) < MINIMUMFILLABLEGAP || length(tgtgap) < MINIMUMFILLABLEGAP && continue #gap too short to attempt to fill
         length(srcgap) == length(tgtgap) && length(srcgap) ≤ MAXIMUMMERGEABLEGAP && continue #gap is going to be merged, don't bother trying to fill
         mlt = matchLengthThreshold(Int32(length(srcgap)), Int32(length(tgtgap)))
-        #println("mlt: ", mlt)
         mlt ≥ minblocksize && continue #gap has already been searched with this minblocksize
         gapfill!(mainchain, gap[1], gap[2], alignment, sa, ra, lcps, mlt, mask)
     end
@@ -163,7 +152,6 @@ function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, 
         end
         toplcp = minlcp
         toptgt_start = tgt_start
-        #println(nt,"\toffset: ", offset, "\ttoplowlcp: ", toplcp)
         offset = 1
         tgt_start = 0
         mlt = max(toplcp, minblocksize)
@@ -177,22 +165,14 @@ function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, 
                 tgt_start in tgtgap && break
             end
             offset += 1
-            #println("offset: ",offset,"\tmincp: ", minlcp)
         end
         toplcp = max(toplcp,minlcp)
         toplcp < minblocksize && continue
         if toplcp > minlcp; tgt_start = toptgt_start; end
         new_block = AlignedBlock(mod1(nt, src_length), mod1(tgt_start, tgt_length), mod1(toplcp, min(src_length, tgt_length)))
-        if isnothing(mask) || sum(mask[new_block.tgt_index:new_block.tgt_index + new_block.blocklength - 1]) == 0 ##only add block if it doesn't intersect low complexity region
+        if isnothing(mask) || sum(mask[new_block.tgt_index:new_block.tgt_index + new_block.blocklength - 1]) < new_block.blocklength ## add block if it is not included in low complexity region
             append!(blocks, new_block)
         end
-        # if new_block.blocklength > 10000
-        #     @error "excessive blocklength in blockchain() $(new_block)"
-        #     println(nt,"\toffset: ", offset, "\tsa_index: ", sa_index, "\tsa length: ", length(sa), "\tsa: ", sa[sa_index + offset], "\ttgt_start: ", tgt_start, "\tmlt: ", mlt, "\ttoplcp: ", toplcp)
-        #     for i in -5:5
-        #         println(sa[sa_index+i], '\t', lcps[sa_index+i], '\t', LongDNASeq(reinterpret(DNA, alignment[sa[sa_index+i]:min(sa[sa_index+i]+50,end)])) )
-        #     end
-        # end
     end
     @debug "found $(length(blocks)) blocks"
     return blocks

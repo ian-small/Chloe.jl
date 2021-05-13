@@ -1,10 +1,8 @@
 import Printf: @sprintf
 import StatsBase
-import IntervalTrees: IntervalBTree, AbstractInterval, Interval
 using BioSequences
-using JLD2
 
-mutable struct Feature <: AbstractInterval{Int32}
+mutable struct Feature
     gene::String
     type::String
     order::Char
@@ -26,17 +24,12 @@ mutable struct Feature <: AbstractInterval{Int32}
     end
 end
 
-# number of features we need to scan
-RefTree = IntervalBTree{Int32,Feature,64}
-
 Base.first(f::Feature) = f.start
 function Base.last(f::Feature)
     f.start + f.length - one
 end
-Base.intersect(i::RefTree, lo::Integer, hi::Integer) = intersect(i, Interval{Int32}(lo, hi))
 
 datasize(f::Feature) = sizeof(Feature) + sizeof(f.annotationPath()) + sum(sizeof(p) for p in f._path_components)
-datasize(i::RefTree) = sum(datasize(f) for f in i)
 
 const annotationPath(f::Feature) = begin
     join([f.gene, f.type, string(f.order)], "/")
@@ -49,11 +42,7 @@ struct FeatureArray
     genome_id::String
     genome_length::Int32
     strand::Char
-    # features::AFeature
-    interval_tree::RefTree
-end
-datasize(f::FeatureArray) = begin
-    sizeof(FeatureArray) + sizeof(f.genome_id)  + datasize(f.interval_tree)
+    features::AFeature
 end
 
 #extended Feature struct to add prediction info
@@ -85,10 +74,10 @@ function readFeatures(file::String)::FwdRev{FeatureArray}
                 push!(r_features, feature)
             end
         end
-        sort!(f_features)
-        sort!(r_features)
-        f_strand_features = FeatureArray(genome_id, genome_length, '+', RefTree(f_features))
-        r_strand_features = FeatureArray(genome_id, genome_length, '-', RefTree(r_features))
+        sort!(f_features, by = f -> [f.gene, f.start])
+        sort!(r_features, by = f -> [f.gene, f.start])
+        f_strand_features = FeatureArray(genome_id, genome_length, '+', f_features)
+        r_strand_features = FeatureArray(genome_id, genome_length, '-', r_features)
         return FwdRev(f_strand_features, r_strand_features)
     end
 end
@@ -110,57 +99,27 @@ end
 datasize(a::Annotation) = sizeof(Annotation)  + sizeof(a.path)# genome_id is shared + sizeof(a.genome_id)
 datasize(v::Vector{Annotation}) = sum(datasize(a) for a in v)
 
-function addAnnotation(genome_id::String, feature::Feature, block::AlignedBlock)::Union{Nothing,Annotation}
-    #println(block)
-    #coordinates in source genome
-    src_start = max(feature.start, block.src_index)
-    src_end::Int32 = min(feature.start + feature.length, block.src_index + block.blocklength) - 1
-    src_length::Int32 = src_end - src_start + 1
-    src_length <= 0 && return nothing
-    offset5 = src_start - feature.start
-    offset3 = src_end - (feature.start + feature.length -1)
-    if (feature.type == "CDS")
-        phase = phaseCounter(feature.phase, offset5)
-    else
-        phase = 0
-    end
-    #coordinates in target genome
-    tgt_start = src_start > feature.start ? block.tgt_index : block.tgt_index + (feature.start - block.src_index)
-
-    annotation_path = annotationPath(feature)
-    Annotation(genome_id, annotation_path, 
-                            tgt_start,
-                            src_length, offset5,
-                            offset3,
-                            phase)
-end
-
-function findOverlaps(ref_features::FeatureArray, aligned_blocks::AlignedBlocks)::Vector{Annotation}
+function transfer_annotations(ref_features::FeatureArray, aligned_blocks::AlignedBlocks, src_length::Int32, target_length::Int32)::Vector{Annotation}
     annotations = Vector{Annotation}()
-    for block in aligned_blocks
-        for feature in intersect(ref_features.interval_tree, block.src_index, block.src_index + block.blocklength - one)
-            # @assert rangesOverlap(feature.start, feature.length, block[1], block[3])
-            anno = addAnnotation(ref_features.genome_id, feature, block)
-            if anno !== nothing
-                push!(annotations, anno)
+    for block in aligned_blocks, feature in ref_features.features
+        feature_overlaps = overlaps(range(block.src_index, length = block.blocklength), range(feature.start, length = feature.length), src_length)
+        for o in feature_overlaps
+            offset5 = o.start - feature.start
+            offset3 = circulardistance(o.stop, feature.start + feature.length -1, src_length)
+            if (feature.type == "CDS")
+                phase = phaseCounter(feature.phase, offset5)
+            else
+                phase = 0
             end
+            #coordinates in target genome
+            tgt_start = o.start > feature.start ? block.tgt_index : mod1(block.tgt_index + (feature.start - block.src_index), target_length)
+            #println(block, '\t', feature, '\t', tgt_start, '\t', circulardistance(o.start, o.stop, src_length) + 1, '\t', offset5, '\t', offset3)
+            push!(annotations, Annotation(ref_features.genome_id, annotationPath(feature), tgt_start, circulardistance(o.start, o.stop, src_length) + 1, offset5, offset3, phase))
         end
     end
     annotations
 end
 
-#= struct FeatureTemplate
-    path::String  # similar to .sff path
-    median_length::Float32 #median length of feature
-    #GLM coefficients
-    intercept::Float64
-    length_coef::Float64
-    depth_coef::Float64
-    match_coef::Float64
-    depth_length_coef::Float64
-    depth_match_coef::Float64
-end
- =#
 struct FeatureTemplate
     path::String  # similar to .sff path
     median_length::Float32 #median length of feature
@@ -229,8 +188,6 @@ function fillFeatureStack(target_length::Int32, annotations::Vector{Annotation},
     feature_templates::Dict{String,FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
 
     # Implementation Note: Feature stacks are rather large (we can get 80MB)
-    # ... but! the memory requirement is upperbounded by the number of features
-    # in the optimized_templates.v2.tsv
 
     # assumes annotations is ordered by path
     # so that each stacks[idx] array has the same annotation.path
@@ -358,22 +315,6 @@ function alignTemplateToStack(feature_stack::FeatureStack)::Tuple{Vector{Tuple{I
     return hits, median_length
 end
 
-#= function getFeaturePhaseFromAnnotationOffsets(feat::Feature, annotations::Vector{Annotation})::Int8
-    phases = Int8[]
-    for annotation in annotations[findall(x -> x.path == annotationPath(feat), annotations)]
-        if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
-            # estimating feature phase from annotation phase
-            phase = phaseCounter(annotation.phase, feat.start - annotation.start)
-            push!(phases, phase)
-        end
-    end
-    if length(phases) == 0
-        return Int8(0)
-    end
-    println(feat, '\t', phases)
-    return StatsBase.mode(phases) # return most common phase
-end =#
-
 function weightedMode(values::Vector{Int32}, weights::Vector{Float32})::Int32
     w, v = findmax(StatsBase.addcounts!(Dict{Int32,Float32}(), values, weights))
     return v
@@ -392,7 +333,7 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::Vector{Anno
     ## Fix 5' boundary and feature phase
     for annotation in matching_annotations
         annotation.offset5 >= feat.length && continue
-        if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
+        if length(overlaps(range(feat.start, length = feat.length), range(annotation.start, length = annotation.length), target_length)) > 0
             #ignore if we already have an annotation from this genome
             if isnothing(findfirst(a -> a.genome_id == annotation.genome_id, overlapping_annotations))
                 minstart = min(minstart, annotation.start)
@@ -400,6 +341,7 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::Vector{Anno
             end
         end
     end
+
     n = length(overlapping_annotations)
     end5s = Vector{Int32}(undef, n)
     end5ws = Vector{Float32}(undef, n)
@@ -426,7 +368,7 @@ function refineMatchBoundariesByOffsets!(feat::Feature, annotations::Vector{Anno
     empty!(overlapping_annotations)
     for annotation in Iterators.reverse(matching_annotations) #iterate in reverse to ensure 3' annotations are reached first
         annotation.offset3 >= feat.length && continue
-        if rangesOverlap(feat.start, feat.length, annotation.start, annotation.length)
+        if length(overlaps(range(feat.start, length = feat.length), range(annotation.start, length = annotation.length), target_length)) > 0
             #ignore if we already have an annotation from this genome
             if isnothing(findfirst(a -> a.genome_id == annotation.genome_id, overlapping_annotations))
                 maxend = max(maxend, annotation.start + annotation.length -1)
@@ -493,9 +435,6 @@ function translateModel(target_seq::CircularSequence, model::Vector{SFF_Feature}
         append!(cds, target_seq[feat.start:feat.start + feat.length - 1])
     end
     cds = cds[first(model).feature.phase + 1:end]
-    if mod(length(cds), 3) ≠ 0
-        println(model)
-    end
     return translate(cds)
 end
 
@@ -521,63 +460,6 @@ function startScore(cds::Feature, codon::SubString)
         return 0
     end
 end
-
-# function findStartCodon2!(cds::Feature, genome_length::Integer, genomeloop::CircularSequence, predicted_starts,
-#                           predicted_starts_weights, feature_stack, shadowstack)
-#     # define range in which to search from upstream stop to end of feat
-#     start5 = genome_wrap(genome_length, cds.start + cds.phase)
-#     codon = SubString(genomeloop, start5, start5 + 2)
-#     while !isStopCodon(codon, false)
-#         start5 = genome_wrap(genome_length, start5 - 3)
-#         codon = SubString(genomeloop, start5, start5 + 2)
-#     end
-#     search_range = start5:cds.start + cds.length - 1
-#     window_size = length(search_range)
-
-#     codons = zeros(window_size)
-#     phase = zeros(window_size)
-#     cumulative_stack_coverage = zeros(window_size)
-#     cumulative_shadow_coverage = zeros(window_size)
-
-#     stack_coverage = 0
-#     shadow_coverage = 0
-#     for (i, nt) in enumerate(search_range)
-#         gw = genome_wrap(genome_length, nt)
-#         codon = SubString(genomeloop, nt, nt + 2)
-#         codons[i] = startScore(cds, codon)
-#         if i % 3 == 1
-#             phase[i] = 1.0
-#         end
-#         if feature_stack[gw] > 0
-#             stack_coverage += 1
-#         elseif shadowstack[gw] < 0
-#             shadow_coverage -= 1
-#         end
-#         if stack_coverage > 3
-#             cumulative_stack_coverage[i] = 3 - stack_coverage
-#         end
-#         cumulative_shadow_coverage[i] = shadow_coverage
-#     end
-
-#     predicted_starts = zeros(window_size)
-#     for (s, w) in zip(predicted_starts, predicted_starts_weights)
-#         for (i, nt) in enumerate(search_range)
-#             distance = 1 + (s - nt)^2
-#             predicted_starts[i] = w / distance
-#         end
-#     end
-
-#     # combine vectors using parameter weights
-#     result = codons .* phase .* cumulative_stack_coverage .+ cumulative_shadow_coverage .+ predicted_starts
-#     # set feat.start to highest scoring position
-#     maxstartscore, maxstartpos = findmax(result)
-#     maxstartpos += start5 - 1
-#     cds.length += cds.start - maxstartpos
-#     cds.start = genome_wrap(genome_length, maxstartpos)
-#     # set phase to zero
-#     cds.phase = 0
-#     return cds
-# end
 
 function findStartCodon!(cds::Feature, genome_length::Int32, target_seq::CircularSequence)
     # assumes phase has been correctly set
@@ -642,10 +524,9 @@ function findStartCodon!(cds::Feature, genome_length::Int32, target_seq::Circula
     return cds
 end
 
-function setLongestORF!(sfeat::SFF_Feature, orfs::Vector{Feature})
+function setLongestORF!(sfeat::SFF_Feature, orfs::Vector{Feature}, genome_length::Int32)
     #find in-frame orf with longest overlap with feature
     #orfs are sorted by descending length
-    #println(sfeat)
     f = sfeat.feature
     original_start = f.start
     original_length = f.length
@@ -655,8 +536,10 @@ function setLongestORF!(sfeat::SFF_Feature, orfs::Vector{Feature})
     for orf in orfs
         orf.length < max_overlap && break
         orf_frame = mod1(orf.start, 3)
-        if f_frame == orf_frame && rangesOverlap(orf.start, orf.length, f.start, f.length)
-            overlap = length(intersect(range(orf.start, length = orf.length), range(f.start, length = f.length)))
+        if f_frame == orf_frame
+            overlap_array = overlaps(range(orf.start, length = orf.length), range(f.start, length = f.length), genome_length)
+            length(overlap_array) == 0 && continue
+            overlap = overlap_array[1].stop - overlap_array[1].start + 1
             if overlap > max_overlap
                 max_overlap = overlap
                 overlap_orf = orf
@@ -714,9 +597,8 @@ function refineGeneModels!(gene_models::Vector{Vector{SFF_Feature}}, target_seq:
         last_exon = last(model).feature
         # if CDS, find phase, stop codon and set feature.length
         if last_exon.type == "CDS"
-            #last_exon.phase = getFeaturePhaseFromAnnotationOffsets(last_exon, annotations)
             if last_exon.gene ≠ "rps12A"
-                setLongestORF!(last(model), orfs)
+                setLongestORF!(last(model), orfs, genome_length)
             end
             last_cds_examined = last_exon
         end
@@ -734,7 +616,6 @@ function refineGeneModels!(gene_models::Vector{Vector{SFF_Feature}}, target_seq:
             next_feature.length ≤ 0 && push!(features_to_remove, model[i+1])
             # if CDS, check phase is compatible
             if feature.type == "CDS"
-                #feature.phase = getFeaturePhaseFromAnnotationOffsets(feature, annotations)
                 if last_cds_examined !== nothing && phaseCounter(feature.phase, feature.length % Int32(3)) != last_cds_examined.phase
                     # refine boundaries (how?)
                 end
@@ -742,6 +623,7 @@ function refineGeneModels!(gene_models::Vector{Vector{SFF_Feature}}, target_seq:
             end
         end
         setdiff!(model, features_to_remove)
+        isempty(model) && continue
         # if CDS, find start codon and set feature.start
         first_exon = first(model).feature
         if first_exon.type == "CDS"
@@ -860,12 +742,6 @@ function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String
     add_model(models.reverse)
     maxlengths
 end
-
-#= function feature_glm(template::FeatureTemplate, flength::Float32, fdepth::Float32, gmatch::Float32)::Float32
-    pred = template.intercept + template.length_coef * flength + template.depth_coef * fdepth + template.match_coef * gmatch + fdepth * flength * template.depth_length_coef + fdepth * gmatch * template.depth_match_coef
-    odds = exp(pred)
-    return Float32(odds / (1.0 + odds))
-end =#
 
 function feature_glm(template::FeatureTemplate, flength::Float32, fdepth::Float32, gmatch::Float32)::Float32
     flength ≤ 0 && return Float32(0.0)
@@ -1109,7 +985,7 @@ function writeModelToGFF3(outfile, model::SFF_Model, genome_id::String, genome_l
     end
     # RNA product
     parent = id
-    if ft == "CDS"
+    #= if ft == "CDS"
         parent =  id * ".mRNA"
         write_line("mRNA", start, finish, 1.0 - model.gene_prob, parent, id)
     elseif ft == "rRNA"
@@ -1118,14 +994,14 @@ function writeModelToGFF3(outfile, model::SFF_Model, genome_id::String, genome_l
     elseif ft == "tRNA"
         parent =  id * ".tRNA"
         write_line("tRNA", start, finish, 1.0 - model.gene_prob, parent, id)
-    end
+    end =#
     #exons
     for sff in model.features
         f = sff.feature
         type = f.type
-        if type == "tRNA" || type == "rRNA"
+        #= if type == "tRNA" || type == "rRNA"
             type = "exon"
-        end
+        end =#
         start, finish, length = sff2gffcoords(f, model.strand, genome_length)
         
         phase = type == "CDS" ? string(f.phase) : "."

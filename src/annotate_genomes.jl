@@ -109,12 +109,12 @@ function flatten(vanno::Vector{Vector{Annotation}})::Vector{Annotation}
     ret
 end
 
-function do_annotations(numrefs:: Int, target_id::String, strand::Char, refs::Vector{SingleReference}, blocks_aligned_to_target::AAlignedBlocks)
+function do_annotations(numrefs:: Int, target_id::String, strand::Char, refs::Vector{SingleReference}, blocks_aligned_to_target::AAlignedBlocks, target_length::Int32)
 
     function do_one(refsrc, ref_features, blocks)
         st = time_ns()
-        annotations = findOverlaps(ref_features.forward, blocks.forward)
-        annotations = vcat(annotations, findOverlaps(ref_features.reverse, blocks.reverse))
+        annotations = transfer_annotations(ref_features.forward, blocks.forward, length(refsrc), target_length)
+        annotations = vcat(annotations, transfer_annotations(ref_features.reverse, blocks.reverse, length(refsrc), target_length))
         @debug "[$(target_id)]$(strand) $(refsrc)± overlaps $(length(annotations)): $(elapsed(st))"
         return annotations
     end
@@ -137,12 +137,10 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
     #println(strand, '\t', blocks_aligned_to_target)
 
     t4 = time_ns()
-    annotations = do_annotations(numrefs, target_id, strand, refs, blocks_aligned_to_target)
-
-    #println(strand, '\t', annotations)
+    target_length = Int32(length(target_seq))
+    annotations = do_annotations(numrefs, target_id, strand, refs, blocks_aligned_to_target, target_length)
 
     # strand_feature_stacks is basically grouped by annotations.path
-    target_length = Int32(length(target_seq))
     strand_feature_stacks, shadow = fillFeatureStack(target_length, annotations, feature_templates)
 
     t5 = time_ns()
@@ -187,7 +185,6 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         end
         #add relative_length, stack_depth and classifier predictions to feature info
         sff_features[i] = SFF_Feature(feature, relative_length, stackdepth, gmatch, feature_prob, coding_prob)
-        #println(feature, '\t', sff_features[i])
     end
 
     # t7 = time_ns()
@@ -224,7 +221,7 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
             f = sf.feature
             #println(f)
             f_frame = mod1(f.start + f.phase, 3)
-            if orf_frame == f_frame && rangesOverlap(uorf.start, uorf.length, f.start, f.length)
+            if orf_frame == f_frame && length(overlaps(range(uorf.start, length = uorf.length), range(f.start, length = f.length), target_length)) > 0
                 unassigned = false
             end
         end

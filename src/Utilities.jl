@@ -233,109 +233,45 @@ end
     return stop ≥ start ? stop - start : stop + seqlength - start
 end
 
+#handles circular ranges
+function overlaps(range1::UnitRange{Int32}, range2::UnitRange{Int32}, glength::Int32)::Vector{UnitRange{Int32}}
+    ranges1 = UnitRange{Int32}[]
+    ranges2 = UnitRange{Int32}[]
 
-@inline function rangesOverlap(start1::Int32, length1::Int32, start2::Int32, length2::Int32)::Bool
-    if start1 >= start2 + length2 || start2 >= start1 + length1
-        return false
+    if range1.stop ≤ glength
+        push!(ranges1, range1)
+    else
+        push!(ranges1, range(range1.start, stop = glength))
+        push!(ranges1, range(1, stop = mod1(range1.stop, glength)))
     end
-    true
-end
 
-
-# --- wrapped iterators
-
-struct ModuloIteratorState{T <: Integer}
-    start::T
-    step::T
-    length::T # number of iterations
-    gene_length::T
-end
-struct VModuloIteratorState{T <: Integer,V}
-    start::T
-    step::T
-    length::T # number of iterations
-    v::Vector{V}
-end
-
-Base.length(t::ModuloIteratorState{T}) where {T} = t.length
-Base.eltype(::Type{ModuloIteratorState{T}}) where {T} = T
-Base.IteratorSize(::Type{ModuloIteratorState{T}}) where {T} = Base.HasLength()
-
-Base.length(t::VModuloIteratorState{T,V}) where {T,V} = t.length
-Base.eltype(::Type{VModuloIteratorState{T,V}}) where {T,V} = V
-Base.IteratorSize(::Type{VModuloIteratorState{T,V}}) where {T,V} = Base.HasLength()
-
-function Base.iterate(i::ModuloIteratorState{T}, state=(i.start, i.length)) where {T}
-    pos, n = state
-        n -= 1
-    if n < 0
-        return nothing
+    if range2.stop ≤ glength
+        push!(ranges2, range2)
+    else
+        push!(ranges2, range(range2.start, stop = glength))
+        push!(ranges2, range(1, stop = mod1(range2.stop, glength)))
     end
-    pos += i.step
-    m = i.gene_length
-    if pos > m
-        pos -= m
-    elseif pos ≤ 0
-        pos += m
-    end
-    return (pos, (pos, n))
-end
-function Base.iterate(i::VModuloIteratorState{T,V}, state=(i.start, i.length)) where {T,V}
-    pos, n = state
-        n -= 1
-    if n < 0
-        return nothing
-    end
-    pos += i.step
-    m = length(i.v)
-    if pos > m
-        pos -= m
-    elseif pos ≤ 0
-        pos += m
-    end
-    @inbounds v = i.v[pos]
-    return (v, (pos, n))
-end
-function iter_wrap(r::UnitRange{<:Integer}, gene_length::T) where {T <: Integer}
-    # for i in iter_wrap(-5:5, 10)
-    # 5,6,7,8,9,10,1,2,3,4,5
-    # end
-    @boundscheck 1 ≤ gene_length || throw(Base.BoundsError("step size too large"))
-    start = genome_wrap(gene_length, r.start)
-    return ModuloIteratorState(promote(start - 1, 1, length(r), gene_length)...)
-end
-function iter_wrap(r::UnitRange{<:Integer}, v::Vector{T}) where {T}
-    @boundscheck 1 ≤ length(v) || throw(Base.BoundsError("step size too large"))
-    start = genome_wrap(length(v), r.start)
-    return VModuloIteratorState(start - 1, 1, length(r), v)
-end
-function iter_wrap(r::StepRange{<:Integer,<:Integer}, gene_length::T) where {T <: Integer}
-    @boundscheck abs(r.step) ≤ gene_length || throw(Base.BoundsError("step size too large"))
-    return ModuloIteratorState(promote(genome_wrap(gene_length, r.start) - r.step, r.step, length(r), gene_length)...)
-end
-function iter_wrap(r::StepRange{<:Integer,<:Integer}, v::Vector{T}) where {T}
-    @boundscheck abs(r.step) ≤ length(v) || throw(Base.BoundsError("step size too large"))
-    start = genome_wrap(length(v), r.start)
-    return VModuloIteratorState(start - r.step, r.step, length(r), v)
-end
 
-function findStart(io::IO)
-    while !eof(io)
-        h = strip(readline(io))
-        if length(h) > 0
-            return h
+    overlaps = UnitRange{Int32}[]
+    for r1 in ranges1, r2 in ranges2
+        overlap = intersect(r1, r2)
+        if length(overlap) > 0; push!(overlaps, overlap); end
+    end
+
+    #merge overlaps that can be merged
+    overlaps_to_add = UnitRange{Int32}[]
+    overlaps_to_remove = UnitRange{Int32}[]
+    for o1 in overlaps, o2 in overlaps
+        o1 === o2 && continue
+        if o2.start == o1.stop + 1 || (o2.start == 1 && o1.stop == glength)
+            push!(overlaps_to_add, range(o1.start, length = o1.stop - o1.start + 1 + o2.stop - o2.start + 1))
+            push!(overlaps_to_remove, o1)
+            push!(overlaps_to_remove, o2)
         end
     end
-    ""
-end
-
-function str_truncate(s::String, width=80)
-    n = length(s)
-    if n <= width
-        s
-    else
-        s[1:thisind(s, width)] * "..."
-    end
+    setdiff!(overlaps, overlaps_to_remove)
+    append!(overlaps, overlaps_to_add)
+    sort(overlaps, by = o -> o.stop - o.start, rev = true) #may return two discontiguous overlaps
 end
 
 function findfastafile(dir::String, base::AbstractString)::Union{String,Nothing}
