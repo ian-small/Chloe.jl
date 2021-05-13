@@ -77,7 +77,7 @@ function verify_refs(refsdir, template)
     end
 end
 
-function read_single_reference(refdir::String, refID::AbstractString)::SingleReference
+function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String, Int})::SingleReference
     ref = FASTA.Record()
     if !isdir(refdir); refdir = dirname(refdir); end
     path = findfastafile(refdir, refID)
@@ -89,7 +89,7 @@ function read_single_reference(refdir::String, refID::AbstractString)::SingleRef
     reader = open(FASTA.Reader, path)
     read!(reader, ref)
     close(reader)
-    ref_features = read_features(normpath(joinpath(refdir, refID * ".sff")))
+    ref_features = read_features!(normpath(joinpath(refdir, refID * ".sff")), reference_feature_counts)
     SingleReference(refID, CircularSequence(FASTA.sequence(ref)), ref_features)
 end
 
@@ -130,7 +130,17 @@ function do_annotations(numrefs::Int, target_id::String, strand::Char, refs::Vec
     annotations
 end
 
-function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32},
+function score_feature(sff::SFF_Feature, stack::FeatureStack, reference_feature_counts::Dict{String,Int}, gmatch::Float32, seq::CircularSequence)
+    ref_count = reference_feature_counts[annotation_path(sff.feature)]
+    sff.stackdepth = Float32(sum(stack.stack[range(sff.feature.start, length=sff.feature.length)]) / (ref_count * sff.feature.length))
+    sff.relative_length = sff.feature.length / stack.template.median_length
+    sff.feature_prob = feature_glm(stack.template, sff.relative_length, sff.stackdepth, gmatch)
+    if sff.feature.type == "CDS"
+        sff.coding_prob = glm_coding_classifier(countcodons(sff.feature, seq))
+    end
+end
+
+function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32}, reference_feature_counts::Dict{String,Int},
     strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate})::Tuple{Vector{Vector{SFF_Feature}},Dict{String,FeatureStack}}
 
     # println(strand, '\t', blocks_aligned_to_target)
@@ -162,32 +172,17 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         path_to_stack[stack.path] = stack
     end
 
-    # println(strand, '\t', features)
-
-    # t6 = time_ns()
-    # @info "[$target_id]$strand transferring annotations ($(length(features))): $(ns(t6 - start_ns))"
-
     stackdepth = 0
     relative_length = 0
     gmatch = mean(values(coverages))
     sff_features = Vector{SFF_Feature}(undef, length(features))
     for (i, feature) in enumerate(features)
         refine_boundaries_by_offsets!(feature, annotations, target_length, coverages)
+        sff_features[i] = SFF_Feature(feature, 0.0, 0.0, 0.0, 0.0, 0.0)
         # classify features as true or false positives
         stack = path_to_stack[annotation_path(feature)]
-        stackdepth = Float32(sum(stack.stack[range(feature.start, length=feature.length)]) / (length(refs) * feature.length))
-        relative_length = feature.length / stack.template.median_length
-        feature_prob = feature_glm(stack.template, relative_length, stackdepth, gmatch)
-        coding_prob = 0
-        if feature.type == "CDS"
-            coding_prob = glm_coding_classifier(countcodons(feature, target_seq))
-        end
-        # add relative_length, stack_depth and classifier predictions to feature info
-        sff_features[i] = SFF_Feature(feature, relative_length, stackdepth, gmatch, feature_prob, coding_prob)
+        score_feature(sff_features[i], stack, reference_feature_counts, gmatch, target_seq)        
     end
-
-    # t7 = time_ns()
-    # @info "[$target_id]$strand refining match boundaries: $(ns(t7 - t6))"
 
     # group by feature name on **ordered** features 
     target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sff_features)
@@ -202,12 +197,7 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         # update feature data
         f = sf.feature
         stack = path_to_stack[annotation_path(f)]
-        sf.stackdepth = sum(stack.stack[range(f.start, length=f.length)]) / (length(refs) * f.length)
-        sf.relative_length = f.length / stack.template.median_length
-        sf.feature_prob = feature_glm(stack.template, sf.relative_length, sf.stackdepth, gmatch)
-        if f.type == "CDS"
-            sf.coding_prob = glm_coding_classifier(countcodons(f, target_seq))
-        end
+        score_feature(sf, stack, reference_feature_counts, gmatch, target_seq) 
     end
 
     # add any unassigned orfs
@@ -350,16 +340,20 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     coverages = Dict{String,Float32}()
     refs = Vector{SingleReference}(undef, numrefs)
     masks = FwdRev(emask, CircularMask(reverse(emask.m)))
+    reference_feature_counts = Dict{String, Int}()
 
-    Threads.@threads for i in 1:numrefs
-        ref = read_single_reference(refsdir, refpicks[i][1])
-        a = align_to_reference(ref, target_id, target_forward_strand, target_reverse_strand, masks)
+    for i in 1:numrefs
+        ref = read_single_reference!(refsdir, refpicks[i][1], reference_feature_counts)
+        refs[i] = ref
+    end
+    
+    Threads.@threads for i in eachindex(refs)
+        a = align_to_reference(refs[i], target_id, target_forward_strand, target_reverse_strand, masks)
         blocks_aligned_to_targetf[i] = a[1].forward
         blocks_aligned_to_targetr[i] = a[1].reverse
         lock(REENTRANT_LOCK)
         coverages[refpicks[i][1]] = a[2]
         unlock(REENTRANT_LOCK)
-        refs[i] = ref
     end
 
     t3 = time_ns()
@@ -368,7 +362,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     feature_templates = read_templates(templates_file)
 
     function watson()
-        models, stacks = do_strand(numrefs, target_id, target_forward_strand, refs, coverages,
+        models, stacks = do_strand(numrefs, target_id, target_forward_strand, refs, coverages, reference_feature_counts,
             '+', blocks_aligned_to_targetf, feature_templates)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
@@ -379,7 +373,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     end
         
     function crick()
-        models, stacks = do_strand(numrefs, target_id, target_reverse_strand, refs, coverages,
+        models, stacks = do_strand(numrefs, target_id, target_reverse_strand, refs, coverages, reference_feature_counts,
         '-', blocks_aligned_to_targetr, feature_templates)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)

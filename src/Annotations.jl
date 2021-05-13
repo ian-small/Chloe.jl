@@ -80,7 +80,7 @@ mutable struct SFF_Feature
     coding_prob::Float32
 end
 
-function read_features(file::String)::FwdRev{FeatureArray}
+function read_features!(file::String, reference_feature_counts::Dict{String, Int})::FwdRev{FeatureArray}
     open(file) do f
         header = split(readline(f), '\t')
         genome_id = header[1]
@@ -93,6 +93,13 @@ function read_features(file::String)::FwdRev{FeatureArray}
             startswith(fields[1], "predicted") && continue # don't use annotations considered as predictions
             length(fields) ≥ 9 && occursin("pseudo", fields[9]) && continue # don't use annotations considered as pseudogenes
             feature = Feature(fields[1], parse(Int, fields[3]), parse(Int, fields[4]), parse(Int, fields[5]))
+            path = annotation_path(feature)
+            count = get(reference_feature_counts, path, nothing)
+            if isnothing(count)
+                reference_feature_counts[path] = 1
+            else
+                reference_feature_counts[path] = count + 1
+            end
             if fields[2][1] == '+'
                 push!(f_features, feature)
             else
@@ -121,27 +128,6 @@ struct Annotation
 end
 datasize(a::Annotation) = sizeof(Annotation)  + sizeof(a.path)# genome_id is shared + sizeof(a.genome_id)
 datasize(v::Vector{Annotation}) = sum(datasize(a) for a in v)
-
-#= function transfer_annotations(ref_features::FeatureArray, aligned_blocks::BlockTree, src_length::Int32, target_length::Int32)::Vector{Annotation}
-    annotations = Vector{Annotation}()
-    for block in aligned_blocks, feature in ref_features.features
-        feature_overlaps = overlaps(range(block.src_index, length=block.blocklength), range(feature.start, length=feature.length), src_length)
-        for o in feature_overlaps
-            offset5 = o.start - feature.start
-            offset3 = circulardistance(o.stop, feature.start + feature.length - 1, src_length)
-                if (feature.type == "CDS")
-                phase = phase_counter(feature.phase, offset5)
-            else
-                phase = 0
-            end
-            # coordinates in target genome
-            tgt_start = o.start > feature.start ? block.tgt_index : mod1(block.tgt_index + (feature.start - block.src_index), target_length)
-            # println(block, '\t', feature, '\t', tgt_start, '\t', circulardistance(o.start, o.stop, src_length) + 1, '\t', offset5, '\t', offset3)
-            push!(annotations, Annotation(ref_features.genome_id, annotation_path(feature), tgt_start, circulardistance(o.start, o.stop, src_length) + 1, offset5, offset3, phase))
-        end
-    end
-    annotations
-end =#
 
 function transfer_annotations(ref_features::FeatureArray, aligned_blocks::BlockTree, src_length::Int32, target_length::Int32)::Vector{Annotation}
     annotations = Vector{Annotation}()
@@ -217,7 +203,7 @@ struct FeatureStack
     stack::CircularVector
     template::FeatureTemplate
 end
-datasize(f::FeatureStack) = sizeof(FeatureStack) + sizeof(f.path) + length(f.stack) * sizeof(Int32)
+datasize(f::FeatureStack) = sizeof(FeatureStack) + sizeof(f.path) + length(f.stack) * sizeof(Int8)
 
 DFeatureStack = Dict{String,FeatureStack}
 AFeatureStack = Vector{FeatureStack}
@@ -225,25 +211,21 @@ ShadowStack = CircularVector
 
 function fill_feature_stack(target_length::Int32, annotations::Vector{Annotation},
     feature_templates::Dict{String,FeatureTemplate})::Tuple{AFeatureStack,ShadowStack}
-
-    # Implementation Note: Feature stacks are rather large (we can get 80MB)
-
     # assumes annotations is ordered by path
     # so that each stacks[idx] array has the same annotation.path
     stacks = AFeatureStack()
     sizehint!(stacks, length(feature_templates))
     indexmap = Dict{String,Int}()
-    shadowstack::ShadowStack = ShadowStack(zeros(Int32, target_length)) # will be negative image of all stacks combined,
+    shadowstack::ShadowStack = ShadowStack(zeros(Int8, target_length)) # will be negative image of all stacks combined,
     for annotation in annotations
         template = get(feature_templates, annotation.path, nothing)
-        # template_index = findfirst(x -> x.path == annotation.path, templates)
         if template === nothing
-            # @error "Can't find template for $(annotation.path)"
+            @error "Can't find template for $(annotation.path)"
             continue
         end
         index = get(indexmap, annotation.path, nothing)
         if index === nothing
-            stack = FeatureStack(annotation.path, CircularVector(zeros(Int32, target_length)), template)
+            stack = FeatureStack(annotation.path, CircularVector(zeros(Int8, target_length)), template)
             push!(stacks, stack)
             indexmap[annotation.path] = length(stacks)
         else
@@ -252,8 +234,8 @@ function fill_feature_stack(target_length::Int32, annotations::Vector{Annotation
         stack_stack = stack.stack
 
         @inbounds for i = annotation.start:annotation.start + annotation.length - one(Int32)
-            stack_stack[i] += one(Int32)
-            shadowstack[i] -= one(Int32)
+            stack_stack[i] += one(Int8)
+            shadowstack[i] -= one(Int8)
         end
     end
     @debug "found ($(length(stacks))) $(human(datasize(stacks) + datasize(shadowstack))) FeatureStacks from $(length(annotations)) annotations"
@@ -278,7 +260,7 @@ function expandBoundary(feature_stack::FeatureStack, shadowstack::ShadowStack, o
     return genome_wrap(glen, index)
 end
 
-    function align_template(feature_stack::FeatureStack)::Tuple{Vector{Tuple{Int32,Int}},Int32}
+function align_template(feature_stack::FeatureStack)::Tuple{Vector{Tuple{Int32,Int}},Int32}
     stack = feature_stack.stack
     glen = length(stack)
     median_length = floor(Int32, feature_stack.template.median_length)
@@ -309,7 +291,7 @@ end
             end   
         end
     end
-isempty(hits) && return hits, median_length
+    isempty(hits) && return hits, median_length
     # sort by descending score
     sort!(hits, by=x -> x[2], rev=true)
     maxscore = hits[1][2]
@@ -632,7 +614,6 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
             # first_exon.phase = getFeaturePhaseFromAnnotationOffsets(first_exon, annotations)
             if last_exon.gene ≠ "rps12B"
                 findStartCodon!(first_exon, genome_length, target_seq)
-    # first_exon = findStartCodon2!(first_exon,genome_length,targetloop)
             end
         end
     end
@@ -729,9 +710,7 @@ function write_model2SFF(outfile::IO, model::SFF_Model)
 end
 
 function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String,Int32}
-
     maxlengths = Dict{String,Int32}()
-    
     function add_model(models)
         for model in models
             isempty(model) && continue
