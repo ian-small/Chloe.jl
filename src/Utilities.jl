@@ -1,6 +1,6 @@
 import CodecZlib: GzipDecompressorStream, GzipCompressorStream
 import Base
-
+using IntervalTrees
 import Printf: @sprintf
 
 const REENTRANT_LOCK = ReentrantLock()
@@ -208,7 +208,7 @@ end
     result
 end
 
-@inline function phaseCounter(base::Int8, addition::Integer)::Int8
+@inline function phase_counter(base::Int8, addition::Integer)::Int8
     result::Int8 = (base - addition) % 3
     if result < 0
         result = Int8(3) + result

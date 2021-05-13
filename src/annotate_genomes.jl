@@ -1,7 +1,7 @@
 module Annotator
 
-export annotate, annotate_one, readReferences, Reference, MayBeIO, MayBeString
-export readSingleReference, inverted_repeat
+export annotate, annotate_one, read_references, Reference, MayBeIO, MayBeString
+export read_single_reference, inverted_repeat
 
 import Base
 
@@ -13,9 +13,9 @@ include("orfs.jl")
 
 # import Dates: Time, Nanosecond
 
-import Printf: @sprintf
+import Printf:@sprintf
 import JSON
-import Crayons: @crayon_str
+import Crayons:@crayon_str
 using StatsBase
 using GLM
 
@@ -77,7 +77,7 @@ function verify_refs(refsdir, template)
     end
 end
 
-function readSingleReference(refdir::String, refID::AbstractString)::SingleReference
+function read_single_reference(refdir::String, refID::AbstractString)::SingleReference
     ref = FASTA.Record()
     if !isdir(refdir); refdir = dirname(refdir); end
     path = findfastafile(refdir, refID)
@@ -89,13 +89,12 @@ function readSingleReference(refdir::String, refID::AbstractString)::SingleRefer
     reader = open(FASTA.Reader, path)
     read!(reader, ref)
     close(reader)
-    ref_features = readFeatures(normpath(joinpath(refdir, refID * ".sff")))
+    ref_features = read_features(normpath(joinpath(refdir, refID * ".sff")))
     SingleReference(refID, CircularSequence(FASTA.sequence(ref)), ref_features)
 end
 
 MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,DFeatureStack}
-AAlignedBlocks = Vector{FwdRev{AlignedBlocks}}
 
 function flatten(vanno::Vector{Vector{Annotation}})::Vector{Annotation}
     ret = Vector{Annotation}(undef, sum(length(v) for v in vanno))
@@ -109,7 +108,7 @@ function flatten(vanno::Vector{Vector{Annotation}})::Vector{Annotation}
     ret
 end
 
-function do_annotations(numrefs:: Int, target_id::String, strand::Char, refs::Vector{SingleReference}, blocks_aligned_to_target::AAlignedBlocks, target_length::Int32)
+function do_annotations(numrefs::Int, target_id::String, strand::Char, refs::Vector{SingleReference}, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, target_length::Int32)
 
     function do_one(refsrc, ref_features, blocks)
         st = time_ns()
@@ -127,32 +126,32 @@ function do_annotations(numrefs:: Int, target_id::String, strand::Char, refs::Ve
 
     # annotations = collect(Iterators.flatten(tgt))
     annotations = flatten(tgt)
-    sort!(annotations, by = x -> x.path)
+    sort!(annotations, by=x -> x.path)
     annotations
 end
 
 function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32},
-    strand::Char, blocks_aligned_to_target::AAlignedBlocks, feature_templates::Dict{String,FeatureTemplate})::Tuple{Vector{Vector{SFF_Feature}},Dict{String,FeatureStack}}
+    strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate})::Tuple{Vector{Vector{SFF_Feature}},Dict{String,FeatureStack}}
 
-    #println(strand, '\t', blocks_aligned_to_target)
+    # println(strand, '\t', blocks_aligned_to_target)
 
     t4 = time_ns()
     target_length = Int32(length(target_seq))
     annotations = do_annotations(numrefs, target_id, strand, refs, blocks_aligned_to_target, target_length)
 
     # strand_feature_stacks is basically grouped by annotations.path
-    strand_feature_stacks, shadow = fillFeatureStack(target_length, annotations, feature_templates)
+    strand_feature_stacks, shadow = fill_feature_stack(target_length, annotations, feature_templates)
 
     t5 = time_ns()
     @info "[$target_id]$strand built feature stacks ($(length(strand_feature_stacks))) $(human(datasize(strand_feature_stacks))): $(ns(t5 - t4))"
 
-    #orfmap = threeframes(target_seq)
+    # orfmap = threeframes(target_seq)
     features = Feature[]
     path_to_stack = Dict{String,FeatureStack}()
     # so... features will be ordered by annotations.path
 
     for stack in strand_feature_stacks
-        hits, length = alignTemplateToStack(stack)
+        hits, length = align_template(stack)
         isempty(hits) && continue
         for hit in hits
             push!(features, Feature(stack.path, hit[1], length, 0))
@@ -163,7 +162,7 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         path_to_stack[stack.path] = stack
     end
 
-    #println(strand, '\t', features)
+    # println(strand, '\t', features)
 
     # t6 = time_ns()
     # @info "[$target_id]$strand transferring annotations ($(length(features))): $(ns(t6 - start_ns))"
@@ -172,18 +171,18 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
     relative_length = 0
     gmatch = mean(values(coverages))
     sff_features = Vector{SFF_Feature}(undef, length(features))
-    for (i,feature) in enumerate(features)
-        refineMatchBoundariesByOffsets!(feature, annotations, target_length, coverages)
-        #classify features as true or false positives
-        stack = path_to_stack[annotationPath(feature)]
+    for (i, feature) in enumerate(features)
+        refine_boundaries_by_offsets!(feature, annotations, target_length, coverages)
+        # classify features as true or false positives
+        stack = path_to_stack[annotation_path(feature)]
         stackdepth = Float32(sum(stack.stack[range(feature.start, length=feature.length)]) / (length(refs) * feature.length))
         relative_length = feature.length / stack.template.median_length
         feature_prob = feature_glm(stack.template, relative_length, stackdepth, gmatch)
         coding_prob = 0
         if feature.type == "CDS"
-            coding_prob = glm_coding_classifier(countcodons(feature,target_seq))
+            coding_prob = glm_coding_classifier(countcodons(feature, target_seq))
         end
-        #add relative_length, stack_depth and classifier predictions to feature info
+        # add relative_length, stack_depth and classifier predictions to feature info
         sff_features[i] = SFF_Feature(feature, relative_length, stackdepth, gmatch, feature_prob, coding_prob)
     end
 
@@ -191,46 +190,46 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
     # @info "[$target_id]$strand refining match boundaries: $(ns(t7 - t6))"
 
     # group by feature name on **ordered** features 
-    target_strand_models::Vector{Vector{SFF_Feature}} = groupFeaturesIntoGeneModels(sff_features)
+    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sff_features)
 
     orfs = getallorfs(target_seq, strand, Int32(0))
     # this toys with the feature start, phase etc....
-    # refineGeneModels! does not (yet) use the relative_length, stackdepth, feature_prob, coding_prob values but could...
-    refineGeneModels!(target_strand_models, target_seq, annotations, path_to_stack, orfs)
+    # refine_gene_models! does not (yet) use the relative_length, stackdepth, feature_prob, coding_prob values but could...
+    refine_gene_models!(target_strand_models, target_seq, annotations, path_to_stack, orfs)
 
-    #this inefficiently updates all features, even those unchanged by refineGeneModels!
+    # this inefficiently updates all features, even those unchanged by refine_gene_models!
     for m in target_strand_models, sf in m
-        #update feature data
+        # update feature data
         f = sf.feature
-        stack = path_to_stack[annotationPath(f)]
+        stack = path_to_stack[annotation_path(f)]
         sf.stackdepth = sum(stack.stack[range(f.start, length=f.length)]) / (length(refs) * f.length)
         sf.relative_length = f.length / stack.template.median_length
         sf.feature_prob = feature_glm(stack.template, sf.relative_length, sf.stackdepth, gmatch)
         if f.type == "CDS"
-            sf.coding_prob = glm_coding_classifier(countcodons(f,target_seq))
+            sf.coding_prob = glm_coding_classifier(countcodons(f, target_seq))
         end
     end
 
-    #add any unassigned orfs
+    # add any unassigned orfs
     for uorf in orfs
         uorf.length < MINIMUM_UNASSIGNED_ORF_LENGTH && continue
-        #println(uorf)
+        # println(uorf)
         unassigned = true
         orf_frame = mod1(uorf.start, 3)
         for m in target_strand_models, sf in m
             f = sf.feature
-            #println(f)
+            # println(f)
             f_frame = mod1(f.start + f.phase, 3)
-            if orf_frame == f_frame && length(overlaps(range(uorf.start, length = uorf.length), range(f.start, length = f.length), target_length)) > 0
+            if orf_frame == f_frame && length(overlaps(range(uorf.start, length=uorf.length), range(f.start, length=f.length), target_length)) > 0
                 unassigned = false
             end
         end
         if unassigned
-            #count codons
-            codonfrequencies = countcodons(uorf,target_seq)
-            #predict with GLMCodingClassifier
+            # count codons
+            codonfrequencies = countcodons(uorf, target_seq)
+            # predict with GLMCodingClassifier
             coding_prob = glm_coding_classifier(codonfrequencies)
-            push!(target_strand_models, [SFF_Feature(uorf, 0.0, 0.0, gmatch, coding_prob/2, coding_prob)])
+            push!(target_strand_models, [SFF_Feature(uorf, 0.0, 0.0, gmatch, coding_prob / 2, coding_prob)])
         end
     end
 
@@ -242,17 +241,20 @@ end
 # Union{IO,String}: read fasta from IO buffer or a file (String)
 MayBeIO = Union{String,IO,Nothing}
 
-function align(ref::SingleReference, tgt_id::String, tgt_seq::CircularSequence, rev_tgt_seq::CircularSequence, mask::Union{Nothing,FwdRev{CircularMask}} = nothing)::Tuple{FwdRev{FwdRev{AlignedBlocks}},Float32}
+function align_to_reference(ref::SingleReference, tgt_id::String, tgt_seq::CircularSequence, rev_tgt_seq::CircularSequence, mask::Union{Nothing,FwdRev{CircularMask}}=nothing)::Tuple{FwdRev{FwdRev{BlockTree}},Float32}
     start = time_ns()
-    #align2seqs returns linked list
-    #but subsequent functions expecting Vector
-    ff::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq, tgt_seq, mask.forward))
-    rr = revCompBlocks(ff,length(ref.ref_seq.sequence), length(tgt_seq.sequence))
-    fr::AlignedBlocks = ll2vector(align2seqs(ref.ref_seq, rev_tgt_seq, mask.reverse))
-    rf = revCompBlocks(fr,length(ref.ref_seq.sequence), length(tgt_seq.sequence))
+    ref_length = length(ref.ref_seq)
+    tgt_length = length(tgt_seq)
 
-    coverage = Float32(100 * target_coverage(ff, rf, length(tgt_seq)))
-    #println(tgt_id,"\t",ref.ref_id,'\t', coverage)
+    # align2seqs returns linked list, convert to interval tree
+    fchain = align2seqs(ref.ref_seq, tgt_seq, mask.forward)
+    ff = chain2tree(fchain, ref_length)
+    rr = chain2rctree(fchain, ref_length, tgt_length)
+    rchain = align2seqs(ref.ref_seq, rev_tgt_seq, mask.reverse)
+    fr = chain2tree(rchain, ref_length)
+    rf = chain2rctree(rchain, ref_length, tgt_length)
+
+    coverage = Float32(100 * target_coverage(fchain, rchain, length(tgt_seq)))
 
     @info "[$(tgt_id)]± aligned $(ref.ref_id) coverage: $(@sprintf("%.2f", coverage))% $(elapsed(start))"
     # note cross ...
@@ -260,21 +262,11 @@ function align(ref::SingleReference, tgt_id::String, tgt_seq::CircularSequence, 
 end
 
 function inverted_repeat(target::CircularSequence, revtarget::CircularSequence)::AlignedBlock
-    fr::AlignedBlocks = ll2vector(align2seqs(target,revtarget;))
+    fr::AlignedBlocks = ll2vector(align2seqs(target, revtarget;))
     # sort blocks by length
-    fr = sort!(fr, by= b -> b.blocklength, rev=true)
+    fr = sort!(fr, by=b -> b.blocklength, rev=true)
     ir = length(fr) > 0 ? fr[1] : AlignedBlock(0, 0, 0)
     return ir
-end
-
-function avg_coverage(target::SingleReference, a::FwdRev{AlignedBlocks})
-    coverage = blockCoverage(a.forward) + blockCoverage(a.reverse)
-    coverage /= (target.target_length * 2)
-    coverage
-end
-
-function avg_coverage(target::SingleReference, a::FwdRev{FwdRev{AlignedBlocks}})
-    avg_coverage(target, a.forward)
 end
 
 """
@@ -294,7 +286,7 @@ returns a 2-tuple: (ultimate sff output filename, sequence id)
 If `output_sff_file` is an IOBuffer then that buffer will be returned
 with the annotation within it
 
-`reference` are the reference annotations (see `readReferences`)
+`reference` are the reference annotations (see `read_references`)
 """
 function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Dict{String,Vector{Int64}}}, templates_file::String, sensitivity::Float16, target_id::String,
      target_forward_strand::CircularSequence, target_reverse_strand::CircularSequence, output::MayBeIO, gff3::Bool)::Tuple{Union{String,IO},String}
@@ -306,7 +298,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
             if isdir(output)
                 joinpath(output, "$(target_id).sff")
             else
-                output # filename
+            output # filename
             end
         else
             output # IOBuffer
@@ -334,7 +326,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     @info "[$target_id] seq length: $(target_length)bp"
 
     # find best references
-    #need entropy mask HERE
+    # need entropy mask HERE
     emask = entropy_mask(CircularSequence(target_forward_strand.sequence), Int32(KMERSIZE))
     nmaskedtarget = copy(target_forward_strand.sequence)
     for (i, bit) in enumerate(emask)
@@ -346,22 +338,22 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
         refpicks = searchhashes(hash, refhashes)[1:numrefs]
     else
         numrefs = 1
-        refpicks = [(split(basename(refsdir),'.')[1],0)]
+        refpicks = [(split(basename(refsdir), '.')[1], 0)]
     end
 
     t2 = time_ns()
 
     @info "[$target_id] picked $(numrefs) reference(s): $(ns(t2 - t1))"
 
-    blocks_aligned_to_targetf = AAlignedBlocks(undef, numrefs)
-    blocks_aligned_to_targetr = AAlignedBlocks(undef, numrefs)
+    blocks_aligned_to_targetf = Vector{FwdRev{BlockTree}}(undef, numrefs)
+    blocks_aligned_to_targetr = Vector{FwdRev{BlockTree}}(undef, numrefs)
     coverages = Dict{String,Float32}()
     refs = Vector{SingleReference}(undef, numrefs)
     masks = FwdRev(emask, CircularMask(reverse(emask.m)))
 
     Threads.@threads for i in 1:numrefs
-        ref = readSingleReference(refsdir, refpicks[i][1])
-        a = align(ref, target_id, target_forward_strand, target_reverse_strand, masks)
+        ref = read_single_reference(refsdir, refpicks[i][1])
+        a = align_to_reference(ref, target_id, target_forward_strand, target_reverse_strand, masks)
         blocks_aligned_to_targetf[i] = a[1].forward
         blocks_aligned_to_targetr[i] = a[1].reverse
         lock(REENTRANT_LOCK)
@@ -373,7 +365,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     t3 = time_ns()
     @info "[$target_id] aligned: ($(numrefs)) $(human(datasize(blocks_aligned_to_targetf) + datasize(blocks_aligned_to_targetr))) mean coverage: $(geomean(values(coverages))) $(ns(t3 - t2))" 
 
-    feature_templates = readTemplates(templates_file)
+    feature_templates = read_templates(templates_file)
 
     function watson()
         models, stacks = do_strand(numrefs, target_id, target_forward_strand, refs, coverages,
@@ -385,7 +377,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
         end
         final_models
     end
-
+        
     function crick()
         models, stacks = do_strand(numrefs, target_id, target_reverse_strand, refs, coverages,
         '-', blocks_aligned_to_targetr, feature_templates)
@@ -408,12 +400,12 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
         push!(sffs_fwd, SFF_Model("IR-1", 0.0, '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
         push!(sffs_rev, SFF_Model("IR-2", 0.0, '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
     else
-        ir = nothing
+    ir = nothing
     end
     
     writeSFF(fname, target_id, target_length, geomean(values(coverages)), FwdRev(sffs_fwd, sffs_rev))
     if gff3
-        writeGFF3(join(split(fname, ".")[1:end-1], ".") * ".gff3", target_id, target_length, FwdRev(sffs_fwd, sffs_rev))
+        writeGFF3(join(split(fname, ".")[1:end - 1], ".") * ".gff3", target_id, target_length, FwdRev(sffs_fwd, sffs_rev))
     end
     
     @info success("[$target_id] Overall: $(elapsed(t1))")
@@ -426,7 +418,7 @@ end
 Annotate a fasta file. Maybe a file name or an IOBuffer
 returns a 2-tuple (sff annotation as an IOBuffer, sequence id)
 
-`reference` are the reference annotations (see `readReferences`)
+`reference` are the reference annotations (see `read_references`)
 """
 # function annotate_one(reference::Reference, fasta::Union{String,IO})::Tuple{Union{String,IO},String}
 #     target_id, target_seqf = readFasta(fasta)
@@ -447,7 +439,7 @@ function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}
     
     numrefs == 1 ? refhashes = nothing : refhashes = readminhashes(hashfile)
 
-    for infile in fa_files
+        for infile in fa_files
         reader = open(FASTA.Reader, infile)
         records = Vector{FASTA.Record}()
         for record in reader

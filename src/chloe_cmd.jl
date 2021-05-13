@@ -6,7 +6,6 @@ import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 import Logging
 
 import ..Annotator
-import ..Sff2Gff
 
 include("globals.jl")
 #include("rotate_genome.jl")
@@ -44,9 +43,6 @@ function getargs()
         "annotate"
             help = "annotate fasta files"
             action = :command
-        "gff3"
-            help = "write out gff3 files from sff files"
-            action = :command
         "rotate"
             help = "rotate circular genomes to standard position"
             action = :command
@@ -54,19 +50,6 @@ function getargs()
             arg_type = String
             default = "info"
             help = "log level (info,warn,error,debug)"
-    end
-
-    @add_arg_table! cmd_args["gff3"]  begin
-        "sff-files"
-            arg_type = String
-            nargs = '+'
-            required = true
-            action = :store_arg
-            help = "sff files to process" 
-        "--directory", "-d"
-            arg_type = String
-            metavar = "DIRECTORY"
-            help = "output directory"
     end
 
     @add_arg_table! cmd_args["minhash"]  begin
@@ -184,9 +167,7 @@ function cmd_main()
         get(LOGLEVELS, level, Logging.Warn), meta_formatter=quiet_metafmt)) do 
         cmd = parsed_args[:_COMMAND_]
         a = parsed_args[cmd]
-        if cmd == :gff3
-            Sff2Gff.writeallGFF3(;a...)
-        elseif cmd == :minhash
+        if cmd == :minhash
             Annotator.minhash_references(;a...)
         elseif cmd == :align
             Annotator.align(;a...);

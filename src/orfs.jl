@@ -20,9 +20,9 @@ end
 
 function framedstops(seq::CircularSequence)
     matchmap = codonmatches(seq.sequence, stopcodon)
-    penultimate::Int32 = length(seq.sequence) - one
+    penultimate::Int32 = length(seq.sequence) - one(Int32)
     penultimate_codon = getcodon(seq, penultimate)
-    ultimate::Int32 = penultimate + one
+    ultimate::Int32 = penultimate + one(Int32)
     ultimate_codon = getcodon(seq, ultimate)
     if isStopCodon(penultimate_codon)
         push!(matchmap.frames[mod1(penultimate, 3)], penultimate)
@@ -35,9 +35,9 @@ end
 
 function framedstarts(seq::CircularSequence)
     matchmap = codonmatches(seq.sequence, startcodon)
-    penultimate::Int32 = length(seq.sequence) - one
+    penultimate::Int32 = length(seq.sequence) - one(Int32)
     penultimate_codon = getcodon(seq, penultimate)
-    ultimate::Int32 = penultimate + one
+    ultimate::Int32 = penultimate + one(Int32)
     ultimate_codon = getcodon(seq, ultimate)
     if isStartCodon(penultimate_codon)
         push!(matchmap.frames[mod1(penultimate, 3)], penultimate)
@@ -54,7 +54,7 @@ function getorfcoords(orfmap::FramedMatches, i)
     #find first stop after index and last stop before
     index::Int32 = searchsortedfirst(framestops.v, i)
     stop = framestops[index]
-    pstop = framestops[index - one]
+    pstop = framestops[index - one(Int32)]
     if stop > pstop
         return pstop, stop-pstop + 3
     else
