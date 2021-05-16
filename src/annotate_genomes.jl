@@ -134,6 +134,7 @@ function score_feature(sff::SFF_Feature, stack::FeatureStack, reference_feature_
     ref_count = reference_feature_counts[annotation_path(sff.feature)]
     sff.stackdepth = Float32(sum(stack.stack[range(sff.feature.start, length=sff.feature.length)]) / (ref_count * sff.feature.length))
     sff.relative_length = sff.feature.length / stack.template.median_length
+    sff.gmatch = gmatch
     sff.feature_prob = feature_glm(stack.template, sff.relative_length, sff.stackdepth, gmatch)
     if sff.feature.type == "CDS"
         sff.coding_prob = glm_coding_classifier(countcodons(sff.feature, seq))
@@ -141,7 +142,7 @@ function score_feature(sff::SFF_Feature, stack::FeatureStack, reference_feature_
 end
 
 function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32}, reference_feature_counts::Dict{String,Int},
-    strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate})::Tuple{Vector{Vector{SFF_Feature}},Dict{String,FeatureStack}}
+    strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate})::Vector{Vector{SFF_Feature}}
 
     # println(strand, '\t', blocks_aligned_to_target)
 
@@ -150,7 +151,7 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
     annotations = do_annotations(numrefs, target_id, strand, refs, blocks_aligned_to_target, target_length)
 
     # strand_feature_stacks is basically grouped by annotations.path
-    strand_feature_stacks, shadow = fill_feature_stack(target_length, annotations, feature_templates)
+    strand_feature_stacks = fill_feature_stack(target_length, annotations, feature_templates)
 
     t5 = time_ns()
     @info "[$target_id]$strand built feature stacks ($(length(strand_feature_stacks))) $(human(datasize(strand_feature_stacks))): $(ns(t5 - t4))"
@@ -172,14 +173,11 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         path_to_stack[stack.path] = stack
     end
 
-    stackdepth = 0
-    relative_length = 0
     gmatch = mean(values(coverages))
     sff_features = Vector{SFF_Feature}(undef, length(features))
     for (i, feature) in enumerate(features)
         refine_boundaries_by_offsets!(feature, annotations, target_length, coverages)
         sff_features[i] = SFF_Feature(feature, 0.0, 0.0, 0.0, 0.0, 0.0)
-        # classify features as true or false positives
         stack = path_to_stack[annotation_path(feature)]
         score_feature(sff_features[i], stack, reference_feature_counts, gmatch, target_seq)        
     end
@@ -224,7 +222,7 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
     end
 
     @info "[$target_id]$strand built gene models: $(elapsed(t5))"
-    return target_strand_models, path_to_stack
+    return target_strand_models
 end
 
 # MayBeIO: write to file (String), IO buffer or create filename based on fasta filename
@@ -278,7 +276,7 @@ with the annotation within it
 
 `reference` are the reference annotations (see `read_references`)
 """
-function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Dict{String,Vector{Int64}}}, templates_file::String, sensitivity::Float16, target_id::String,
+function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Dict{String,Vector{Int64}}}, feature_templates::Dict{String,FeatureTemplate}, sensitivity::Float16, target_id::String,
      target_forward_strand::CircularSequence, target_reverse_strand::CircularSequence, output::MayBeIO, gff3::Bool)::Tuple{Union{String,IO},String}
 
     t1 = time_ns()
@@ -316,13 +314,12 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     @info "[$target_id] seq length: $(target_length)bp"
 
     # find best references
-    # need entropy mask HERE
     emask = entropy_mask(CircularSequence(target_forward_strand.sequence), Int32(KMERSIZE))
-    nmaskedtarget = copy(target_forward_strand.sequence)
-    for (i, bit) in enumerate(emask)
-        if bit; nmaskedtarget[i] = DNA_N; end
-    end
     if !isnothing(refhashes)
+        nmaskedtarget = copy(target_forward_strand.sequence)
+        for (i, bit) in enumerate(emask)
+            if bit; nmaskedtarget[i] = DNA_N; end
+        end
         hash = minhash(nmaskedtarget, KMERSIZE, SKETCHSIZE)
         numrefs = min(numrefs, length(refhashes))
         refpicks = searchhashes(hash, refhashes)[1:numrefs]
@@ -359,25 +356,23 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     t3 = time_ns()
     @info "[$target_id] aligned: ($(numrefs)) $(human(datasize(blocks_aligned_to_targetf) + datasize(blocks_aligned_to_targetr))) mean coverage: $(geomean(values(coverages))) $(ns(t3 - t2))" 
 
-    feature_templates = read_templates(templates_file)
-
     function watson()
-        models, stacks = do_strand(numrefs, target_id, target_forward_strand, refs, coverages, reference_feature_counts,
+        models = do_strand(numrefs, target_id, target_forward_strand, refs, coverages, reference_feature_counts,
             '+', blocks_aligned_to_targetf, feature_templates)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
-            sff = toSFF(model, '+', target_forward_strand, sensitivity)
+            sff = toSFF(feature_templates, model, '+', target_forward_strand, sensitivity)
             !isnothing(sff) && push!(final_models, sff)
         end
         final_models
     end
         
     function crick()
-        models, stacks = do_strand(numrefs, target_id, target_reverse_strand, refs, coverages, reference_feature_counts,
-        '-', blocks_aligned_to_targetr, feature_templates)
+        models = do_strand(numrefs, target_id, target_reverse_strand, refs, coverages, reference_feature_counts,
+            '-', blocks_aligned_to_targetr, feature_templates)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
-            sff = toSFF(model, '-', target_reverse_strand, sensitivity)
+            sff = toSFF(feature_templates, model, '-', target_reverse_strand, sensitivity)
             !isnothing(sff) && push!(final_models, sff)
         end
         final_models
@@ -387,14 +382,14 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
 
     sffs_fwd, sffs_rev, ir = fetch.((Threads.@spawn w()) for w in [watson, crick, () -> inverted_repeat(target_forward_strand, target_reverse_strand)]) 
 
-    filter_gene_models!(sffs_fwd, sffs_rev, numrefs)
+    filter_gene_models!(sffs_fwd, sffs_rev)
    
     if ir.blocklength >= 1000
         @info "[$target_id] inverted repeat $(ir.blocklength)"
         push!(sffs_fwd, SFF_Model("IR-1", 0.0, '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
         push!(sffs_rev, SFF_Model("IR-2", 0.0, '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
     else
-    ir = nothing
+        ir = nothing
     end
     
     writeSFF(fname, target_id, target_length, geomean(values(coverages)), FwdRev(sffs_fwd, sffs_rev))
@@ -429,11 +424,13 @@ returns a 2-tuple (sff annotation as an IOBuffer, sequence id)
 #     end
 # end
 
-function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}, templates::String, fa_files::Vector{String}, sensitivity::Float16, output::MayBeString, gff3::Bool)
+function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}, templates_file::String, fa_files::Vector{String}, sensitivity::Float16, output::MayBeString, gff3::Bool)
     
     numrefs == 1 ? refhashes = nothing : refhashes = readminhashes(hashfile)
 
-        for infile in fa_files
+    feature_templates = read_templates(templates_file)
+
+    for infile in fa_files
         reader = open(FASTA.Reader, infile)
         records = Vector{FASTA.Record}()
         for record in reader
@@ -453,7 +450,7 @@ function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}
         if length(fseq) != length(rseq)
             @error "unequal lengths for forward and reverse strands"
         end
-        annotate_one(refsdir, numrefs, refhashes, templates, sensitivity, FASTA.identifier(records[1]), fseq, rseq, output, gff3)
+        annotate_one(refsdir, numrefs, refhashes, feature_templates, sensitivity, FASTA.identifier(records[1]), fseq, rseq, output, gff3)
         close(reader)
     end
 end
