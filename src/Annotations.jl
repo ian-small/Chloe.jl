@@ -154,14 +154,8 @@ end
 
 struct FeatureTemplate
     path::String  # similar to .sff path
+    essential::Bool
     median_length::Float32 # median length of feature
-    # stats to calculate zscores
-    median_rlength::Float32
-    std_rlength::Float32
-    median_stackdepth::Float32
-    std_stackdepth::Float32
-    median_match::Float32
-    std_match::Float32
 end
 
 datasize(s::FeatureTemplate) = sizeof(FeatureTemplate) + sizeof(s.path)
@@ -173,26 +167,13 @@ function read_templates(file::String)::Dict{String,FeatureTemplate}
     if filesize(file) === 0
         error("no data in \"$(file)!\"")
     end
-
-    gene_exons = String[]
-    # templates = FeatureTemplate[]
     templates = Dict{String,FeatureTemplate}()
-
     open(file) do f
         readline(f) #skip header
         for line in eachline(f)
             fields = split(line, '\t')
-            path_components = split(fields[1], '/')
-            if path_components[2] ≠ "intron"
-                push!(gene_exons, path_components[1])
-            end
-            template = FeatureTemplate(fields[1], parse(Float32, fields[2]), parse(Float32, fields[3]), parse(Float32, fields[4]),
-                 parse(Float32, fields[5]), parse(Float32, fields[6]), parse(Float32, fields[7]), parse(Float32, fields[8]))
-            if haskey(templates, template.path)
-                @error "duplicate path: $(template.path) in \"$file\""
-            end
+            template = FeatureTemplate(fields[1], parse(Bool, fields[2]), parse(Float32, fields[3]))
             templates[template.path] = template
-            # push!(templates, template)
         end
     end
     return templates
