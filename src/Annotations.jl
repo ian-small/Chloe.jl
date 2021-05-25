@@ -728,13 +728,14 @@ function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String
     maxlengths
 end
 
-function feature_glm(template::FeatureTemplate, flength::Float32, fdepth::Float32, gmatch::Float32)::Float32
+function feature_glm(maxtemplatelength::Float32, template::FeatureTemplate, flength::Float32, fdepth::Float32, gmatch::Float32)::Float32
     flength ≤ 0 && return Float32(0.0)
     fdepth ≤ 0 && return Float32(0.0)
+    tlength = template.median_length/maxtemplatelength
     length = log(flength)
     depth = log(fdepth)
     match = gmatch / 100
-    pred = 3.8459063852943935 + 12.431109798123707 * length + -1.3757427192110732 * depth + 3.0098173712290595 * match + depth * length * 2.607498120994254 + depth * match * 5.606025979149664
+    pred = 3.77774 + 17.0456 * tlength + 9.90871 * length + -0.60762 * depth + 1.45996 * match + 2.25545 * depth * tlength + 2.13802 * depth * length + 4.04136 * depth * match
     odds = exp(pred)
     return Float32(odds / (1.0 + odds))
 end
