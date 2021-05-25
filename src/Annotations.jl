@@ -673,7 +673,7 @@ function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SF
     
     if exceeds_sensitivity && (type == "CDS")
         cds = splice_model(target_seq, model)
-        if gene ≠ "rps12B" && isstartcodon(getcodon(cds, Int32(1)), true, true)
+        if gene ≠ "rps12B" && !isstartcodon(getcodon(cds, Int32(1)), true, true)
             push!(warnings, LACKS_START_CODON)
         end
         for i::Int32 in 1:3:length(cds)-2
