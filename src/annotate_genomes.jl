@@ -149,7 +149,6 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
     t4 = time_ns()
     target_length = Int32(length(target_seq))
     annotations = do_annotations(numrefs, target_id, strand, refs, blocks_aligned_to_target, target_length)
-    println(strand, '\t', annotations)
 
     # strand_feature_stacks is basically grouped by annotations.path
     strand_feature_stacks = fill_feature_stack(target_length, annotations, feature_templates)
@@ -174,6 +173,8 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         path_to_stack[stack.path] = stack
     end
 
+    #println(strand, '\t', features)
+
     gmatch = mean(values(coverages))
     sff_features = Vector{SFF_Feature}(undef, length(features))
     for (i, feature) in enumerate(features)
@@ -183,13 +184,15 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         score_feature(sff_features[i], stack, reference_feature_counts, gmatch, target_seq)        
     end
 
+    #println(strand, '\t', sff_features)
+
     # group by feature name on **ordered** features 
     target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sff_features)
 
     orfs = getallorfs(target_seq, strand, Int32(0))
     # this toys with the feature start, phase etc....
     # refine_gene_models! does not (yet) use the relative_length, stackdepth, feature_prob, coding_prob values but could...
-    refine_gene_models!(target_strand_models, target_seq, annotations, path_to_stack, orfs)
+    refine_gene_models!(target_strand_models, target_seq, path_to_stack, orfs)
 
     # this inefficiently updates all features, even those unchanged by refine_gene_models!
     for m in target_strand_models, sf in m
@@ -278,7 +281,7 @@ with the annotation within it
 `reference` are the reference annotations (see `read_references`)
 """
 function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Dict{String,Vector{Int64}}}, feature_templates::Dict{String,FeatureTemplate}, sensitivity::Float16, target_id::String,
-     target_forward_strand::CircularSequence, target_reverse_strand::CircularSequence, output::MayBeIO, gff3::Bool)::Tuple{Union{String,IO},String}
+     target_forward_strand::CircularSequence, target_reverse_strand::CircularSequence, output::MayBeIO, gff3::Bool, nofilter::Bool)::Tuple{Union{String,IO},String}
 
     t1 = time_ns()
 
@@ -383,12 +386,14 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
 
     sffs_fwd, sffs_rev, ir = fetch.((Threads.@spawn w()) for w in [watson, crick, () -> inverted_repeat(target_forward_strand, target_reverse_strand)]) 
 
-    filter_gene_models!(sffs_fwd, sffs_rev)
+    if !nofilter
+        filter_gene_models!(sffs_fwd, sffs_rev)
+    end
    
     if ir.blocklength >= 1000
         @info "[$target_id] inverted repeat $(ir.blocklength)"
-        push!(sffs_fwd, SFF_Model("IR-1", 0.0, '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
-        push!(sffs_rev, SFF_Model("IR-2", 0.0, '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], false, false))
+        push!(sffs_fwd, SFF_Model("IR-1", 0.0, '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], []))
+        push!(sffs_rev, SFF_Model("IR-2", 0.0, '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], []))
     else
         ir = nothing
     end
@@ -425,7 +430,7 @@ returns a 2-tuple (sff annotation as an IOBuffer, sequence id)
 #     end
 # end
 
-function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}, templates_file::String, fa_files::Vector{String}, sensitivity::Float16, output::MayBeString, gff3::Bool)
+function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}, templates_file::String, fa_files::Vector{String}, sensitivity::Float16, output::MayBeString, gff3::Bool, nofilter::Bool)
     
     numrefs == 1 ? refhashes = nothing : refhashes = readminhashes(hashfile)
 
@@ -451,7 +456,7 @@ function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}
         if length(fseq) != length(rseq)
             @error "unequal lengths for forward and reverse strands"
         end
-        annotate_one(refsdir, numrefs, refhashes, feature_templates, sensitivity, FASTA.identifier(records[1]), fseq, rseq, output, gff3)
+        annotate_one(refsdir, numrefs, refhashes, feature_templates, sensitivity, FASTA.identifier(records[1]), fseq, rseq, output, gff3, nofilter)
         close(reader)
     end
 end

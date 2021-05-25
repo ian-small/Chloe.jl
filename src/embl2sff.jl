@@ -82,7 +82,7 @@ end
 mutable struct Feature
     gene::String
     type::String
-    order::Char
+    order::UInt8
     start::Int32
     length::Int32
     # phase is the number of nucleotides to skip at the start of the sequence 
@@ -91,12 +91,12 @@ mutable struct Feature
     function Feature(path, s, l, p)
         tags = split(path, "/")
         t = length(tags) == 4 ? tags[3] : tags[2]
-        o = length(tags) == 4 ? tags[4][1] : tags[3][1]
+        o = length(tags) == 4 ? parse(UInt8, tags[4][1]) : parse(UInt8, tags[3][1])
         return new(tags[1], t, o, s, l, p)
     end
 end
 
-const annotationPath(f::Feature) = begin
+const annotation_path(f::Feature) = begin
     join([f.gene, f.type, string(f.order)], "/")
 end
 
@@ -187,15 +187,16 @@ function embl2feature(gene::AbstractString, type::AbstractString, index::Int, ra
     feature_length::Int32 =  stop - start + 1
     #reverse complement if - strand
     start = strand == '-' ? seqlength - stop + 1 : start
-    phase = type == "CDS" ? phaseCounter(Int8(0), cumulative_length) : 0
-    if gene == "rps12B"; index -= 1; end;
-    fname = gene*"/"*type*"/"*string(index)
+    phase = type == "CDS" ? phase_counter(Int8(0), cumulative_length) : 0
+    order = 2 * index - 1
+    if gene == "rps12B"; order -= 1; end;
+    fname = gene*"/"*type*"/"*string(order)
     return Feature(fname, start, feature_length, phase), strand
 end
 
 function writeSFF(outfile::IO, id::AbstractString, genome_length::Int32, f_models::Vector{Vector{Feature}}, r_models::Vector{Vector{Feature}})
     
-    function getModelID!(model_ids::Dict{String,Int32}, model::Vector{Feature})
+    function getmodelID!(model_ids::Dict{String,Int32}, model::Vector{Feature})
         gene_name = model[1].gene
         instance_count::Int32 = 1
         model_id = "$(gene_name)/$(instance_count)"
@@ -213,29 +214,27 @@ function writeSFF(outfile::IO, id::AbstractString, genome_length::Int32, f_model
         for model in f_models
             #println(model)
             isempty(model) && continue
-            model_id = getModelID!(model_ids, model)
+            model_id = getmodelID!(model_ids, model)
             #println(model_id)
-            writeModelToSFF(outfile, model_id, model, '+')
+            write_model2SFF(outfile, model_id, model, '+')
         end
         for model in r_models
             isempty(model) && continue
-            model_id = getModelID!(model_ids, model)
-            writeModelToSFF(outfile, model_id, model, '-')
+            model_id = getmodelID!(model_ids, model)
+            write_model2SFF(outfile, model_id, model, '-')
         end
     end
 
     out(outfile)
 end
 
-function writeModelToSFF(outfile::IO, model_id::String, model::Vector{Feature}, strand::Char)
+function write_model2SFF(outfile::IO, model_id::String, model::Vector{Feature}, strand::Char)
 
     for feature in model
         #println(feature)
-        relative_length = getRelativeLength(feature)
+        relative_length = get_relative_length(feature)
         #println(relative_length)
         if relative_length == 0
-            if annotationPath(feature) == "atpI/intron/1"; println("atpI/intron/1")
-            elseif annotationPath(feature) == "rpoB/intron/1"; println("rpoB/intron/1"); end
             continue #avoid writing unrecognised features
         end
         write(outfile, model_id)
@@ -254,10 +253,11 @@ end
 
 const unknown_features = Dict{String, Int}()
 
-function getRelativeLength(f::Feature)
-    fname = annotationPath(f)
+function get_relative_length(f::Feature)
+    fname = annotation_path(f)
     template = get(templates, fname, nothing)
     if isnothing(template)
+        #println("failed to find template $fname")
         count = 0
         if haskey(unknown_features, fname); count = unknown_features[fname]; end
         unknown_features[fname] = count + 1
@@ -273,40 +273,26 @@ end
 
 const templates = Dict{String,FeatureTemplate}()
 
-function readTemplates(file::String)::Dict{String,FeatureTemplate}
-
+function read_templates(file::String)
     if !isfile(file)
         error("\"$(file)\" is not a file")
     end
     if filesize(file) === 0
         error("no data in \"$(file)!\"")
     end
-
-    gene_exons = String[]
-
     open(file) do f
-        header = readline(f)
+        readline(f) #skip header
         for line in eachline(f)
             fields = split(line, '\t')
-            path_components = split(fields[1], '/')
-            if path_components[3] ≠ "intron"
-                push!(gene_exons, path_components[1])
-            end
-            template = FeatureTemplate(fields[1], 
-                parse(Float32, fields[2]))
-            if haskey(templates, template.path)
-                @error "duplicate path: $(template.path) in \"$file\""
-            end
+            template = FeatureTemplate(fields[1], parse(Float32, fields[3]))
             templates[template.path] = template
-            # push!(templates, template)
         end
     end
-    return templates #, StatsBase.addcounts!(Dict{String,Int32}(), gene_exons)
 end
 
 const gene_names = Dict{String, String}()
 
-function readNameMappings(file::String)
+function read_name_mappings(file::String)
     open(file) do f
         for line in eachline(f)
             names = split(line,"\t")
@@ -321,7 +307,9 @@ function addintrons!(models::Vector{Vector{Feature}})
         i = 1
         while i < exons
             #insert intron
-            intronpath = join([model[1].gene, "intron", string(i)], "/")
+            intron_order = i + 1
+            if model[1].gene == "rps12B"; intron_order += 1; end
+            intronpath = join([model[1].gene, "intron", string(intron_order)], "/")
             preceding_exon = model[i * 2 - 1]
             insert!(model, i * 2, Feature(intronpath, preceding_exon.start + preceding_exon.length, model[i * 2].start - preceding_exon.start - preceding_exon.length, 0))
             i += 1

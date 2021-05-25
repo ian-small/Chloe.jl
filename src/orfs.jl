@@ -24,10 +24,10 @@ function framedstops(seq::CircularSequence)
     penultimate_codon = getcodon(seq, penultimate)
     ultimate::Int32 = penultimate + one(Int32)
     ultimate_codon = getcodon(seq, ultimate)
-    if isStopCodon(penultimate_codon)
+    if isstopcodon(penultimate_codon)
         push!(matchmap.frames[mod1(penultimate, 3)], penultimate)
     end
-    if isStopCodon(ultimate_codon)
+    if isstopcodon(ultimate_codon)
         push!(matchmap.frames[mod1(ultimate, 3)], ultimate)
     end
     return matchmap
@@ -39,10 +39,10 @@ function framedstarts(seq::CircularSequence)
     penultimate_codon = getcodon(seq, penultimate)
     ultimate::Int32 = penultimate + one(Int32)
     ultimate_codon = getcodon(seq, ultimate)
-    if isStartCodon(penultimate_codon)
+    if isstartcodon(penultimate_codon)
         push!(matchmap.frames[mod1(penultimate, 3)], penultimate)
     end
-    if isStartCodon(ultimate_codon)
+    if isstartcodon(ultimate_codon)
         push!(matchmap.frames[mod1(ultimate, 3)], ultimate)
     end
     return matchmap
@@ -71,7 +71,8 @@ function getmaxorflength(orfmap::FramedMatches, index)
     return maxorf
 end
 
-function isStartCodon(codon::Tuple{DNA,DNA,DNA}, allow_editing::Bool = false, allow_GTG::Bool = false)::Bool
+function isstartcodon(codon::Union{Nothing,Tuple{DNA,DNA,DNA}}, allow_editing::Bool = false, allow_GTG::Bool = false)::Bool
+    isnothing(codon) && return false
     if codon[1] == DNA_A || (allow_GTG && codon[1] == DNA_G)
         if codon[2] == DNA_T || (allow_editing && codon[2] == DNA_C)
             if codon[3] == DNA_G #ATG / GTG / ACG (GCG)
@@ -82,8 +83,8 @@ function isStartCodon(codon::Tuple{DNA,DNA,DNA}, allow_editing::Bool = false, al
     return false
 end
 
-function isStopCodon(codon::Tuple{DNA,DNA,DNA}, allow_editing::Bool = false)::Bool
-    #println(codon)
+function isstopcodon(codon::Union{Nothing,Tuple{DNA,DNA,DNA}}, allow_editing::Bool = false)::Bool
+    isnothing(codon) && return false
     if codon[1] == DNA_T || (allow_editing && codon[1] == DNA_C)
         if codon[2] == DNA_A
             if codon[3] == DNA_A || codon[3] == DNA_G    #TAA, TAG / CAA, CAG
@@ -197,7 +198,7 @@ function countcodons(orf::Feature, seq::CircularSequence)::Vector{Float64}
     return codonfrequencies
 end
 
-function readGLMCodingClassifer()
+function readGLMcodingclassifer()
     glm_coding_coeffs = Dict{String, Float64}()
     open(joinpath(@__DIR__, "GLMCodingClassifier.tsv")) do coding_coeffs
         readline(coding_coeffs) # skip header
@@ -209,7 +210,7 @@ function readGLMCodingClassifer()
     return glm_coding_coeffs
 end
 
-const GLM_Coding_Coeffs = readGLMCodingClassifer()
+const GLM_Coding_Coeffs = readGLMcodingclassifer()
 
 function glm_coding_classifier(codonfrequencies::Vector{Float64})::Float32
     #explicit test for stop codons

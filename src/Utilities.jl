@@ -102,6 +102,12 @@ function reverse_complement(cs::CircularSequence)
     return CircularSequence(BioSequences.reverse_complement(cs.sequence))
 end
 
+@inline function getcodon(seq::LongDNASeq, index::Int32)
+    index ≤ 0 && return nothing
+    index + 2 > length(seq) && return nothing
+    return (seq[index], seq[index + 1], seq[index + 2])
+end
+
 @inline function getcodon(cs::CircularSequence, index::Int32)
     return (cs[index], cs[index + Int32(1)], cs[index + Int32(2)])
 end

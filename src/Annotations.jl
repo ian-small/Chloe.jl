@@ -89,9 +89,9 @@ function read_features!(file::String, reference_feature_counts::Dict{String, Int
         f_features = FeatureTree(IntervalTree{Int32,Feature}(), genome_length, Dict{Feature,Feature}())
         while !eof(f)
             fields = split(readline(f), '\t')
+            startswith(fields[1], "IR") && continue # don't use IR annotations
             startswith(fields[1], "unassigned") && continue # don't use unassigned annotations
-            startswith(fields[1], "predicted") && continue # don't use annotations considered as predictions
-            length(fields) ≥ 9 && occursin("pseudo", fields[9]) && continue # don't use annotations considered as pseudogenes
+            length(fields) ≥ 11 && length(fields[11]) > 0 && continue # don't use annotations with warnings
             feature = Feature(fields[1], parse(Int, fields[3]), parse(Int, fields[4]), parse(Int, fields[5]))
             path = annotation_path(feature)
             count = get(reference_feature_counts, path, nothing)
@@ -138,7 +138,7 @@ function transfer_annotations(ref_features::FeatureArray, aligned_blocks::BlockT
         feature_overlaps = overlaps(range(block.src_index, length=block.blocklength), range(feature.start, length=feature.length), src_length)
         for o in feature_overlaps
             offset5 = o.start - feature.start
-            offset3 = circulardistance(o.stop, feature.start + feature.length - 1, src_length)
+            offset3 = o.stop - (feature.start + feature.length - 1)
             if (feature.type == "CDS")
                 phase = phase_counter(feature.phase, offset5)
             else
@@ -306,7 +306,7 @@ function refine_boundaries_by_offsets!(feat::Feature, annotations::Vector{Annota
         left = weighted_mode(end5s, end5ws)
     end
     feat.start = genome_wrap(target_length, left)
-    feat.phase = isempty(phases) ? 0 : weighted_mode(phases, end5ws)
+    feat.phase = (feat.type ≠ "CDS" || isempty(phases)) ? 0 : weighted_mode(phases, end5ws)
     # println(annotation_path(feat) , '\t', phases, '\t', feat.phase)
 
     ## Fix 3' boundary
@@ -327,9 +327,9 @@ function refine_boundaries_by_offsets!(feat::Feature, annotations::Vector{Annota
     @inbounds for (i, annotation) in enumerate(overlapping_annotations)
         # predicted 3' end is feature start + feature length + offset3 - 1
         end3s[i] = annotation.start + annotation.length - annotation.offset3 - 1
-    # weights
+        # weights
         coverage = coverages[annotation.genome_id]
-    weight = ((feat.length - (maxend - (annotation.start + annotation.length - 1))) / feat.length) * coverage
+        weight = ((feat.length - (maxend - (annotation.start + annotation.length - 1))) / feat.length) * coverage
         end3ws[i] = weight * weight
     end
     right = feat.start + feat.length - 1
@@ -370,16 +370,16 @@ function features2models(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_F
     return gene_models
 end
 
-function translate_model(target_seq::CircularSequence, model::Vector{SFF_Feature})::LongAminoAcidSeq
+function splice_model(target_seq::CircularSequence, model::Vector{SFF_Feature})::LongDNASeq
     cds = dna""
     empty!(cds)
     for sfeat in model
         feat = sfeat.feature
-        feat.type ≠ "CDS" && continue
+        feat.type == "intron" && continue
         append!(cds, target_seq[feat.start:feat.start + feat.length - 1])
     end
     cds = cds[first(model).feature.phase + 1:end]
-    return translate(cds)
+    return cds
 end
 
 # define parameter weights
@@ -410,7 +410,7 @@ function findStartCodon!(cds::Feature, genome_length::Int32, target_seq::Circula
     # search for start codon 5'-3' beginning at cds.start, save result; abort if stop encountered
     start3::Int32 = cds.start + cds.phase
     codon = getcodon(target_seq, start3)
-    if isStartCodon(codon, true, true)  # allow ACG and GTG codons if this is predicted start
+    if isstartcodon(codon, true, true)  # allow ACG and GTG codons if this is predicted start
             cds.start = start3
         cds.length -= cds.phase
         cds.phase = 0;
@@ -426,11 +426,11 @@ function findStartCodon!(cds::Feature, genome_length::Int32, target_seq::Circula
     start3 = 0
     for i::Int32 in cds.start + cds.phase:3:cds.start + cds.phase + genome_length - 3
         codon = getcodon(target_seq, i)
-        if isStartCodon(codon, allowACG, allowGTG)
+        if isstartcodon(codon, allowACG, allowGTG)
             start3 = i >= cds.start + cds.phase ? i : i + genome_length
             break
         end
-        if isStopCodon(codon, false)
+        if isstopcodon(codon, false)
             break
         end
     end
@@ -438,11 +438,11 @@ function findStartCodon!(cds::Feature, genome_length::Int32, target_seq::Circula
     start5::Int32 = 0
     for i::Int32 in cds.start + cds.phase:-3:cds.start + cds.phase - genome_length + 3
         codon = getcodon(target_seq, i)
-        if isStartCodon(codon, allowACG, allowGTG)
+        if isstartcodon(codon, allowACG, allowGTG)
             start5 = i <= cds.start + cds.phase ? i : i - genome_length
             break
         end
-        if isStopCodon(codon, false)
+        if isstopcodon(codon, false)
             break
         end
     end
@@ -524,7 +524,6 @@ function refine_boundaries_by_score!(feat1::Feature, feat2::Feature, genome_leng
 end
 
 function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_seq::CircularSequence,
-                          annotations::Vector{Annotation},
                           feature_stacks::DFeatureStack,
                           orfs::Vector{Feature})
 
@@ -536,6 +535,24 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
         isempty(model) && continue
         # sort features in model by mid-point to avoid cases where long intron overlaps short exon
         sort!(model, by=f -> f.feature.start + f.feature.length / 2)
+
+        #first check feature order and remove out of order features
+        pointer = 1
+        while true
+            pointer == length(model) && break
+            sfeature1 = model[pointer]
+            sfeature2 = model[pointer + 1]
+            if sfeature1.feature.order > sfeature2.feature.order #features are out of order
+                if sfeature1.feature_prob > sfeature2.feature_prob
+                    deleteat!(model, pointer + 1)
+                else
+                    deleteat!(model, pointer)
+                end
+            else
+                pointer += 1
+            end
+        end
+
         last_exon = last(model).feature
         # if CDS, find phase, stop codon and set feature.length
         if last_exon.type == "CDS"
@@ -584,8 +601,7 @@ mutable struct SFF_Model
     gene_count::Int8
     exon_count::Int8
     features::Vector{SFF_Feature}
-    hasStart::Bool
-    hasPrematureStop::Bool
+    warnings::Vector{String}
 end
 
 function get_gene_boundaries(model::SFF_Model)::UnitRange{Int32}
@@ -610,6 +626,11 @@ gene_length(model::Vector{SFF_Model}) = begin
     maximum([m.feature.start + m.feature.length for m in model]) - minimum([m.feature.start for m in model])
 end
 
+const LACKS_ESSENTIAL_FEATURE = "lacks an essential part of the gene"
+const LACKS_START_CODON = "lacks a start codon"
+const PREMATURE_STOP_CODON = "has a premature stop codon"
+const CDS_NOT_DIVISIBLE_BY_3 = "CDS is not divisible by 3"
+
 function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Float16)::Union{Nothing,SFF_Model}
     gene = first(model).feature.gene
     type = "intron"
@@ -620,17 +641,15 @@ function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SF
         end
     end
     type == "intron" && return nothing
-    expected_exons = 0
-    for n in 1:typemax(UInt8)
+    warnings = String[]
+    expected_exons = String[]
+    for n in 1:5
         possible_exon = gene * "/" * type * "/" * string(n)
         if haskey(feature_templates, possible_exon)
-            expected_exons += 1
-        else
-            break
+            push!(expected_exons, possible_exon)
         end
     end
     exon_count = 0
-    cds = false
     model_prob = 0.0
     for sff in model        
         if sff.feature.type ≠ "intron"
@@ -638,37 +657,41 @@ function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SF
             exon_count += 1
         end
     end
+    if exon_count < length(expected_exons)
+        push!(warnings, LACKS_ESSENTIAL_FEATURE)
+    end
+
     if startswith(gene, "unassigned_orf")
         model_prob = first(model).feature_prob
     else
-        model_prob = model_prob / expected_exons
+        model_prob = model_prob / length(expected_exons)
     end
     exceeds_sensitivity = false
     if model_prob ≥ sensitivity || isnan(model_prob)
         exceeds_sensitivity = true
     end
-    hasStart = true
-    hasPrematureStop = false
-    if exceeds_sensitivity && cds
-        # protein = translate_model(target_seq, model)
-        # println(gene, '\t', protein)
-        if gene ≠ "rps12B" && !isStartCodon(getcodon(target_seq, first_model.feature.start), true, true)
-            hasStart = false
+    
+    if exceeds_sensitivity && (type == "CDS")
+        cds = splice_model(target_seq, model)
+        if gene ≠ "rps12B" && isstartcodon(getcodon(cds, Int32(1)), true, true)
+            push!(warnings, LACKS_START_CODON)
         end
-        # stop_position = findfirst(AA_Term, protein)
-        # println(stop_position)
-        # if !isnothing(stop_position) && stop_position < length(protein)
-        #    hasPrematureStop = true
-        # end
+        for i::Int32 in 1:3:length(cds)-2
+            if isstopcodon(getcodon(cds, i))
+                push!(warnings, PREMATURE_STOP_CODON)
+                break
+            end
+        end
+        if length(cds) % 3 ≠ 0
+            push!(warnings, CDS_NOT_DIVISIBLE_BY_3)
+        end
     end
-    return exceeds_sensitivity ? SFF_Model(gene, model_prob, strand, 1, exon_count, model, hasStart, hasPrematureStop) : nothing
+    return exceeds_sensitivity ? SFF_Model(gene, model_prob, strand, 1, exon_count, model, warnings) : nothing
 end
 
 function write_model2SFF(outfile::IO, model::SFF_Model)
     isnothing(model) && return
     model_id = model.gene * "/" * string(model.gene_count)
-    !model.hasStart && !startswith(model.gene, "IR") && @warn("$(model_id) has no start codon")
-    model.hasPrematureStop && @warn("$(model_id) has (a) premature stop codon(s)")
     for sff in model.features
         f = sff.feature
         write(outfile, model_id)
@@ -677,11 +700,16 @@ function write_model2SFF(outfile::IO, model::SFF_Model)
         write(outfile, "/")
         write(outfile, string(f.order))
         write(outfile, "\t")
-    write(outfile, join([model.strand,string(f.start),string(f.length),string(f.phase)], "\t"))
+        write(outfile, join([model.strand,string(f.start),string(f.length),string(f.phase)], "\t"))
         write(outfile, "\t")
         write(outfile, join([@sprintf("%.3f",sff.relative_length),@sprintf("%.3f",sff.stackdepth),@sprintf("%.3f",sff.gmatch),
             @sprintf("%.3f",sff.feature_prob), @sprintf("%.3f",sff.coding_prob)], "\t"))
+        write(outfile, "\t")
+        write(outfile, join(model.warnings, "; "))
         write(outfile, "\n")
+    end
+    for warning in model.warnings
+        @warn("$(model_id) $(warning)")
     end
 end
 
@@ -727,9 +755,28 @@ function allowed_model_overlap(m1, m2)::Bool
 end
 
 function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model})
+    # hard floor on stackdepth
+    fwd_models_to_delete = SFF_Model[]
+    for model in fwd_models
+        if mean_stackdepth(model) < 0.01
+            push!(fwd_models_to_delete, model)
+        end
+    end
+    setdiff!(fwd_models, fwd_models_to_delete)
+    rev_models_to_delete = SFF_Model[]
+    for model in rev_models
+        if mean_stackdepth(model) < 0.01
+            push!(rev_models_to_delete, model)
+        end
+    end
+    setdiff!(rev_models, rev_models_to_delete)
+
+    empty!(fwd_models_to_delete)
+    empty!(rev_models_to_delete)
+
     # filter out models of genes where better model of same gene exists
     # filter out models of genes where better model of overlapping gene exists
-    fwd_models_to_delete = SFF_Model[]
+    
     for (i, model1) in enumerate(fwd_models)
         for j in i + 1:length(fwd_models)
             model2 = fwd_models[j]
@@ -750,7 +797,6 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
     end
     setdiff!(fwd_models, fwd_models_to_delete)
     
-    rev_models_to_delete = SFF_Model[]
     for (i, model1) in enumerate(rev_models)
         for j in i + 1:length(rev_models)
             model2 = rev_models[j]
@@ -819,7 +865,7 @@ function writeSFF(outfile::Union{String,IO},
             isnothing(model) && continue
             isempty(model.features) && continue
             model_id = modelID!(model_ids, model)
-    write_model2SFF(outfile, model)
+            write_model2SFF(outfile, model)
         end
     end
     if outfile isa String
@@ -958,7 +1004,7 @@ function write_model2GFF3(outfile, model::SFF_Model, genome_id::String, genome_l
         start, finish, length = sff2gffcoords(f, model.strand, genome_length)
         
         phase = type == "CDS" ? string(f.phase) : "."
-        write_line(type, start, finish, 1.0 - sff.feature_prob, id * "." * type * "." * f.order, parent, phase)
+        write_line(type, start, finish, 1.0 - sff.feature_prob, id * "." * type * "." * string(f.order), parent, phase)
     end
     write(outfile, "###\n")
 end
