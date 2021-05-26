@@ -130,19 +130,19 @@ function do_annotations(numrefs::Int, target_id::String, strand::Char, refs::Vec
     annotations
 end
 
-function score_feature(sff::SFF_Feature, stack::FeatureStack, reference_feature_counts::Dict{String,Int}, gmatch::Float32, seq::CircularSequence)
+function score_feature(sff::SFF_Feature, maxtemplatelength::Float32, stack::FeatureStack, reference_feature_counts::Dict{String,Int}, gmatch::Float32, seq::CircularSequence)
     ref_count = reference_feature_counts[annotation_path(sff.feature)]
     sff.stackdepth = Float32(sum(stack.stack[range(sff.feature.start, length=sff.feature.length)]) / (ref_count * sff.feature.length))
     sff.relative_length = sff.feature.length / stack.template.median_length
     sff.gmatch = gmatch
-    sff.feature_prob = feature_glm(stack.template, sff.relative_length, sff.stackdepth, gmatch)
+    sff.feature_prob = feature_glm(maxtemplatelength, stack.template, sff.relative_length, sff.stackdepth, gmatch)
     if sff.feature.type == "CDS"
         sff.coding_prob = glm_coding_classifier(countcodons(sff.feature, seq))
     end
 end
 
 function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32}, reference_feature_counts::Dict{String,Int},
-    strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate})::Vector{Vector{SFF_Feature}}
+    strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate}, maxtemplatelength::Float32)::Vector{Vector{SFF_Feature}}
 
     # println(strand, '\t', blocks_aligned_to_target)
 
@@ -181,7 +181,7 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         refine_boundaries_by_offsets!(feature, annotations, target_length, coverages)
         sff_features[i] = SFF_Feature(feature, 0.0, 0.0, 0.0, 0.0, 0.0)
         stack = path_to_stack[annotation_path(feature)]
-        score_feature(sff_features[i], stack, reference_feature_counts, gmatch, target_seq)        
+        score_feature(sff_features[i], maxtemplatelength, stack, reference_feature_counts, gmatch, target_seq)        
     end
 
     #println(strand, '\t', sff_features)
@@ -199,7 +199,7 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         # update feature data
         f = sf.feature
         stack = path_to_stack[annotation_path(f)]
-        score_feature(sf, stack, reference_feature_counts, gmatch, target_seq) 
+        score_feature(sf, maxtemplatelength, stack, reference_feature_counts, gmatch, target_seq) 
     end
 
     # add any unassigned orfs
@@ -360,9 +360,11 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     t3 = time_ns()
     @info "[$target_id] aligned: ($(numrefs)) $(human(datasize(blocks_aligned_to_targetf) + datasize(blocks_aligned_to_targetr))) mean coverage: $(geomean(values(coverages))) $(ns(t3 - t2))" 
 
+    maxtemplatelength = maximum([t.median_length for t in values(feature_templates)])
+
     function watson()
         models = do_strand(numrefs, target_id, target_forward_strand, refs, coverages, reference_feature_counts,
-            '+', blocks_aligned_to_targetf, feature_templates)
+            '+', blocks_aligned_to_targetf, feature_templates, maxtemplatelength)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
             sff = toSFF(feature_templates, model, '+', target_forward_strand, sensitivity)
@@ -373,7 +375,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
         
     function crick()
         models = do_strand(numrefs, target_id, target_reverse_strand, refs, coverages, reference_feature_counts,
-            '-', blocks_aligned_to_targetr, feature_templates)
+            '-', blocks_aligned_to_targetr, feature_templates, maxtemplatelength)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
             sff = toSFF(feature_templates, model, '-', target_reverse_strand, sensitivity)
