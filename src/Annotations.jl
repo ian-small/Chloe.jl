@@ -371,8 +371,7 @@ function features2models(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_F
 end
 
 function splice_model(target_seq::CircularSequence, model::Vector{SFF_Feature})::LongDNASeq
-    cds = dna""
-    empty!(cds)
+    cds = dna""d    #dynamically allocated so thread-safe
     for sfeat in model
         feat = sfeat.feature
         feat.type == "intron" && continue
@@ -735,7 +734,7 @@ function feature_glm(maxtemplatelength::Float32, template::FeatureTemplate, flen
     length = log(flength)
     depth = log(fdepth)
     match = gmatch / 100
-    pred = 3.77774 + 17.0456 * tlength + 9.90871 * length + -0.60762 * depth + 1.45996 * match + 2.25545 * depth * tlength + 2.13802 * depth * length + 4.04136 * depth * match
+    pred = 4.61577 + 10.308 * tlength + 5.15019 * length + 0.791838 * depth + 0.0570887 * match + 1.08125 * depth * tlength + 0.487625 * depth * length + 1.77479 * depth * match
     odds = exp(pred)
     return Float32(odds / (1.0 + odds))
 end
