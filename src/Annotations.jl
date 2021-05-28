@@ -638,13 +638,7 @@ const CDS_NOT_DIVISIBLE_BY_3 = "CDS is not divisible by 3"
 
 function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Float16)::Union{Nothing,SFF_Model}
     gene = first(model).feature.gene
-    type = "intron"
-    for sff in model
-        if sff.feature.type ≠ "intron"
-            type = sff.feature.type
-            break
-        end
-    end
+    type = featuretype(model)
     type == "intron" && return nothing
     warnings = String[]
     expected_exons = String[]
@@ -948,6 +942,17 @@ function merge_adjacent_features!(model::SFF_Model)
     end
 end
 
+function featuretype(model::Vector{SFF_Feature})
+    type = ""
+    for sff in model
+        if sff.feature.type ≠ "intron"
+            type = sff.feature.type
+            break
+        end
+    end
+    return type
+end
+
 function write_model2GFF3(outfile, model::SFF_Model, genome_id::String, genome_length::Int32)
     
     function write_line(type, start, finish, pvalue, id, parent, phase="."; key="Parent")
@@ -965,7 +970,7 @@ function write_model2GFF3(outfile, model::SFF_Model, genome_id::String, genome_l
     end
 
     start = minimum(f.feature.start for f in features)
-    ft = first(features).feature.type
+    ft = featuretype(model.features)
     if ft == "CDS" && !startswith(id, "rps12A")
         last(features).feature.length += 3 # add stop codon
     end
