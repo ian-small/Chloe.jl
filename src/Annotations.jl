@@ -554,9 +554,12 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
         last_exon = last(model).feature
 
         # tRNA or ncRNA, check the ends are complementary
-        #if last_exon.type in ["ncRNA", "tRNA"]
         if last_exon.type in ["ncRNA"]
             trimRNAends!(target_seq, model)
+        end
+
+        if last_exon.type == "tRNA"
+            tRNAends!(target_seq, model)
         end
 
         # if CDS, find phase, stop codon and set feature.length
@@ -1015,64 +1018,5 @@ function write_model2GFF3(outfile, model::SFF_Model, genome_id::String, genome_l
     write(outfile, "###\n")
 end
 
-const RNApairs = Dict((DNA_A, DNA_A) => 0, (DNA_A, DNA_C) => 0, (DNA_A, DNA_G) => 0, (DNA_A, DNA_T) => 1, (DNA_C, DNA_A) => 0, (DNA_C, DNA_C) => 0, (DNA_C, DNA_G) => 1, (DNA_C, DNA_T) => 0,
-    (DNA_G, DNA_A) => 0, (DNA_G, DNA_C) => 1, (DNA_G, DNA_G) => 0, (DNA_G, DNA_T) => 1, (DNA_T, DNA_A) => 1, (DNA_T, DNA_C) => 0, (DNA_T, DNA_G) => 1, (DNA_T, DNA_T) => 0)
-
-
-function longest_complementary_match(seq1::LongDNASeq, seq2::LongDNASeq)
-    rseq2 = reverse(seq2)
-    len = length(rseq2)
-    L = zeros(Int8, len, len)
-    z = 0
-    offsets = (0, 0)
-    for i in 1:len, j in 1:len
-        match = get(RNApairs, (seq1[i], rseq2[j]), 0)
-        if match == 1
-            #don't count terminal G:U pairs
-            if (i == 1 || j == 1)
-                if !((seq1[i] == DNA_G && rseq2[j] == DNA_T) || (seq1[i] == DNA_T && rseq2[j] == DNA_G))
-                    L[i,j] = 1
-                end
-            elseif L[i - 1, j - 1] == 0
-                if ((seq1[i] == DNA_G && rseq2[j] == DNA_T) || (seq1[i] == DNA_T && rseq2[j] == DNA_G))
-                    L[i,j] = 0
-                else
-                    L[i,j] = 1
-                end 
-            else
-                L[i, j] = L[i - 1, j - 1] + 1
-            end
-            if L[i, j] > z
-                z = L[i, j]
-                offsets = (i - z + 1, j - z + 1)
-            end
-        else
-            L[i, j] = 0
-        end
-    end
-    return offsets, z
-end
-
-function trimRNAends!(seq::CircularSequence, model::Vector{SFF_Feature})
-    #currently not used for tRNAs
-    if first(model).feature.type == "ncRNA"
-        stem = 6
-    else
-        stem = 7
-    end
-    slop = 3
-    start = first(model).feature.start
-    stop = last(model).feature.start + last(model).feature.length - 1
-    offsets, stemlength = longest_complementary_match(seq[start - slop:start + slop + stem], seq[stop - stem - slop:stop + slop])
-    if stemlength ≥ stem
-        startchange = offsets[1] - slop - 1
-        first(model).feature.start += startchange
-        first(model).feature.length -= startchange
-        stopchange = slop - offsets[2] + 1
-        last(model).feature.length += stopchange
-        if first(model).feature.type == "tRNA" && first(model).feature.gene ≠ "trnH-GUG"
-            last(model).feature.length += 1 # unpaired nucleotide
-        end
-    end
-end
+include("rnas.jl")
 
