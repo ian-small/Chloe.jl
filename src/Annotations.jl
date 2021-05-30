@@ -642,7 +642,7 @@ const CDS_NOT_DIVISIBLE_BY_3 = "CDS is not divisible by 3"
 function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Float16)::Union{Nothing,SFF_Model}
     gene = first(model).feature.gene
     type = featuretype(model)
-    type == "intron" && return nothing
+    type == "" && return nothing
     warnings = String[]
     expected_exons = String[]
     for n in 1:5
