@@ -638,6 +638,9 @@ const LACKS_ESSENTIAL_FEATURE = "lacks an essential part of the gene"
 const LACKS_START_CODON = "lacks a start codon"
 const PREMATURE_STOP_CODON = "has a premature stop codon"
 const CDS_NOT_DIVISIBLE_BY_3 = "CDS is not divisible by 3"
+const LOW_ANNOTATION_DEPTH = "has low annotation depth, probably spurious"
+const BLACK_SHEEP = "probably pseudogene as better copy exists in the genome"
+const OVERLAPPING_FEATURE = "better-scoring feature overlaps with this one"
 
 function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Float16)::Union{Nothing,SFF_Model}
     gene = first(model).feature.gene
@@ -759,23 +762,16 @@ end
 
 function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model})
     # hard floor on stackdepth
-    fwd_models_to_delete = SFF_Model[]
     for model in fwd_models
         if mean_stackdepth(model) < 0.01
-            push!(fwd_models_to_delete, model)
+            push!(model.warnings, LOW_ANNOTATION_DEPTH)
         end
     end
-    setdiff!(fwd_models, fwd_models_to_delete)
-    rev_models_to_delete = SFF_Model[]
     for model in rev_models
         if mean_stackdepth(model) < 0.01
-            push!(rev_models_to_delete, model)
+            push!(model.warnings, LOW_ANNOTATION_DEPTH)
         end
     end
-    setdiff!(rev_models, rev_models_to_delete)
-
-    empty!(fwd_models_to_delete)
-    empty!(rev_models_to_delete)
 
     # filter out models of genes where better model of same gene exists
     # filter out models of genes where better model of overlapping gene exists
@@ -787,18 +783,17 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
             bmodel2 = get_gene_boundaries(model2)
             if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2)) > 0 && !allowed_model_overlap(model1, model2))
                 if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
-                    push!(fwd_models_to_delete, model2)
+                    push!(model2.warnings, BLACK_SHEEP)
                 elseif model2.gene_prob > model1.gene_prob
-                    push!(fwd_models_to_delete, model1)
+                    push!(model1.warnings, BLACK_SHEEP)
                 elseif mean_stackdepth(model1) > mean_stackdepth(model2) # if probs are equal, decide on stackdepth
-                    push!(fwd_models_to_delete, model2)
+                    push!(model2.warnings, BLACK_SHEEP)
                 elseif mean_stackdepth(model2) > mean_stackdepth(model1)
-                    push!(fwd_models_to_delete, model1)
+                    push!(model1.warnings, BLACK_SHEEP)
                 end
             end
         end
     end
-    setdiff!(fwd_models, fwd_models_to_delete)
     
     for (i, model1) in enumerate(rev_models)
         for j in i + 1:length(rev_models)
@@ -807,32 +802,27 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
             bmodel2 = get_gene_boundaries(model2)
             if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2)) > 0 && !allowed_model_overlap(model1, model2))
                 if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
-                    push!(rev_models_to_delete, model2)
+                    push!(model2.warnings, OVERLAPPING_FEATURE)
                 elseif model2.gene_prob > model1.gene_prob
-                    push!(rev_models_to_delete, model1)
+                    push!(model1.warnings, OVERLAPPING_FEATURE)
                 elseif mean_stackdepth(model1) > mean_stackdepth(model2) # if probs are equal, decide on stackdepth
-                    push!(rev_models_to_delete, model2)
+                    push!(model2.warnings, OVERLAPPING_FEATURE)
                 elseif mean_stackdepth(model2) > mean_stackdepth(model1)
-                    push!(rev_models_to_delete, model1)
+                    push!(model1.warnings, OVERLAPPING_FEATURE)
                 end
             end
         end
     end
-    setdiff!(rev_models, rev_models_to_delete)
 
-    empty!(fwd_models_to_delete)
-    empty!(rev_models_to_delete)
     for model1 in fwd_models, model2 in rev_models
     if model1.gene == model2.gene
             if model1.gene_prob > 1.05 * model2.gene_prob ##small tolerance for unequal probs to avoid deleting real duplicates in IRs
-                push!(rev_models_to_delete, model2)
+                push!(model2.warnings, BLACK_SHEEP)
             elseif model2.gene_prob > 1.05 * model1.gene_prob
-                push!(fwd_models_to_delete, model1)
+                push!(model1.warnings, BLACK_SHEEP)
             end
         end
     end
-    setdiff!(fwd_models, fwd_models_to_delete)
-    setdiff!(rev_models, rev_models_to_delete)
 end
 
 MaybeIR = Union{AlignedBlock,Nothing}

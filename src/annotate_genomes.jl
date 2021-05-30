@@ -390,6 +390,8 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
 
     if !nofilter
         filter_gene_models!(sffs_fwd, sffs_rev)
+        filter!(m -> length(m.warnings) == 0, sffs_fwd)
+        filter!(m -> length(m.warnings) == 0, sffs_rev)
     end
    
     if ir.blocklength >= 1000
