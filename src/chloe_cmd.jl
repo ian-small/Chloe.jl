@@ -8,7 +8,6 @@ import Logging
 import ..Annotator
 
 include("globals.jl")
-#include("rotate_genome.jl")
 
 function quiet_metafmt(level, _module, group, id, file, line)
     color = Logging.default_logcolor(level)
@@ -170,7 +169,7 @@ function cmd_main()
         elseif cmd == :annotate
             chloe(;a...)
         elseif cmd == :rotate
-            rotategenomes(;a...)
+            Annotator.rotategenomes(;a...)
         end
     end
 

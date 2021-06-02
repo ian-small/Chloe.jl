@@ -6,6 +6,7 @@ export read_single_reference, inverted_repeat
 import Base
 
 include("Utilities.jl")
+include("rotate_genome.jl")
 include("hash.jl")
 include("AlignGenomes.jl")
 include("Annotations.jl")
