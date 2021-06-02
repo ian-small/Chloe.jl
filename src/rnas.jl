@@ -6,7 +6,7 @@ function complementaryRNAscore(seq1::LongDNASeq, seq2::LongDNASeq)
     @assert length(seq1) == length(seq2)
     score = 0
     for n in 1:length(seq1)
-        score += RNApairs[(seq1[n], seq2[end - n + 1])]
+        score += get(RNApairs, (seq1[n], seq2[end - n + 1]), 0)
     end
     return score
 end
@@ -61,6 +61,10 @@ function trimRNAends!(seq::CircularSequence, model::Vector{SFF_Feature})
 end
 
 function tRNAends!(seq::CircularSequence, model::Vector{SFF_Feature})
+
+    # before making any changes, check if model scores sufficiently highly to be left alone
+    #could use template length, Tstemscore, acceptor stem score
+
     start = first(model).feature.start
     stop = last(model).feature.start + last(model).feature.length - 1
     slop = 2

@@ -350,7 +350,7 @@ function features2models(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_F
             left_border = sff_feature.feature.start
             right_border = sff_feature.feature.start + sff_feature.feature.length - 1
         # add feature to model if the gene names match and they are less than 3kb apart; 3kb is an arbitrary limit set to include the longest intron (trnK, ~2.5kb) and may need to be reduced
-        elseif current_model[1].feature.gene == sff_feature.feature.gene && max(left_border, sff_feature.feature.start) - min(right_border, sff_feature.feature.start + sff_feature.feature.length - 1) < 3000
+        elseif current_model[1].feature.gene == sff_feature.feature.gene && max(left_border, sff_feature.feature.start) - min(right_border, sff_feature.feature.start + sff_feature.feature.length - 1) < 6000
             push!(current_model, sff_feature)
             left_border = min(left_border, sff_feature.feature.start)
             right_border = max(right_border, sff_feature.feature.start + sff_feature.feature.length - 1)
@@ -468,31 +468,42 @@ function findStartCodon!(cds::Feature, genome_length::Int32, target_seq::Circula
 end
 
 function setlongestORF!(sfeat::SFF_Feature, orfs::Vector{Feature}, genome_length::Int32)
-    # find in-frame orf with longest overlap with feature
+    # find in-frame and out-of-frame orfs with longest overlap with feature
     # orfs are sorted by descending length
     f = sfeat.feature
-    f_frame = mod1(f.start + f.phase, 3)
+    f_frame::Int8 = mod1(f.start + f.phase, 3)
+    #println(f, "\t", f_frame)
     max_overlap = 0
     overlap_orf = nothing
     for orf in orfs
         orf.length < max_overlap && break
+        overlap_array = overlaps(range(orf.start, length=orf.length), range(f.start, length=f.length), genome_length)
+        length(overlap_array) == 0 && continue
+        overlap = overlap_array[1].stop - overlap_array[1].start + 1
         orf_frame = mod1(orf.start, 3)
-        if f_frame == orf_frame
-            overlap_array = overlaps(range(orf.start, length=orf.length), range(f.start, length=f.length), genome_length)
-            length(overlap_array) == 0 && continue
-            overlap = overlap_array[1].stop - overlap_array[1].start + 1
-            if overlap > max_overlap
-                max_overlap = overlap
-                overlap_orf = orf
-            end
+        #println(orf, "\t", overlap, "\t", orf_frame)
+        # arbitrary 0.75 proportion threshold for preferring in-frame ORF
+        if f_frame == orf_frame && (overlap ≥ max_overlap || overlap ≥ f.length * 0.75)
+            max_overlap = overlap
+            overlap_orf = orf
+        elseif f_frame ≠ orf_frame && overlap > max_overlap && max_overlap < f.length * 0.75
+            #only replace overlap_orf with out-of-frame orf if overlap_orf does not cover the feature
+            max_overlap = overlap
+            overlap_orf = orf
         end
     end
     isnothing(overlap_orf) && return
     if overlap_orf.start > f.start # must be an internal stop
         f.phase = 0
+        f.length = f.length - (overlap_orf.start - f.start)
         f.start = overlap_orf.start
+    else #in case of different frames, have to adjust phase
+        f.phase = phase_counter(f.phase, mod1(overlap_orf.start, 3) - f_frame)
     end
-    f.length = overlap_orf.start - f.start + overlap_orf.length
+    if sfeat.feature.gene ≠ "rps12A"
+        f.length = overlap_orf.start - f.start + overlap_orf.length
+    end
+    #println(f)
 end
 
 function refine_boundaries_by_score!(feat1::Feature, feat2::Feature, genome_length::Int32, stacks::DFeatureStack)
@@ -551,51 +562,59 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
             end
         end
 
-        last_exon = last(model).feature
+        ftype = featuretype(model)
 
         # tRNA or ncRNA, check the ends are complementary
-        if last_exon.type in ["ncRNA"]
+        if ftype == "ncRNA"
             trimRNAends!(target_seq, model)
         end
 
-        if last_exon.type == "tRNA"
+        if ftype == "tRNA"
             tRNAends!(target_seq, model)
         end
 
         # if CDS, find phase, stop codon and set feature.length
-        if last_exon.type == "CDS"
-            if last_exon.gene ≠ "rps12A"
-                setlongestORF!(last(model), orfs, genome_length)
-            end
-            last_cds_examined = last_exon
-        end
-        features_to_remove = SFF_Feature[]
-        for i in length(model) - 1:-1:1
-            feature = model[i].feature
-            next_feature = model[i + 1].feature
-            # check adjacent to last exon, if not...
-            gap = next_feature.start - (feature.start + feature.length)
-            if gap ≠ 0 && gap < 100
-                refine_boundaries_by_score!(feature, next_feature, genome_length, feature_stacks)
-                gap = next_feature.start - (feature.start + feature.length)
-            end
-            feature.length ≤ 0 && push!(features_to_remove, model[i])
-            next_feature.length ≤ 0 && push!(features_to_remove, model[i + 1])
-            # if CDS, check phase is compatible
-            if feature.type == "CDS"
-                if last_cds_examined !== nothing && phase_counter(feature.phase, feature.length % Int32(3)) != last_cds_examined.phase
-                    # refine boundaries (how?)
+        if ftype == "CDS"
+            local lastexon::SFF_Feature
+            for sff in reverse(model)
+                if sff.feature.type == "CDS"
+                    lastexon = sff
+                    break
                 end
-                last_cds_examined = feature
             end
+            setlongestORF!(lastexon, orfs, genome_length)
+            last_cds_examined = lastexon.feature
         end
-        setdiff!(model, features_to_remove)
+
+        println(model)
+
+        i = length(model)
+        while true
+            i == 1 && break
+            feature = model[i].feature
+            previous_feature = model[i - 1].feature
+            gap = feature.start - (previous_feature.start + previous_feature.length)
+            if gap ≠ 0 && gap < 100
+                refine_boundaries_by_score!(previous_feature, feature, genome_length, feature_stacks)
+                gap = feature.start - (previous_feature.start + previous_feature.length)
+            end
+            if feature.length ≤ 0 || (feature.type == "intron" && feature.length < 250)
+                deleteat!(model, i)
+                i += 1
+            end
+            if previous_feature.length ≤ 0 || (previous_feature.type == "intron" && previous_feature.length < 250)
+                deleteat!(model, i - 1)
+            end
+            i -= 1
+        end
+
+        println(model)
+
         isempty(model) && continue
         # if CDS, find start codon and set feature.start
         first_exon = first(model).feature
         if first_exon.type == "CDS"
-            # first_exon.phase = getFeaturePhaseFromAnnotationOffsets(first_exon, annotations)
-            if last_exon.gene ≠ "rps12B"
+            if lastexon.feature.gene ≠ "rps12B"
                 findStartCodon!(first_exon, genome_length, target_seq)
             end
         end

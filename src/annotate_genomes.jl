@@ -184,8 +184,6 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         score_feature(sff_features[i], maxtemplatelength, stack, reference_feature_counts, gmatch, target_seq)        
     end
 
-    #println(strand, '\t', sff_features)
-
     # group by feature name on **ordered** features 
     target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sff_features)
 
