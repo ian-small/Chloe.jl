@@ -61,12 +61,17 @@ function trimRNAends!(seq::CircularSequence, model::Vector{SFF_Feature})
 end
 
 function tRNAends!(seq::CircularSequence, model::Vector{SFF_Feature})
+    start = first(model).feature.start
+    stop = last(model).feature.start + last(model).feature.length - 1
 
     # before making any changes, check if model scores sufficiently highly to be left alone
     #could use template length, Tstemscore, acceptor stem score
-
-    start = first(model).feature.start
-    stop = last(model).feature.start + last(model).feature.length - 1
+    t = Tstemscore(seq[stop - 24 : stop])
+    astart = first(model).feature.gene == "trnH-GUG" ? start + 1 : start
+    a = complementaryRNAscore(seq[astart : astart + 6], seq[stop - 7 : stop - 1])
+    println(first(model).feature.gene, "\t", t, "\t", a)
+    t ≥ 14 &&  a ≥ 5 && return
+    
     slop = 2
     maxscore = 0
     end3 = 0
@@ -93,6 +98,11 @@ function tRNAends!(seq::CircularSequence, model::Vector{SFF_Feature})
     first(model).feature.start = genome_wrap(length(seq), first(model).feature.start)
     stopchange = stop - end3
     last(model).feature.length += stopchange
+
+    t = Tstemscore(seq[stop - 24 : stop])
+    astart = first(model).feature.gene == "trnH-GUG" ? start + 1 : start
+    a = complementaryRNAscore(seq[astart : astart + 6], seq[stop - 7 : stop - 1])
+    println(first(model).feature.gene, "\t", t, "\t", a)
 end
 
 function Tstemscore(seq::LongDNASeq)

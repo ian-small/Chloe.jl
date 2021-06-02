@@ -586,8 +586,6 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
             last_cds_examined = lastexon.feature
         end
 
-        println(model)
-
         i = length(model)
         while true
             i == 1 && break
@@ -607,8 +605,6 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
             end
             i -= 1
         end
-
-        println(model)
 
         isempty(model) && continue
         # if CDS, find start codon and set feature.start
