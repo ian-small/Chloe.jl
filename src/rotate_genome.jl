@@ -1,0 +1,86 @@
+using BioSequences
+using FASTX
+
+function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0)::Tuple{String,Int}
+    reader = open(FASTA.Reader, infile)
+    records = Vector{FASTA.Record}()
+    for record in reader
+        push!(records, record)
+    end
+    if isempty(records)
+        @error "unable to read sequence from $infile"
+    elseif length(records) > 1
+        @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
+    end
+    fseq = CircularSequence(FASTA.sequence(records[1]))
+    rseq = reverse_complement(fseq)
+    ir = inverted_repeat(fseq, rseq)
+    close(reader)
+
+    out = Vector{String}()
+    rotation = 0
+
+    if ir.blocklength >= 1000
+        IR1 = (ir[1], ir.blocklength)
+        IR2 = (length(fseq) - ir[2] - ir.blocklength + 2, ir.blocklength)
+        scstart = genome_wrap(length(fseq), IR1[1] + ir.blocklength)
+        SSC = (scstart, circulardistance(scstart, IR2[1]))
+        scstart = genome_wrap(length(fseq), IR2[1] + ir.blocklength)
+        LSC = (scstart, circulardistance(scstart, IR1[1]))
+        if LSC[2] < SSC[2]
+            temp = LSC
+            LSC = SSC
+            SSC = temp
+            temp = IR1
+            IR1 = IR2
+            IR2 = temp
+        end
+        # println(LSC,IR1,SSC,IR2)
+        n = LSC[2] + IR1[2] + SSC[2] + IR2[2]
+        @assert n == length(fseq) "$(FASTA.identifier(records[1])) $n != $(length(fseq))"
+        # @info "$LSC $IR1 $SSC $IR2"
+        lsc = LSC[1]:LSC[1] + LSC[2] - 1
+        ir1 = IR1[1]:IR1[1] + IR1[2] - 1
+        ssc = SSC[1]:SSC[1] + SSC[2] - 1
+        ir2 = IR2[1]:IR2[1] + IR2[2] - 1
+        @info "LSC=$(lsc)[$(length(lsc))] IR1=$(ir1)[$(length(ir1))] SSC=$(ssc)[$(length(ssc))] IR2=$(ir2)[$(length(ir2))]"
+        rotated = flip_LSC ? reverse_complement(fseq[lsc]) : fseq[lsc]
+        append!(rotated, ir1)
+        append!(rotated, flip_SSC ? reverse_complement(fseq[ssc]) : fseq[ssc])
+        append!(rotated, ir2)
+    else
+        @warn "[$(target_id)] no inverted repeat found: $(IR_length) < 1000"
+    end
+    
+    if extend != 0
+        e = min(extend > 0 ? extend : target_length - 1, target_length - 1)
+        @debug "[$(target_id)] extending by $e"
+        # extend transformed seq
+        o = join(out, "") # can we do better here?
+        push!(out, SubString(o, 1:e))
+    end
+    join(out, ""), rotation
+end
+
+function rotategenomes(;fasta_files::Vector{String}, output::Union{String,Nothing}=nothing,
+    flip_LSC::Bool=false, flip_SSC::Bool=false, extend::Int=0)
+
+    for fasta in fasta_files
+        d = splitpath(fasta)
+        outfile = nothing
+        if isnothing(output)
+            io = stdout
+        elseif isdir(output)
+            f, ext = splitext(d[end])
+            outfile = joinpath(d[1:end - 1], f * "-rotated" * ext)
+        else
+            outfile = output
+        end
+        if !isnothing(outfile)
+            io = open(outfile, "w")
+        end
+        @info "$(fasta) rotating to $(fname)"
+        rotategenome(fasta, io, flip_LSC, flip_SSC, extend)
+        close(io)
+    end
+end

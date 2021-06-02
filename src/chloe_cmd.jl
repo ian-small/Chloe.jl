@@ -133,7 +133,7 @@ function getargs()
             nargs = '+'
             required = true
             action = :store_arg
-            help = "fasta file to process"
+            help = "fasta file(s) to process"
         "--flip-SSC", "-S"
             action = :store_true
             help = "flip orientation of small single-copy region"
@@ -143,17 +143,10 @@ function getargs()
         "--extend", "-e"
             default = 0
             arg_type = Int
-            metavar = "INT"
             help = "add n bases from start to the end of sequence to allow mapping to wrap ends [use -1 for maximum extent]"
-        "--directory", "-d"
+        "--output", "-o"
             arg_type = String
-            metavar = "DIRECTORY"
-            help = "output directory to place rotated fasta files (use '-' to write to stdout)" 
-        "--width", "-w"
-            arg_type = Int
-            default = 80
-            metavar = "INT"
-            help = "line width of fasta output"
+            help = "output file or directory" 
     end
 
     # args.epilog = """
@@ -177,7 +170,7 @@ function cmd_main()
         elseif cmd == :annotate
             chloe(;a...)
         elseif cmd == :rotate
-            #rotateGenome(;a...)
+            rotategenomes(;a...)
         end
     end
 
