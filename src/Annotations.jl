@@ -502,7 +502,7 @@ function setlongestORF!(sfeat::SFF_Feature, orfs::Vector{Feature}, genome_length
         end
     end
     # arbitrary 0.75 proportion threshold for preferring in-frame ORF
-    if max_inframe_overlap > 0.75 * f.length
+    if max_inframe_overlap > max_outframe_overlap || max_inframe_overlap > 0.75 * f.length
         overlap_orf = inframe_overlap_orf
     else
         overlap_orf = outframe_overlap_orf
