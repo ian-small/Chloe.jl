@@ -185,8 +185,12 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         score_feature(sff_features[i], maxtemplatelength, stack, reference_feature_counts, gmatch, target_seq)        
     end
 
+    #println(strand, '\t', features)
+
     # group by feature name on **ordered** features 
     target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sff_features)
+
+    #println(strand, '\t', target_strand_models)
 
     orfs = getallorfs(target_seq, strand, Int32(0))
     # this toys with the feature start, phase etc....
@@ -200,6 +204,8 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         stack = path_to_stack[annotation_path(f)]
         score_feature(sf, maxtemplatelength, stack, reference_feature_counts, gmatch, target_seq) 
     end
+
+    #println(strand, '\t', target_strand_models)
 
     # add any unassigned orfs
     for uorf in orfs
@@ -387,8 +393,8 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
 
     sffs_fwd, sffs_rev, ir = fetch.((Threads.@spawn w()) for w in [watson, crick, () -> inverted_repeat(target_forward_strand, target_reverse_strand)]) 
 
+    filter_gene_models!(sffs_fwd, sffs_rev)
     if !nofilter
-        filter_gene_models!(sffs_fwd, sffs_rev)
         filter!(m -> length(m.warnings) == 0, sffs_fwd)
         filter!(m -> length(m.warnings) == 0, sffs_rev)
     end

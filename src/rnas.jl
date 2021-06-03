@@ -69,7 +69,7 @@ function tRNAends!(seq::CircularSequence, model::Vector{SFF_Feature})
     t = Tstemscore(seq[stop - 24 : stop])
     astart = first(model).feature.gene == "trnH-GUG" ? start + 1 : start
     a = complementaryRNAscore(seq[astart : astart + 6], seq[stop - 7 : stop - 1])
-    println(first(model).feature.gene, "\t", t, "\t", a)
+    #println(first(model).feature.gene, "\t", t, "\t", a)
     t ≥ 14 &&  a ≥ 5 && return
     
     slop = 2
@@ -102,7 +102,7 @@ function tRNAends!(seq::CircularSequence, model::Vector{SFF_Feature})
     t = Tstemscore(seq[stop - 24 : stop])
     astart = first(model).feature.gene == "trnH-GUG" ? start + 1 : start
     a = complementaryRNAscore(seq[astart : astart + 6], seq[stop - 7 : stop - 1])
-    println(first(model).feature.gene, "\t", t, "\t", a)
+    #println(first(model).feature.gene, "\t", t, "\t", a)
 end
 
 function Tstemscore(seq::LongDNASeq)

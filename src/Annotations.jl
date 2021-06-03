@@ -251,6 +251,14 @@ function align_template(feature_stack::FeatureStack)::Tuple{Vector{Tuple{Int32,I
             end   
         end
     end
+    #features near start of genome can align twice when template alignment wraps, the check below prevents reporting two hits in this case
+    if length(hits) > 1 && last(hits)[1] + median_length - glen > first(hits)[1]
+        if last(hits)[2] > first(hits)[2]
+            popfirst!(hits)
+        else
+            pop!(hits)
+        end
+    end
     isempty(hits) && return hits, median_length
     # sort by descending score
     sort!(hits, by=x -> x[2], rev=true)
@@ -473,32 +481,42 @@ function setlongestORF!(sfeat::SFF_Feature, orfs::Vector{Feature}, genome_length
     f = sfeat.feature
     f_frame::Int8 = mod1(f.start + f.phase, 3)
     #println(f, "\t", f_frame)
-    max_overlap = 0
-    overlap_orf = nothing
+    max_inframe_overlap = 0
+    max_outframe_overlap = 0
+    inframe_overlap_orf = nothing
+    outframe_overlap_orf = nothing
     for orf in orfs
-        orf.length < max_overlap && break
+        orf.length < max_inframe_overlap && break
+        orf_frame = mod1(orf.start, 3)
+        f_frame ≠ orf_frame && orf.length <= max_outframe_overlap && continue
         overlap_array = overlaps(range(orf.start, length=orf.length), range(f.start, length=f.length), genome_length)
         length(overlap_array) == 0 && continue
         overlap = overlap_array[1].stop - overlap_array[1].start + 1
-        orf_frame = mod1(orf.start, 3)
         #println(orf, "\t", overlap, "\t", orf_frame)
-        # arbitrary 0.75 proportion threshold for preferring in-frame ORF
-        if f_frame == orf_frame && (overlap ≥ max_overlap || overlap ≥ f.length * 0.75)
-            max_overlap = overlap
-            overlap_orf = orf
-        elseif f_frame ≠ orf_frame && overlap > max_overlap && max_overlap < f.length * 0.75
-            #only replace overlap_orf with out-of-frame orf if overlap_orf does not cover the feature
-            max_overlap = overlap
-            overlap_orf = orf
+        if f_frame == orf_frame && overlap > max_inframe_overlap
+            max_inframe_overlap = overlap
+            inframe_overlap_orf = orf
+        elseif f_frame ≠ orf_frame && overlap > max_outframe_overlap 
+            max_outframe_overlap = overlap
+            outframe_overlap_orf = orf
         end
     end
-    isnothing(overlap_orf) && return
+    # arbitrary 0.75 proportion threshold for preferring in-frame ORF
+    if max_inframe_overlap > 0.75 * f.length
+        overlap_orf = inframe_overlap_orf
+    else
+        overlap_orf = outframe_overlap_orf
+    end
+    if isnothing(overlap_orf)
+        f.length = 0
+        return
+    end
     if overlap_orf.start > f.start # must be an internal stop
         f.phase = 0
         f.length = f.length - (overlap_orf.start - f.start)
         f.start = overlap_orf.start
     else #in case of different frames, have to adjust phase
-        f.phase = phase_counter(f.phase, mod1(overlap_orf.start, 3) - f_frame)
+        f.phase = phase_counter(Int8(0), f.start - overlap_orf.start)
     end
     if sfeat.feature.gene ≠ "rps12A"
         f.length = overlap_orf.start - f.start + overlap_orf.length
@@ -591,17 +609,19 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
             i == 1 && break
             feature = model[i].feature
             previous_feature = model[i - 1].feature
-            gap = feature.start - (previous_feature.start + previous_feature.length)
-            if gap ≠ 0 && gap < 100
-                refine_boundaries_by_score!(previous_feature, feature, genome_length, feature_stacks)
-                gap = feature.start - (previous_feature.start + previous_feature.length)
-            end
             if feature.length ≤ 0 || (feature.type == "intron" && feature.length < 250)
                 deleteat!(model, i)
-                i += 1
-            end
-            if previous_feature.length ≤ 0 || (previous_feature.type == "intron" && previous_feature.length < 250)
+            elseif previous_feature.length ≤ 0 || (previous_feature.type == "intron" && previous_feature.length < 250)
                 deleteat!(model, i - 1)
+            else
+                gap = feature.start - (previous_feature.start + previous_feature.length)
+                if gap ≠ 0 && gap < 100
+                    refine_boundaries_by_score!(previous_feature, feature, genome_length, feature_stacks)
+                    gap = feature.start - (previous_feature.start + previous_feature.length)
+                    if feature.length ≤ 0 || (feature.type == "intron" && feature.length < 250)
+                        deleteat!(model, i)
+                    end
+                end
             end
             i -= 1
         end
@@ -776,6 +796,7 @@ function allowed_model_overlap(m1, m2)::Bool
 end
 
 function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model})
+
     # hard floor on stackdepth
     for model in fwd_models
         if mean_stackdepth(model) < 0.01
