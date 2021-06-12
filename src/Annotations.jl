@@ -48,8 +48,8 @@ function Base.push!(ctree::FeatureTree, interval::Feature)
     if last(interval) ≤ ctree.length
         push!(ctree.ftree, interval)
     else
-        first_interval = Feature("?/?/?", first(interval), ctree.length - first(interval) + one(Int32), zero(Int8))
-        second_interval = Feature("?/?/?", 1, last(interval) - ctree.length, zero(Int8))
+        first_interval = Feature(annotation_path(interval), first(interval), ctree.length - first(interval) + one(Int32), zero(Int8))
+        second_interval = Feature(annotation_path(interval), 1, last(interval) - ctree.length, zero(Int8))
         push!(ctree.ftree, first_interval)
         ctree.wrapped_intervals[first_interval] = interval
         push!(ctree.ftree, second_interval)
