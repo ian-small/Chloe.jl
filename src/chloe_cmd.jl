@@ -15,18 +15,12 @@ function quiet_metafmt(level, _module, group, id, file, line)
     return color, prefix, ""
 end
 
-function chloe(;refsdir=DEFAULT_REFS, numrefs=DEFAULT_NUMREFS, hashfile=DEFAULT_HASHES, fasta_files=String[],
-    template=DEFAULT_TEMPLATE, sensitivity=DEFAULT_SENSITIVITY, output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
-    if refsdir == "default"
-        refsdir = normpath(joinpath(HERE, "..", DEFAULT_REFS))
-    end
-    if hashfile == "default"
-        hashfile = normpath(joinpath(HERE, "..", DEFAULT_HASHES))
-    end
-    if template == "default"
-        template = normpath(joinpath(HERE, "..", DEFAULT_TEMPLATE))
-    end
-    Annotator.annotate(refsdir, numrefs, hashfile, template, fasta_files, sensitivity, output, gff, nofilter)
+function chloe(;refsdir=DEFAULT_REFS, numrefs=DEFAULT_NUMREFS, hashfile="default", fasta_files=String[],
+    template="default", sensitivity=DEFAULT_SENSITIVITY,
+        output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
+    db = Annotator.ReferenceDb(;refsdir=refsdir, hashfile=hashfile, template=template)
+    config = Annotator.ChloeConfig(;numrefs=numrefs, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
+    Annotator.annotate(db, fasta_files, config)
 end
 
 function getargs()
@@ -104,25 +98,25 @@ function getargs()
             dest_name = "numrefs"
             help = "number of references to compare to [default: $(DEFAULT_NUMREFS)]"
         "--minhashes"
-            arg_type = String
+        arg_type = String
             default = "default"
             dest_name = "hashfile"
-            help = "reference minhashes [default: $(DEFAULT_HASHES)]"
+            help = "reference minhashes [default: {reference directory}/$(DEFAULT_HASHES)]"
         "--template", "-t"
-            arg_type = String
+        arg_type = String
             default = "default"
             metavar = "TSV"
             dest_name = "template"
-            help = "template tsv [default: $(DEFAULT_TEMPLATE)]"
+            help = "template tsv [default: {reference directory}/$(DEFAULT_TEMPLATE)]"
         "--sensitivity", "-s"
             arg_type = Float16
             default = DEFAULT_SENSITIVITY
             help = "probability threshold for reporting features [default: $(DEFAULT_SENSITIVITY)]"
         "--nofilter"
             action = :store_true
-            help = "don't filter output"
+        help = "don't filter output"
         "--gff", "-g"
-            action = :store_true
+        action = :store_true
             help = "save output in gff3 format instead of sff"
     end
 

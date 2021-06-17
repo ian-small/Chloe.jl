@@ -35,6 +35,7 @@ function Base.getindex(cv::CircularVector, r::UnitRange{<:Integer})
 end
 @inline Base.setindex!(cv::CircularVector, value::Int32, i::Int32) = @inbounds setindex!(cv.v, value, mod1(i, length(cv)))
 @inline Base.push!(cv::CircularVector, value::Int32) = @inbounds push!(cv.v, value)
+@inline Base.sum(cv::CircularVector) = sum(cv.v)
 function Base.sum(cv::CircularVector, r::UnitRange{<:Integer})
     sum = 0
     for i in r
@@ -171,10 +172,10 @@ end
 
 function maybe_gzwrite(f::Function, filename::String)
     
-    function gzcompress(f::Function, fp::IO)
+    function gzcompress(func::Function, fp::IO)
         o = GzipCompressorStream(fp)
         try
-            f(o)
+            func(o)
         finally
             close(o)
         end

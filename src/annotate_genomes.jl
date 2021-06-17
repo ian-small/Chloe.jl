@@ -1,7 +1,8 @@
 module Annotator
 
-export annotate, annotate_one, read_references, Reference, MayBeIO, MayBeString
-export read_single_reference, inverted_repeat
+using StatsBase:IntegerVector
+export annotate, annotate_one, MayBeIO, MayBeString, ReferenceDb
+export read_single_reference, inverted_repeat, ChloeConfig
 
 import Base
 
@@ -11,6 +12,8 @@ include("hash.jl")
 include("AlignGenomes.jl")
 include("Annotations.jl")
 include("orfs.jl")
+include("reference.jl")
+
 
 # import Dates: Time, Nanosecond
 
@@ -30,15 +33,15 @@ struct SingleReference
 end
 
 datasize(r::SingleReference) = begin
-    (sizeof(Reference)
-    + datasize(r.refsrc)
+    (sizeof(SingleReference)
+    + datasize(r.ref_seq)
     + datasize(r.ref_features)
     )
 end
 
 function Base.show(io::IO, r::SingleReference)
     total = datasize(r)
-    bp = datasize(length(r.refsrc))
+    bp = length(r.ref_seq)
     print(io, "SingleReference[$(r.refsrc)]: $(human(bp))bp, total=$(human(total))")
 end
 
@@ -78,7 +81,7 @@ function verify_refs(refsdir, template)
     end
 end
 
-function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String, Int})::SingleReference
+function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
     ref = FASTA.Record()
     if !isdir(refdir); refdir = dirname(refdir); end
     path = findfastafile(refdir, refID)
@@ -133,7 +136,8 @@ end
 
 function score_feature(sff::SFF_Feature, maxtemplatelength::Float32, stack::FeatureStack, reference_feature_counts::Dict{String,Int}, gmatch::Float32, seq::CircularSequence)
     ref_count = reference_feature_counts[annotation_path(sff.feature)]
-    sff.stackdepth = Float32(sum(stack.stack[range(sff.feature.start, length=sff.feature.length)]) / (ref_count * sff.feature.length))
+    slice = stack.stack[range(sff.feature.start, length=sff.feature.length)]
+    sff.stackdepth = Float32((length(slice) > 0 ? sum(slice) :  0) / (ref_count * sff.feature.length))
     sff.relative_length = sff.feature.length / stack.template.median_length
     sff.gmatch = gmatch
     sff.feature_prob = feature_glm(maxtemplatelength, stack.template, sff.relative_length, sff.stackdepth, gmatch)
@@ -174,7 +178,7 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         path_to_stack[stack.path] = stack
     end
 
-    #println(strand, '\t', features)
+    # println(strand, '\t', features)
 
     gmatch = mean(values(coverages))
     sff_features = Vector{SFF_Feature}(undef, length(features))
@@ -185,12 +189,12 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         score_feature(sff_features[i], maxtemplatelength, stack, reference_feature_counts, gmatch, target_seq)        
     end
 
-    #println(strand, '\t', sff_features)
+    # println(strand, '\t', sff_features)
 
     # group by feature name on **ordered** features 
     target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sff_features)
 
-    #println(strand, '\t', target_strand_models)
+    # println(strand, '\t', target_strand_models)
 
     orfs = getallorfs(target_seq, strand, Int32(0))
     # this toys with the feature start, phase etc....
@@ -205,7 +209,7 @@ function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence
         score_feature(sf, maxtemplatelength, stack, reference_feature_counts, gmatch, target_seq) 
     end
 
-    #println(strand, '\t', target_strand_models)
+    # println(strand, '\t', target_strand_models)
 
     # add any unassigned orfs
     for uorf in orfs
@@ -238,20 +242,20 @@ end
 # Union{IO,String}: read fasta from IO buffer or a file (String)
 MayBeIO = Union{String,IO,Nothing}
 
-function align_to_reference(ref::SingleReference, tgt_id::String, tgt_seq::CircularSequence, rev_tgt_seq::CircularSequence, mask::Union{Nothing,FwdRev{CircularMask}}=nothing)::Tuple{FwdRev{FwdRev{BlockTree}},Float32}
+function align_to_reference(ref::SingleReference, tgt_id::String, tgt_seq::FwdRev{CircularSequence}, mask::Union{Nothing,FwdRev{CircularMask}}=nothing)::Tuple{FwdRev{FwdRev{BlockTree}},Float32}
     start = time_ns()
     ref_length = length(ref.ref_seq)
-    tgt_length = length(tgt_seq)
+    tgt_length = length(tgt_seq.forward)
 
     # align2seqs returns linked list, convert to interval tree
-    fchain = align2seqs(ref.ref_seq, tgt_seq, mask.forward)
+    fchain = align2seqs(ref.ref_seq, tgt_seq.forward, mask.forward)
     ff = chain2tree(fchain, ref_length)
     rr = chain2rctree(fchain, ref_length, tgt_length)
-    rchain = align2seqs(ref.ref_seq, rev_tgt_seq, mask.reverse)
+    rchain = align2seqs(ref.ref_seq, tgt_seq.reverse, mask.reverse)
     fr = chain2tree(rchain, ref_length)
     rf = chain2rctree(rchain, ref_length, tgt_length)
 
-    coverage = Float32(100 * target_coverage(fchain, rchain, length(tgt_seq)))
+    coverage = Float32(100 * target_coverage(fchain, rchain, length(tgt_seq.forward)))
 
     @info "[$(tgt_id)]± aligned $(ref.ref_id) coverage: $(@sprintf("%.2f", coverage))% $(elapsed(start))"
     # note cross ...
@@ -267,7 +271,7 @@ function inverted_repeat(target::CircularSequence, revtarget::CircularSequence):
 end
 
 """
-    annotate_one(references::Reference, seq_id::String, seq::String, [,output_sff_file])
+    annotate_one(refsdir::String, seq_id::String, seq::String, [,output_sff_file])
 
 Annotate a single sequence containting a *single* circular
 DNA entry
@@ -281,12 +285,13 @@ directory.
 returns a 2-tuple: (ultimate sff output filename, sequence id)
 
 If `output_sff_file` is an IOBuffer then that buffer will be returned
-with the annotation within it
-
-`reference` are the reference annotations (see `read_references`)
+with the annotation within it.
 """
-function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Dict{String,Vector{Int64}}}, feature_templates::Dict{String,FeatureTemplate}, sensitivity::Float16, target_id::String,
-     target_forward_strand::CircularSequence, target_reverse_strand::CircularSequence, output::MayBeIO, gff3::Bool, nofilter::Bool)::Tuple{Union{String,IO},String}
+function annotate_one(db::ReferenceDb,
+        target_id::String,
+        target::FwdRev{CircularSequence},
+        config::ChloeConfig,
+        output::MayBeIO=nothing)::Tuple{Union{String,IO},String}
 
     t1 = time_ns()
 
@@ -295,7 +300,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
             if isdir(output)
                 joinpath(output, "$(target_id).sff")
             else
-            output # filename
+                output # filename
             end
         else
             output # IOBuffer
@@ -305,35 +310,37 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     end
 
     # sanity checks
-    target_length = length(target_forward_strand)
-    n = count(isambiguous, target_forward_strand.sequence)
+    target_length = length(target.forward)
+    n = count(isambiguous, target.forward.sequence)
     r = n / target_length
     if r > .01
-        @warn("sequence [$(target_id)] contains too many ambiguous nucleotides: $(@sprintf "%.1f" r * 100)% ")
-        return fname, target_id
+        @warn "sequence [$(target_id)] contains too many ambiguous nucleotides: $(@sprintf "%.1f" r * 100)%"
+    return fname, target_id
     end
-    n = count(isgap, target_forward_strand.sequence)
+    n = count(isgap, target.forward.sequence)
     if n > 0
         @warn("sequence [$(target_id)] contains gaps which will be removed before analysis")
-        ungap!(target_forward_strand.sequence)
-        ungap!(target_reverse_strand.sequence)
-        target_length = Int32(length(target_forward_strand))
+        ungap!(target.forward.sequence)
+        ungap!(target.reverse.sequence)
+        target_length = Int32(length(target.forward))
     end
     
     @info "[$target_id] seq length: $(target_length)bp"
 
     # find best references
-    emask = entropy_mask(CircularSequence(target_forward_strand.sequence), Int32(KMERSIZE))
+    emask = entropy_mask(CircularSequence(target.forward.sequence), Int32(KMERSIZE))
+    refhashes = get_minhashes(db)
     if !isnothing(refhashes)
-        nmaskedtarget = copy(target_forward_strand.sequence)
+        nmaskedtarget = copy(target.forward.sequence)
         for (i, bit) in enumerate(emask)
             if bit; nmaskedtarget[i] = DNA_N; end
         end
         hash = minhash(nmaskedtarget, KMERSIZE, SKETCHSIZE)
-        numrefs = min(numrefs, length(refhashes))
+        numrefs = min(config.numrefs, length(refhashes))
         refpicks = searchhashes(hash, refhashes)[1:numrefs]
     else
         numrefs = 1
+        # FIXME
         refpicks = [(split(basename(refsdir), '.')[1], 0)]
     end
 
@@ -346,21 +353,24 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     coverages = Dict{String,Float32}()
     refs = Vector{SingleReference}(undef, numrefs)
     masks = FwdRev(emask, CircularMask(reverse(emask.m)))
-    reference_feature_counts = Dict{String, Int}()
+    reference_feature_counts = Dict{String,Int}()
 
     for i in 1:numrefs
-        ref = read_single_reference!(refsdir, refpicks[i][1], reference_feature_counts)
+        ref = get_single_reference!(db, refpicks[i][1], reference_feature_counts)
         refs[i] = ref
     end
     
     Threads.@threads for i in eachindex(refs)
-        a = align_to_reference(refs[i], target_id, target_forward_strand, target_reverse_strand, masks)
+        a = align_to_reference(refs[i], target_id, target, masks)
         blocks_aligned_to_targetf[i] = a[1].forward
         blocks_aligned_to_targetr[i] = a[1].reverse
-        lock(REENTRANT_LOCK)
-        coverages[refpicks[i][1]] = a[2]
-        unlock(REENTRANT_LOCK)
+
+            lock(REENTRANT_LOCK) do
+            coverages[refpicks[i][1]] = a[2]
     end
+    end
+
+    feature_templates = get_templates(db)
 
     t3 = time_ns()
     @info "[$target_id] aligned: ($(numrefs)) $(human(datasize(blocks_aligned_to_targetf) + datasize(blocks_aligned_to_targetr))) mean coverage: $(geomean(values(coverages))) $(ns(t3 - t2))" 
@@ -368,22 +378,22 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     maxtemplatelength = maximum([t.median_length for t in values(feature_templates)])
 
     function watson()
-        models = do_strand(numrefs, target_id, target_forward_strand, refs, coverages, reference_feature_counts,
+        models = do_strand(numrefs, target_id, target.forward, refs, coverages, reference_feature_counts,
             '+', blocks_aligned_to_targetf, feature_templates, maxtemplatelength)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
-            sff = toSFF(feature_templates, model, '+', target_forward_strand, sensitivity)
+            sff = toSFF(feature_templates, model, '+', target.forward, config.sensitivity)
             !isnothing(sff) && push!(final_models, sff)
         end
         final_models
     end
         
     function crick()
-        models = do_strand(numrefs, target_id, target_reverse_strand, refs, coverages, reference_feature_counts,
+        models = do_strand(numrefs, target_id, target.reverse, refs, coverages, reference_feature_counts,
             '-', blocks_aligned_to_targetr, feature_templates, maxtemplatelength)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
-            sff = toSFF(feature_templates, model, '-', target_reverse_strand, sensitivity)
+            sff = toSFF(feature_templates, model, '-', target.reverse, config.sensitivity)
             !isnothing(sff) && push!(final_models, sff)
         end
         final_models
@@ -391,10 +401,10 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
 
     # from https://discourse.julialang.org/t/threads-threads-to-return-results/47382
 
-    sffs_fwd, sffs_rev, ir = fetch.((Threads.@spawn w()) for w in [watson, crick, () -> inverted_repeat(target_forward_strand, target_reverse_strand)]) 
+    sffs_fwd, sffs_rev, ir = fetch.((Threads.@spawn w()) for w in [watson, crick, () -> inverted_repeat(target.forward, target.reverse)]) 
 
     filter_gene_models!(sffs_fwd, sffs_rev)
-    if !nofilter
+    if !config.nofilter
         filter!(m -> length(m.warnings) == 0, sffs_fwd)
         filter!(m -> length(m.warnings) == 0, sffs_rev)
     end
@@ -408,8 +418,8 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     end
     
     writeSFF(fname, target_id, target_length, geomean(values(coverages)), FwdRev(sffs_fwd, sffs_rev))
-    if gff3
-        writeGFF3(join(split(fname, ".")[1:end - 1], ".") * ".gff3", target_id, target_length, FwdRev(sffs_fwd, sffs_rev))
+    if config.to_gff3 && fname isa String
+        writeGFF3("$(splitext(fname)[0]).gff3", target_id, target_length, FwdRev(sffs_fwd, sffs_rev))
     end
     
     @info success("[$target_id] Overall: $(elapsed(t1))")
@@ -417,34 +427,36 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
 
 end
 """
-    annotate_one(reference::Reference, fasta::Union{String,IO})
+    annotate_one(refsdir::String, fasta::Union{String,IO})
 
 Annotate a fasta file. Maybe a file name or an IOBuffer
-returns a 2-tuple (sff annotation as an IOBuffer, sequence id)
-
-`reference` are the reference annotations (see `read_references`)
+returns a 2-tuple (sff annotation as an IOBuffer, sequence id).
 """
-# function annotate_one(reference::Reference, fasta::Union{String,IO})::Tuple{Union{String,IO},String}
-#     target_id, target_seqf = readFasta(fasta)
-#     annotate_one(reference, target_id, target_seqf, IOBuffer())
-# end
-# function annotate_one(reference::Reference, fasta::Union{String,IO}, output::MayBeIO)::Tuple{Union{String,IO},String}
-#     target_id, target_seqf = readFasta(fasta)
-#     annotate_one(reference, target_id, target_seqf, output)
-# end
+function annotate_one(db::ReferenceDb, infile::String, config::ChloeConfig)
+    open(FASTA.Reader, infile) do reader
+        records = [record for record in reader]
 
-# function annotate_all(reference::Reference, fasta::Union{String,IO})
-#     for (target_id, target_seqf) in iterFasta(fasta)
-#         annotate_one(reference, target_id, target_seqf, nothing)
-#     end
-# end
+        if isempty(records)
+            @error "unable to read sequence from $infile"
+        elseif length(records) > 2
+            @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
+        end
+        fseq = CircularSequence(FASTA.sequence(records[1]))
+            if length(records) == 2
+            rseq = CircularSequence(FASTA.sequence(records[2]))
+        else
+            rseq = reverse_complement(fseq)
+        end
+        if length(fseq) != length(rseq)
+            @error "unequal lengths for forward and reverse strands"
+        end
+        return annotate_one(db, FASTA.identifier(records[1]), FwdRev(fseq, rseq), output, config)
+    end
+end
 
-function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}, templates_file::String, fa_files::Vector{String}, sensitivity::Float16, output::MayBeString, gff3::Bool, nofilter::Bool)
+function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig)
     
-    numrefs == 1 ? refhashes = nothing : refhashes = readminhashes(hashfile)
-
-    feature_templates = read_templates(templates_file)
-
+        
     for infile in fa_files
         reader = open(FASTA.Reader, infile)
         records = Vector{FASTA.Record}()
@@ -457,7 +469,7 @@ function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}
             @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
         end
         fseq = CircularSequence(FASTA.sequence(records[1]))
-        if length(records) == 2
+            if length(records) == 2
             rseq = CircularSequence(FASTA.sequence(records[2]))
         else
             rseq = reverse_complement(fseq)
@@ -465,9 +477,11 @@ function annotate(refsdir::String, numrefs::Int, hashfile::Union{String,Nothing}
         if length(fseq) != length(rseq)
             @error "unequal lengths for forward and reverse strands"
         end
-        annotate_one(refsdir, numrefs, refhashes, feature_templates, sensitivity, FASTA.identifier(records[1]), fseq, rseq, output, gff3, nofilter)
+        annotate_one(db, FASTA.identifier(records[1]), FwdRev(fseq, rseq), config)
         close(reader)
     end
 end
+
+
 
 end # module

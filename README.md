@@ -75,13 +75,12 @@ Now you can type:
 ```julia
 using Distributed
 # just read reference Data on remote workers
-@everywhere workers() begin
-    global REFS = readDefaultReferences()
-end
+
 # get a fasta file
 fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
 # note that REFS is not defined locally in the REPL!
-r = @spawnat :any annotate_one(REFS, fasta)
+reference_directory = "/some/directory"
+r = @spawnat :any annotate_one(reference_directory, fasta)
 io, uid = fetch(r)
 sff = String(take!(io))
 # this works too.., just tell Chloe the filename
@@ -94,16 +93,13 @@ This also works:
 ```julia
 using Distrbuted
 addprocs(3)
-@everywhere workers() begin
-    include("src/remote.jl")
-    REFS = readDefaultReferences()
-end
+
 fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
-io, uid = fetch(@spawnat :any annotate_one(REFS, fasta))
+io, uid = fetch(@spawnat :any annotate_one(reference_directory, fasta))
 # get chloe sff as a string
 sff = String(take!(io))
 # *OR*
-sff_filename, uid = fetch(@spawnat :any annotate_one(REFS, "testfa/NC_020019.1.fa", nothing))
+sff_filename, uid = fetch(@spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa", nothing))
 # sff_filename is where chloe wrote the data:
 # in this case NC_020019.1.sff in the local directory
 # instead of `nothing` specify an actual filename.
@@ -116,11 +112,10 @@ using Distributed
 addprocs(4)
 @everywhere workers() begin
     using Chloe
-    global REFS = readDefaultReferences()
 end
 # Note that neither REFS nor annotate_one is defined in the REPL
 # ...but all is still good.
-r = @spawnat :any annotate_one(REFS, "testfa/NC_020019.1.fa")
+r = @spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa")
 # etc...
 ```
 

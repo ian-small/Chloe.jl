@@ -142,7 +142,7 @@ function getallorfs(seq::CircularSequence, strand::Char, minorflength::Int32)
             pstop = stop
         end
     end
-    #add orfs that cross end of genome
+    # add orfs that cross end of genome
     for f1 in stops.frames, f2 in stops.frames
         dist = circulardistance(last(f1.v), first(f2.v), length(seq))
         if dist % 3 == 0 #in frame
@@ -193,7 +193,7 @@ function countcodons(orf::Feature, seq::CircularSequence)::Vector{Float64}
     sortedcounts = sort(collect(codons))
     countsum = sum(map(x -> x[2], sortedcounts))
     codonfrequencies::Vector{Float64} = map(x -> x[2]/countsum, sortedcounts)
-    #add the relative length of the ORF; assuming no ORFs are > 3000 codons this should be between 0-1
+    # add the relative length of the ORF; assuming no ORFs are > 3000 codons this should be between 0-1
     push!(codonfrequencies, countsum/3000)
     return codonfrequencies
 end

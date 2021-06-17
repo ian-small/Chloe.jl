@@ -10,7 +10,7 @@ function minhash_references(; fasta_files=Vector{String}, output=output)
     for file in fasta_files
         println(file)
         if isdir(file)
-            minhash_references(fasta_files=filter(x->endswith(x, ".fasta"), readdir(file, join = true)), output=output)
+            minhash_references(fasta_files=filter(x -> endswith(x, ".fasta"), readdir(file, join=true)), output=output)
         end
         reader = open(FASTA.Reader, file)
         record = FASTA.Record() 
@@ -22,13 +22,13 @@ function minhash_references(; fasta_files=Vector{String}, output=output)
     hashes = Dict{String,Vector{Int64}}()
     for seqrec in seqs
         seq = FASTA.sequence(seqrec)
-        #calculate entropy mask
+        # calculate entropy mask
         emask = entropy_mask(CircularSequence(seq), Int32(KMERSIZE))
-        #convert low entropy regions to Ns
+        # convert low entropy regions to Ns
         for (i, bit) in enumerate(emask)
             if bit; seq[i] = DNA_N; end
         end
-        #hash
+        # hash
         hashes[FASTA.identifier(seqrec)] = minhash(seq, KMERSIZE, SKETCHSIZE).sketch
     end
     writeminhashes(output, hashes)
@@ -44,12 +44,12 @@ end
 
 function readminhashes(infile::String)::Dict{String,Vector{Int64}}
     hashes = Dict{String,Vector{Int64}}()
-    #add sizehint! once number of references is established
+    # add sizehint! once number of references is established
     open(infile, "r") do hashfile
         while !eof(hashfile)
             length_id = read(hashfile, UInt8)
             id = String(read(hashfile, length_id, all=true))
-            h = Vector{Int64}(undef,SKETCHSIZE)
+            h = Vector{Int64}(undef, SKETCHSIZE)
             hashes[id] = read!(hashfile, h)
         end
     end
@@ -57,11 +57,11 @@ function readminhashes(infile::String)::Dict{String,Vector{Int64}}
 end
 
 function searchhashes(hash, hashes)::Vector{Tuple{String,Int}}
-    scores = Vector{Tuple{String,Int}}(undef,length(hashes))
+    scores = Vector{Tuple{String,Int}}(undef, length(hashes))
     for (index, (id, h)) in enumerate(hashes)
         scores[index] = (id, hashcount(hash, h))
     end
-    return sort!(scores, by = last, rev = true)
+    return sort!(scores, by=last, rev=true)
 end
 
 function hashcount(hash1, hash2)::Int
@@ -84,14 +84,14 @@ function hashcount(hash1, hash2)::Int
 end
 
 function jacquard_index(hash1, hash2)
-    return hashcount(hash1,hash2)/min(length(hash1),length(hash2))
+    return hashcount(hash1, hash2) / min(length(hash1), length(hash2))
 end
 
 function mash_distance(hash1, hash2, k)
     j = jacquard_index(hash1, hash2)
-    return -log(2 * j / (1 + j))/k
+    return -log(2 * j / (1 + j)) / k
 end
 
 function mash_distance(j, k)
-    return -log(2 * j / (1 + j))/k
+    return -log(2 * j / (1 + j)) / k
 end

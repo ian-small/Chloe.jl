@@ -80,7 +80,7 @@ mutable struct SFF_Feature
     coding_prob::Float32
 end
 
-function read_features!(file::String, reference_feature_counts::Dict{String, Int})::FwdRev{FeatureArray}
+function read_features!(file::String, reference_feature_counts::Dict{String,Int})::FwdRev{FeatureArray}
     open(file) do f
         header = split(readline(f), '\t')
         genome_id = header[1]
@@ -123,7 +123,7 @@ struct Annotation
     offset5::Int32
     offset3::Int32
     # phase is the number of nucleotides to skip at the start of the sequence 
-    # to be in the correct reading frame
+# to be in the correct reading frame
     phase::Int8
 end
 datasize(a::Annotation) = sizeof(Annotation)  + sizeof(a.path)# genome_id is shared + sizeof(a.genome_id)
@@ -132,7 +132,7 @@ datasize(v::Vector{Annotation}) = sum(datasize(a) for a in v)
 function transfer_annotations(ref_features::FeatureArray, aligned_blocks::BlockTree, src_length::Int32, target_length::Int32)::Vector{Annotation}
     annotations = Vector{Annotation}()
     feature_blocks = intersect(ref_features.feature_tree, aligned_blocks)
-    for fb in feature_blocks
+        for fb in feature_blocks
         feature = fb[1]
         block = fb[2]
         feature_overlaps = overlaps(range(block.src_index, length=block.blocklength), range(feature.start, length=feature.length), src_length)
@@ -157,7 +157,7 @@ struct FeatureTemplate
     essential::Bool
     median_length::Float32 # median length of feature
 end
-
+    
 datasize(s::FeatureTemplate) = sizeof(FeatureTemplate) + sizeof(s.path)
 
 function read_templates(file::String)::Dict{String,FeatureTemplate}
@@ -169,13 +169,13 @@ function read_templates(file::String)::Dict{String,FeatureTemplate}
     end
     templates = Dict{String,FeatureTemplate}()
     open(file) do f
-        readline(f) #skip header
+        readline(f) # skip header
         for line in eachline(f)
             fields = split(line, '\t')
             template = FeatureTemplate(fields[1], parse(Bool, fields[2]), parse(Float32, fields[3]))
             templates[template.path] = template
-        end
-    end
+end
+end
     return templates
 end
 
@@ -251,7 +251,7 @@ function align_template(feature_stack::FeatureStack)::Tuple{Vector{Tuple{Int32,I
             end   
         end
     end
-    #features near start of genome can align twice when template alignment wraps, the check below prevents reporting two hits in this case
+    # features near start of genome can align twice when template alignment wraps, the check below prevents reporting two hits in this case
     if length(hits) > 1 && last(hits)[1] + median_length - glen > first(hits)[1]
         if last(hits)[2] > first(hits)[2]
             popfirst!(hits)
@@ -346,10 +346,10 @@ function refine_boundaries_by_offsets!(feat::Feature, annotations::Vector{Annota
     end
     feat.length = right - left + 1
 end
-
+        
 function features2models(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_Feature}}
     gene_models = [SFF_Feature[]]
-    current_model = SFF_Feature[]
+            current_model = SFF_Feature[]
     left_border::Int32 = typemax(Int32)
     right_border::Int32 = 0
     for sff_feature in sff_features
@@ -379,7 +379,7 @@ function features2models(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_F
 end
 
 function splice_model(target_seq::CircularSequence, model::Vector{SFF_Feature})::LongDNASeq
-    cds = dna""d    #dynamically allocated so thread-safe
+    cds = dna""d    # dynamically allocated so thread-safe
     for sfeat in model
         feat = sfeat.feature
         feat.type == "intron" && continue
@@ -396,7 +396,7 @@ function startScore(cds::Feature, codon::SubString)
     if codon == "ATG"
         return 1.0
     elseif codon == "GTG"
-        if isFeatureName(cds, "rps19")
+if isFeatureName(cds, "rps19")
             return 1.0
         else
             return 0.01
@@ -412,7 +412,7 @@ function startScore(cds::Feature, codon::SubString)
     end
 end
 
-function findStartCodon!(cds::Feature, genome_length::Int32, target_seq::CircularSequence)
+    function findStartCodon!(cds::Feature, genome_length::Int32, target_seq::CircularSequence)
     # assumes phase has been correctly set
     # search for start codon 5'-3' beginning at cds.start, save result; abort if stop encountered
     start3::Int32 = cds.start + cds.phase
@@ -473,18 +473,18 @@ function findStartCodon!(cds::Feature, genome_length::Int32, target_seq::Circula
     end
     cds.phase = 0
     return cds
-end
+    end
 
 function setlongestORF!(sfeat::SFF_Feature, orfs::Vector{Feature}, genome_length::Int32)
     # find in-frame and out-of-frame orfs with longest overlap with feature
     # orfs are sorted by descending length
     f = sfeat.feature
     f_frame::Int8 = mod1(f.start + f.phase, 3)
-    #println(f, "\t", f_frame)
+    # println(f, "\t", f_frame)
     max_inframe_overlap = 0
     max_outframe_overlap = 0
     inframe_overlap_orf = nothing
-    outframe_overlap_orf = nothing
+        outframe_overlap_orf = nothing
     for orf in orfs
         orf.length < max_inframe_overlap && break
         orf_frame = mod1(orf.start, 3)
@@ -492,7 +492,7 @@ function setlongestORF!(sfeat::SFF_Feature, orfs::Vector{Feature}, genome_length
         overlap_array = overlaps(range(orf.start, length=orf.length), range(f.start, length=f.length), genome_length)
         length(overlap_array) == 0 && continue
         overlap = overlap_array[1].stop - overlap_array[1].start + 1
-        #println(orf, "\t", overlap, "\t", orf_frame)
+        # println(orf, "\t", overlap, "\t", orf_frame)
         if f_frame == orf_frame && overlap > max_inframe_overlap
             max_inframe_overlap = overlap
             inframe_overlap_orf = orf
@@ -515,13 +515,13 @@ function setlongestORF!(sfeat::SFF_Feature, orfs::Vector{Feature}, genome_length
         f.phase = 0
         f.length = f.length - (overlap_orf.start - f.start)
         f.start = overlap_orf.start
-    else #in case of different frames, have to adjust phase
+    else # in case of different frames, have to adjust phase
         f.phase = phase_counter(Int8(0), f.start - overlap_orf.start)
     end
     if sfeat.feature.gene ≠ "rps12A"
         f.length = overlap_orf.start - f.start + overlap_orf.length
     end
-    #println(f)
+    # println(f)
 end
 
 function refine_boundaries_by_score!(feat1::Feature, feat2::Feature, genome_length::Int32, stacks::DFeatureStack)
@@ -562,14 +562,14 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
         isempty(model) && continue
         # sort features in model by mid-point to avoid cases where long intron overlaps short exon
         sort!(model, by=f -> f.feature.start + f.feature.length / 2)
-
-        #first check feature order and remove out of order features
+                
+        # first check feature order and remove out of order features
         pointer = 1
         while true
             pointer == length(model) && break
             sfeature1 = model[pointer]
             sfeature2 = model[pointer + 1]
-            if sfeature1.feature.order > sfeature2.feature.order #features are out of order
+            if sfeature1.feature.order > sfeature2.feature.order # features are out of order
                 if sfeature1.feature_prob > sfeature2.feature_prob
                     deleteat!(model, pointer + 1)
                 else
@@ -637,7 +637,7 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
     end
 end
 
-mutable struct SFF_Model
+    mutable struct SFF_Model
     gene::String
     gene_prob::Float32 # mean of probs of comonent features
     strand::Char
@@ -677,12 +677,12 @@ const LOW_ANNOTATION_DEPTH = "has low annotation depth, probably spurious"
 const BLACK_SHEEP = "probably pseudogene as better copy exists in the genome"
 const OVERLAPPING_FEATURE = "better-scoring feature overlaps with this one"
 
-function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Float16)::Union{Nothing,SFF_Model}
+function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Float32)::Union{Nothing,SFF_Model}
     gene = first(model).feature.gene
     type = featuretype(model)
     type == "" && return nothing
     warnings = String[]
-    expected_exons = String[]
+            expected_exons = String[]
     for n in 1:5
         possible_exon = gene * "/" * type * "/" * string(n)
         if haskey(feature_templates, possible_exon)
@@ -716,8 +716,8 @@ function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SF
         if gene ≠ "rps12B" && !isstartcodon(getcodon(cds, Int32(1)), true, true)
             push!(warnings, LACKS_START_CODON)
         end
-        for i::Int32 in 1:3:length(cds)-2
-            if isstopcodon(getcodon(cds, i))
+        for i::Int32 in 1:3:length(cds) - 2
+if isstopcodon(getcodon(cds, i))
                 push!(warnings, PREMATURE_STOP_CODON)
                 break
             end
@@ -741,7 +741,7 @@ function write_model2SFF(outfile::IO, model::SFF_Model)
         write(outfile, string(f.order))
         write(outfile, "\t")
         write(outfile, join([model.strand,string(f.start),string(f.length),string(f.phase)], "\t"))
-        write(outfile, "\t")
+    write(outfile, "\t")
         write(outfile, join([@sprintf("%.3g",sff.relative_length),@sprintf("%.3g",sff.stackdepth),@sprintf("%.3g",sff.gmatch),
             @sprintf("%.3g",sff.feature_prob), @sprintf("%.3g",sff.coding_prob)], "\t"))
         write(outfile, "\t")
@@ -771,7 +771,7 @@ end
 function feature_glm(maxtemplatelength::Float32, template::FeatureTemplate, flength::Float32, fdepth::Float32, gmatch::Float32)::Float32
     flength ≤ 0 && return Float32(0.0)
     fdepth ≤ 0 && return Float32(0.0)
-    tlength = template.median_length/maxtemplatelength
+    tlength = template.median_length / maxtemplatelength
     length = log(flength)
     depth = log(fdepth)
     match = gmatch / 100
@@ -824,7 +824,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
                     push!(model1.warnings, BLACK_SHEEP)
                 elseif mean_stackdepth(model1) > mean_stackdepth(model2) # if probs are equal, decide on stackdepth
                     push!(model2.warnings, BLACK_SHEEP)
-                elseif mean_stackdepth(model2) > mean_stackdepth(model1)
+            elseif mean_stackdepth(model2) > mean_stackdepth(model1)
                     push!(model1.warnings, BLACK_SHEEP)
                 end
             end
@@ -923,9 +923,9 @@ end
 function writeGFF3(outfile::Union{String,IO},
     genome_id::String, # NCBI id
     genome_length::Int32,
-    models::FwdRev{Vector{SFF_Model}})
+        models::FwdRev{Vector{SFF_Model}})
             
-    function out(outfile::IO)
+            function out(outfile::IO)
         model_ids = Dict{String,Int32}()
         write(outfile, "##gff-version 3.2.1\n")
         for model in models.forward
@@ -1001,8 +1001,8 @@ function write_model2GFF3(outfile, model::SFF_Model, genome_id::String, genome_l
     start = minimum(f.feature.start for f in features)
     ft = featuretype(model.features)
     if ft == "CDS" && !startswith(id, "rps12A")
-        last(features).feature.length += 3 # add stop codon
-    end
+    last(features).feature.length += 3 # add stop codon
+        end
     finish = maximum(f.feature.start + f.feature.length - 1 for f in features)
     length = finish - start + 1
     

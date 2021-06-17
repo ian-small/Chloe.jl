@@ -112,11 +112,11 @@ function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBl
     (srcgap, tgtgap) = contiguousblockgaps(head, tail, src_length, tgt_length)
     chain = blockchain(alignment, sa, ra, lcps, srcgap, tgtgap, minblocksize, mask)
     length(chain) == 0 && return mainchain
-    lock(REENTRANT_LOCK)
-    head.next = chain.firstlink
-    chain.lastlink.next = tail
-    mainchain.links += chain.links
-    unlock(REENTRANT_LOCK)
+    lock(REENTRANT_LOCK) do
+        head.next = chain.firstlink
+        chain.lastlink.next = tail
+        mainchain.links += chain.links
+    end
     # recursion
     for gap in gaps(head, tail, chain.links + 1)
         (srcgap, tgtgap) = contiguousblockgaps(gap[1], gap[2], src_length, tgt_length)
