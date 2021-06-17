@@ -78,20 +78,30 @@ function verify_refs(refsdir, template)
     end
 end
 
-function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String, Int})::SingleReference
-    ref = FASTA.Record()
-    if !isdir(refdir); refdir = dirname(refdir); end
-    path = findfastafile(refdir, refID)
-    if isnothing(path)
-        msg = "unable to find $(refID) fasta file in $(refdir)!"
-        @error msg
-        throw(ArgumentError(msg))
+function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String, Int})::Union{SingleReference, Nothing}
+    try
+        ref = FASTA.Record()
+        if !isdir(refdir); refdir = dirname(refdir); end
+        path = findfastafile(refdir, refID)
+        if isnothing(path)
+            msg = "unable to find $(refID) fasta file in $(refdir)!"
+            @error msg
+            throw(ArgumentError(msg))
+        end
+        reader = open(FASTA.Reader, path)
+        read!(reader, ref)
+        close(reader)
+        path = normpath(joinpath(refdir, refID * ".sff"))
+        if !isfile(path)
+            msg = "unable to find $(path)!"
+            @error msg
+            throw(ArgumentError(msg))
+        end
+        ref_features = read_features!(path, reference_feature_counts)
+        return SingleReference(refID, CircularSequence(FASTA.sequence(ref)), ref_features)
+    catch e
+        return nothing
     end
-    reader = open(FASTA.Reader, path)
-    read!(reader, ref)
-    close(reader)
-    ref_features = read_features!(normpath(joinpath(refdir, refID * ".sff")), reference_feature_counts)
-    SingleReference(refID, CircularSequence(FASTA.sequence(ref)), ref_features)
 end
 
 MayBeString = Union{Nothing,String}
@@ -109,7 +119,7 @@ function flatten(vanno::Vector{Vector{Annotation}})::Vector{Annotation}
     ret
 end
 
-function do_annotations(numrefs::Int, target_id::String, strand::Char, refs::Vector{SingleReference}, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, target_length::Int32)
+function do_annotations(target_id::String, strand::Char, refs::Vector{SingleReference}, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, target_length::Int32)
 
     function do_one(refsrc, ref_features, blocks)
         st = time_ns()
@@ -118,9 +128,9 @@ function do_annotations(numrefs::Int, target_id::String, strand::Char, refs::Vec
         @debug "[$(target_id)]$(strand) $(refsrc)± overlaps $(length(annotations)): $(elapsed(st))"
         return annotations
     end
-    tgt = Vector{Vector{Annotation}}(undef, numrefs)
+    tgt = Vector{Vector{Annotation}}(undef, length(refs))
 
-    Threads.@threads for i in 1:numrefs
+    Threads.@threads for i in eachindex(refs)
         blocks = blocks_aligned_to_target[i]
         tgt[i] = do_one(refs[i].ref_seq, refs[i].ref_features, blocks)
     end
@@ -142,14 +152,14 @@ function score_feature(sff::SFF_Feature, maxtemplatelength::Float32, stack::Feat
     end
 end
 
-function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32}, reference_feature_counts::Dict{String,Int},
+function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32}, reference_feature_counts::Dict{String,Int},
     strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate}, maxtemplatelength::Float32)::Vector{Vector{SFF_Feature}}
 
     # println(strand, '\t', blocks_aligned_to_target)
 
     t4 = time_ns()
     target_length = Int32(length(target_seq))
-    annotations = do_annotations(numrefs, target_id, strand, refs, blocks_aligned_to_target, target_length)
+    annotations = do_annotations(target_id, strand, refs, blocks_aligned_to_target, target_length)
 
     # strand_feature_stacks is basically grouped by annotations.path
     strand_feature_stacks = fill_feature_stack(target_length, annotations, feature_templates)
@@ -344,14 +354,20 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     blocks_aligned_to_targetf = Vector{FwdRev{BlockTree}}(undef, numrefs)
     blocks_aligned_to_targetr = Vector{FwdRev{BlockTree}}(undef, numrefs)
     coverages = Dict{String,Float32}()
-    refs = Vector{SingleReference}(undef, numrefs)
+    refs = Vector{SingleReference}(undef, 0)
     masks = FwdRev(emask, CircularMask(reverse(emask.m)))
     reference_feature_counts = Dict{String, Int}()
 
+    picks_to_remove = []
     for i in 1:numrefs
         ref = read_single_reference!(refsdir, refpicks[i][1], reference_feature_counts)
-        refs[i] = ref
+        if isnothing(ref)
+            push!(picks_to_remove, i)
+        else
+            push!(refs, ref)
+        end
     end
+    deleteat!(refpicks, picks_to_remove)
     
     Threads.@threads for i in eachindex(refs)
         a = align_to_reference(refs[i], target_id, target_forward_strand, target_reverse_strand, masks)
@@ -368,7 +384,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     maxtemplatelength = maximum([t.median_length for t in values(feature_templates)])
 
     function watson()
-        models = do_strand(numrefs, target_id, target_forward_strand, refs, coverages, reference_feature_counts,
+        models = do_strand(target_id, target_forward_strand, refs, coverages, reference_feature_counts,
             '+', blocks_aligned_to_targetf, feature_templates, maxtemplatelength)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
@@ -379,7 +395,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
     end
         
     function crick()
-        models = do_strand(numrefs, target_id, target_reverse_strand, refs, coverages, reference_feature_counts,
+        models = do_strand(target_id, target_reverse_strand, refs, coverages, reference_feature_counts,
             '-', blocks_aligned_to_targetr, feature_templates, maxtemplatelength)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
