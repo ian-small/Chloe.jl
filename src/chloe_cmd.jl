@@ -97,7 +97,7 @@ function getargs()
             default = DEFAULT_NUMREFS
             dest_name = "numrefs"
             help = "number of references to compare to [default: $(DEFAULT_NUMREFS)]"
-        "--minhashes"
+        "--minhashes", "-m"
         arg_type = String
             default = "default"
             dest_name = "hashfile"

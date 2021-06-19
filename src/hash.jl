@@ -11,12 +11,14 @@ function minhash_references(; fasta_files=Vector{String}, output=output)
         println(file)
         if isdir(file)
             minhash_references(fasta_files=filter(x -> endswith(x, ".fasta"), readdir(file, join=true)), output=output)
+        else
+            open(file) do io
+                reader = FASTA.Reader(io)
+                record = FASTA.Record() 
+                read!(reader, record)
+                push!(seqs, record)
+            end
         end
-        reader = open(FASTA.Reader, file)
-        record = FASTA.Record() 
-        read!(reader, record)
-        push!(seqs, record)
-        close(reader)
     end
 
     hashes = Dict{String,Vector{Int64}}()

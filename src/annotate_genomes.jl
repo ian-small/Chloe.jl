@@ -54,7 +54,7 @@ function Base.show(io::IO, r::FwdRev{FwdRev{AlignedBlocks}})
     print(io, "Chloë Alignment: [($ff,$fr),($rf,$rr)] total=$(human(total))")
 end
 
-function verify_refs(refsdir, template)
+function verify_refs(refsdir, hashfile, template)
     # used by master process to check reference directory
     # *before* starting worker processes...
 
@@ -65,7 +65,7 @@ function verify_refs(refsdir, template)
         throw(ArgumentError(msg))
     end
 
-    for f in [template, joinpath(refsdir, "ReferenceOrganisms.json")]
+    for f in [hashfile, template, joinpath(refsdir, "ReferenceOrganisms.json")]
         if !isfile(f)
             msg = "missing file: $f"
             @error msg
@@ -101,7 +101,7 @@ MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,DFeatureStack}
 
 function flatten(vanno::Vector{Vector{Annotation}})::Vector{Annotation}
-    ret = Vector{Annotation}(undef, sum(length(v) for v in vanno))
+    ret = Vector{Annotation}(undef, sum(length(v) for v in vanno; init=0))
     i = 1
     @inbounds for v in vanno
         for a in v
@@ -271,7 +271,7 @@ function inverted_repeat(target::CircularSequence, revtarget::CircularSequence):
 end
 
 """
-    annotate_one(refsdir::String, seq_id::String, seq::String, [,output_sff_file])
+    annotate_one(refsdir::String, target_id::String, seq::String, [,output_sff_file])
 
 Annotate a single sequence containting a *single* circular
 DNA entry
@@ -291,7 +291,8 @@ function annotate_one(db::ReferenceDb,
         target_id::String,
         target::FwdRev{CircularSequence},
         config::ChloeConfig,
-        output::MayBeIO=nothing)::Tuple{Union{String,IO},String}
+        output::MayBeIO=nothing
+        )::Tuple{Union{String,IO},String}
 
     t1 = time_ns()
 
@@ -340,7 +341,7 @@ function annotate_one(db::ReferenceDb,
         refpicks = searchhashes(hash, refhashes)[1:numrefs]
     else
         numrefs = 1
-        # FIXME
+        # FIXME this is wrong!
         refpicks = [(split(basename(refsdir), '.')[1], 0)]
     end
 
@@ -351,23 +352,19 @@ function annotate_one(db::ReferenceDb,
     blocks_aligned_to_targetf = Vector{FwdRev{BlockTree}}(undef, numrefs)
     blocks_aligned_to_targetr = Vector{FwdRev{BlockTree}}(undef, numrefs)
     coverages = Dict{String,Float32}()
-    refs = Vector{SingleReference}(undef, numrefs)
-    masks = FwdRev(emask, CircularMask(reverse(emask.m)))
-    reference_feature_counts = Dict{String,Int}()
 
-    for i in 1:numrefs
-        ref = get_single_reference!(db, refpicks[i][1], reference_feature_counts)
-        refs[i] = ref
-    end
+    reference_feature_counts = Dict{String,Int}()
+    refs = [get_single_reference!(db, r[1], reference_feature_counts) for r in refpicks]
+    
+    masks = FwdRev(emask, CircularMask(reverse(emask.m)))
     
     Threads.@threads for i in eachindex(refs)
         a = align_to_reference(refs[i], target_id, target, masks)
         blocks_aligned_to_targetf[i] = a[1].forward
         blocks_aligned_to_targetr[i] = a[1].reverse
-
             lock(REENTRANT_LOCK) do
             coverages[refpicks[i][1]] = a[2]
-    end
+        end
     end
 
     feature_templates = get_templates(db)
@@ -426,59 +423,43 @@ function annotate_one(db::ReferenceDb,
     return fname, target_id
 
 end
-"""
-    annotate_one(refsdir::String, fasta::Union{String,IO})
 
-Annotate a fasta file. Maybe a file name or an IOBuffer
-returns a 2-tuple (sff annotation as an IOBuffer, sequence id).
-"""
-function annotate_one(db::ReferenceDb, infile::String, config::ChloeConfig)
-    open(FASTA.Reader, infile) do reader
-        records = [record for record in reader]
-
-        if isempty(records)
-            @error "unable to read sequence from $infile"
-        elseif length(records) > 2
-            @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
-        end
-        fseq = CircularSequence(FASTA.sequence(records[1]))
-            if length(records) == 2
-            rseq = CircularSequence(FASTA.sequence(records[2]))
-        else
-            rseq = reverse_complement(fseq)
-        end
-        if length(fseq) != length(rseq)
-            @error "unequal lengths for forward and reverse strands"
-        end
-        return annotate_one(db, FASTA.identifier(records[1]), FwdRev(fseq, rseq), output, config)
+function annotate_one(db::ReferenceDb, infile::String, config::ChloeConfig, output::MayBeIO=nothing)
+    open(infile) do io
+        annotate_one(db, io, config, output)
     end
+end
+function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO=nothing)
+    reader = FASTA.Reader(infile)
+    records = [record for record in reader]
+    if isempty(records)
+        @error "unable to read sequence from $infile"
+    elseif length(records) > 2
+        @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
+    end
+    fseq = CircularSequence(FASTA.sequence(records[1]))
+    if length(records) == 2
+        rseq = CircularSequence(FASTA.sequence(records[2]))
+    else
+    rseq = reverse_complement(fseq)
+    end
+    if length(fseq) != length(rseq)
+        @error "unequal lengths for forward and reverse strands"
+    end
+    target_id = FASTA.identifier(records[1])
+    if isnothing(target_id)
+        target_id = "unknown"
+    end
+    annotate_one(db, target_id, FwdRev(fseq, rseq), config, output)
+
 end
 
 function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig)
-    
         
     for infile in fa_files
-        reader = open(FASTA.Reader, infile)
-        records = Vector{FASTA.Record}()
-        for record in reader
-            push!(records, record)
+        open(infile) do io
+            annotate_one(db, io, config)
         end
-        if isempty(records)
-            @error "unable to read sequence from $infile"
-        elseif length(records) > 2
-            @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
-        end
-        fseq = CircularSequence(FASTA.sequence(records[1]))
-            if length(records) == 2
-            rseq = CircularSequence(FASTA.sequence(records[2]))
-        else
-            rseq = reverse_complement(fseq)
-        end
-        if length(fseq) != length(rseq)
-            @error "unequal lengths for forward and reverse strands"
-        end
-        annotate_one(db, FASTA.identifier(records[1]), FwdRev(fseq, rseq), config)
-        close(reader)
     end
 end
 

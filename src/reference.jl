@@ -47,11 +47,15 @@ end
 
 struct ChloeConfig
     numrefs::Int
-    sensitivity::Float32
+    sensitivity::Real
     to_gff3::Bool
     nofilter::Bool
 end
 
 function ChloeConfig(;numrefs=DEFAULT_NUMREFS, sensitivity=DEFAULT_SENSITIVITY, to_gff3::Bool=false, nofilter::Bool=false)
     return ChloeConfig(numrefs, sensitivity, to_gff3, nofilter)
+end
+
+function ChloeConfig(dict::Dict{String,Any})
+    return ChloeConfig(;Dict(Symbol(k) => v for (k, v) in dict)...)
 end

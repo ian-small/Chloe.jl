@@ -34,4 +34,4 @@ function JuliaWebAPI.juliaformat(fmt::TerminatingJSONMsgFormat, msgstr)
     return ret
 end
 
-end
+end # module
