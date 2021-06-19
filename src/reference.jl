@@ -26,20 +26,20 @@ function ReferenceDb(;refsdir="default",  hashfile="default",
 end
 
 function get_templates(db::ReferenceDb)
-    if isnothing(db.templates)
-        lock(db.lock) do
+    lock(db.lock) do
+        if isnothing(db.templates)
             db.templates = read_templates(db.template_file)
         end
+        return db.templates
     end
-    db.templates
 end
 function get_minhashes(db::ReferenceDb)
-    if isnothing(db.templates)
-        lock(db.lock) do
+    lock(db.lock) do
+        if isnothing(db.templates)
             db.refhashes = readminhashes(db.hash_file)
         end
+        return db.refhashes
     end
-    db.refhashes
 end
 function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
     read_single_reference!(db.refsdir, refID, reference_feature_counts)
@@ -52,10 +52,16 @@ struct ChloeConfig
     nofilter::Bool
 end
 
+const KWARGS = ["numrefs", "sensitivity", "to_gff3", "nofilter"]
+
 function ChloeConfig(;numrefs=DEFAULT_NUMREFS, sensitivity=DEFAULT_SENSITIVITY, to_gff3::Bool=false, nofilter::Bool=false)
     return ChloeConfig(numrefs, sensitivity, to_gff3, nofilter)
 end
 
-function ChloeConfig(dict::Dict{String,Any})
-    return ChloeConfig(;Dict(Symbol(k) => v for (k, v) in dict)...)
+# needs to be V <: Any since this is comming from a JSON blob
+function ChloeConfig(dict::Dict{String,V} where V <: Any)
+    return ChloeConfig(;Dict(Symbol(k) => v for (k, v) in dict if k in KWARGS)...)
+end
+function Base.show(io::IO, c::ChloeConfig)
+    print(io, "ChloeConfig[numrefs=$(c.numrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter)]")
 end

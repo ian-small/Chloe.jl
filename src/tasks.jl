@@ -1,7 +1,7 @@
 
 # put these in the global namespace
 import .ZMQLogging: annotation_local_storage, set_global_logger, TASK_KEY
-import .Annotator: annotate_one, MayBeIO, MayBeString, CholeConfig
+import .Annotator: annotate_one, MayBeIO, MayBeString, ChloeConfig
 
 
 #### these are only used by chloe_distributed ####

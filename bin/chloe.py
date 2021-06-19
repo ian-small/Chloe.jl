@@ -106,8 +106,13 @@ def proxy(url_worker, url_client, hwm=1000):
         os._exit(1)  # pylint: disable=protected-access
 
 
-HELP = """
+HELP = f"""
 Commands to directly connect to annotator
+
+run the annotator as:
+
+    {click.style('julia --project=. distributed.jl --broker=default', fg='green')}
+
 """
 
 
@@ -444,6 +449,18 @@ def ping(timeout, address):
     """Ping the server."""
     socket = Socket(address, timeout)
     code, data = socket.msg(cmd="ping")
+    display(code, data)
+
+
+@cli.command()
+@addresses
+def config(timeout, address):
+    """Test ChloeConfig on the server."""
+    socket = Socket(address, timeout)
+    code, data = socket.msg(
+        cmd="config",
+        args=[dict(numrefs=55, sensitivity=0.7, nofilter=True)],
+    )
     display(code, data)
 
 

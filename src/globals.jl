@@ -9,8 +9,8 @@ const DEFAULT_NUMREFS = 16
 # relative to refsdir
 const DEFAULT_HASHES = "reference_minhashes.hash"
 const DEFAULT_TEMPLATE = "templates.tsv"
-const DEFAULT_SENSITIVITY = Float16(0.5)
+const DEFAULT_SENSITIVITY = 0.5
 # change this if you change the API!
-const VERSION = "1.2"
+const VERSION = "1.3"
 const HERE = dirname(@__FILE__)
 

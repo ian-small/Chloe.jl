@@ -2,7 +2,7 @@ module Annotator
 
 using StatsBase:IntegerVector
 export annotate, annotate_one, MayBeIO, MayBeString, ReferenceDb
-export read_single_reference, inverted_repeat, ChloeConfig
+export read_single_reference!, inverted_repeat, ChloeConfig
 
 import Base
 

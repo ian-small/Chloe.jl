@@ -109,7 +109,7 @@ function getargs()
             dest_name = "template"
             help = "template tsv [default: {reference directory}/$(DEFAULT_TEMPLATE)]"
         "--sensitivity", "-s"
-            arg_type = Float16
+            arg_type = Real
             default = DEFAULT_SENSITIVITY
             help = "probability threshold for reporting features [default: $(DEFAULT_SENSITIVITY)]"
         "--nofilter"

@@ -19,7 +19,7 @@ import StringEncodings:encode
 import ZMQ
 
 import .WebAPI:TerminatingJSONMsgFormat
-import .Annotator: MayBeString, verify_refs
+import .Annotator: MayBeString, verify_refs, ChloeConfig
 import .ZMQLogging:set_global_logger
 import .Broker: check_endpoints, remove_endpoints
 
@@ -86,7 +86,7 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
         include(joinpath($HERE, "tasks.jl"))
 
         set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = ReferenceDb(;refsdir=$refsdir, hashfile=$hashfile,
+        global REFERENCE = Annotator.ReferenceDb(;refsdir=$refsdir, hashfile=$hashfile,
                    template=$template)
     end
     # [ @spawnat p begin
@@ -106,7 +106,7 @@ function arm_procs(procs, backend::MayBeString=nothing, level::String="info";
     # @everywhere using Chloe
     @everywhere procs begin
         set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = ReferenceDb(;refsdir=$refsdir, hashfile=$hashfile,
+        global REFERENCE = Annotator.ReferenceDb(;refsdir=$refsdir, hashfile=$hashfile,
                    template=$template)
     end
     # [ @spawnat p begin
@@ -115,7 +115,7 @@ function arm_procs(procs, backend::MayBeString=nothing, level::String="info";
     # end for p in procs] .|> wait
 end
 
-        function chloe_distributed(full::Bool=true;refsdir="default", address=ZMQ_WORKER,
+function chloe_distributed(full::Bool=true; refsdir="default", address=ZMQ_WORKER,
     hashfile="default", template="default", level="warn", workers=3,
     backend::MayBeString=nothing, broker::MayBeString=nothing)
 
@@ -186,7 +186,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
     # GC.gc()
     nannotations = 0
     
-    function chloe(fasta::String, outputsff::MayBeString, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,Any}}=nothing)
+    function chloe(fasta::String, outputsff::MayBeString, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V <: Any}=nothing)
         start = now()
         cfg = if isnothing(config) ChloeConfig() else ChloeConfig(config) end
         filename, target_id = fetch(@spawnat :any annotate_one_task(fasta, outputsff, task_id, cfg))
@@ -201,7 +201,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
         read(encode(fasta, "latin1") |> IOBuffer |> GzipDecompressorStream, String)
     end
 
-    function annotate(fasta::String, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,Any}}=nothing)
+    function annotate(fasta::String, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V <: Any}=nothing)
         start = now()
         if startswith(fasta, "\u1f\u8b")
             # assume latin1 encoded binary gzip file
@@ -223,7 +223,10 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
     function ping()
         return "OK version=$VERSION git=$git #anno=$nannotations pid=$pid threads=$nthreads workers=$nlisteners on $machine"
     end
-
+    function config(config::Dict{String,V} where V <: Any)
+        cfg = ChloeConfig(config)
+        return "OK $(cfg)"
+    end
     # `bin/chloe.py terminate` uses this to find out how many calls of :terminate
     # need to be made to stop all responders. It's hard to cleanly
     # stop process(APIResponder) from the outside since it is block wait on 
@@ -246,17 +249,17 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
             # there is no way to ensure we are terminating
             # *our* listeners... we send a pid so it can check
 
-    # @async to allow for main task to count down nlisteners
+            # @async to allow for main task to count down nlisteners
             res = fetch(@async apicall(i, ":exit", pid))
             code = res["code"]
             @debug "code=$(code) workers=$(nlisteners)"
             # ping wrong server... oops
             if code === 200
                 n -= 1
-        else
+            else
                 maxfails -= 1
             end
-    end
+        end
     end
     function exit(endpoint::MayBeString=nothing)
         # use broker url if any
@@ -303,7 +306,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
                 # ensure topology is the same
                 added = addprocs(n, topology=:master_worker, exeflags="--project=$(pwd())")
                 arm_procs(added)
-        @info "added $(added) processes"
+                @info "added $(added) processes"
                 # update globals
                 procs = [procs..., added...]
                 nlisteners = length(procs)
@@ -341,12 +344,13 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
         @debug "starting worker $workno"
         process(
         create_responder([
-    chloe,
+                chloe,
                 annotate,
                 ping,
                 nconn,
                 exit,
                 add_workers,
+                config,
             ], address, ctx)
         )
         # :terminate called so process loop is finished
@@ -365,7 +369,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
         @debug "worker done: $w workers=$nlisteners"
     end
 
-    @info success("Chloë done: pid=$(pid) exiting.....🍹")
+        @info success("Chloë done: pid=$(pid) exiting.....🍹")
     # atexit cleanup and kill(broker) task should be called now
 
 end
@@ -380,12 +384,17 @@ function get_distributed_args()
         dest_name = "refsdir"
         metavar = "DIRECTORY"
         help = "reference directory [default: $(DEFAULT_REFS)]"
+        "--minhashes", "-m"
+        arg_type = String
+        default = "default"
+        dest_name = "hashfile"
+        help = "reference minhashes [default: {reference directory}/$(DEFAULT_HASHES)]"
         "--template", "-t"
         arg_type = String
         default = "default"
         metavar = "TSV"
         dest_name = "template"
-        help = "template tsv [default: $(DEFAULT_TEMPLATE)]"
+        help = "template tsv [default: {reference directory}/$(DEFAULT_TEMPLATE)]"
         "--address", "-a"
         arg_type = String
         metavar = "URL"
@@ -408,9 +417,7 @@ function get_distributed_args()
         arg_type = String
         metavar = "URL"
         help = "log to zmq endpoint"
-        "--forward-only"
-        action = :store_true
-        help = "only use forward sequences"
+
 
     end
 
@@ -443,18 +450,10 @@ function run_broker(worker::String=ZMQ_WORKER, client::String=ZMQ_CLIENT)
     task = run(cmd; wait=false)
     atexit(() -> kill(task))
     remove_endpoints(worker, client)
-task
-    # open(pipeline(cmd))
+    task
 end
 
-# function run_broker2(worker, client)
-#     # ugh! `@spawnat :any annotate...` will block on this process... which
-#     # will never return.
-#     procs = addprocs(1; topology=:master_worker)
-#     @everywhere procs include("src/broker.jl")
-    #     @async fetch(@spawnat procs[1] run_broker(worker, client))
-# end
-
+    
 function maybe_launch_broker(distributed_args)
     function find_endpoint()
         endpoint = tmplt = "/tmp/chloe-worker"
@@ -467,11 +466,11 @@ function maybe_launch_broker(distributed_args)
     end 
 
     client_url = get(distributed_args, :broker, nothing)
-
+        
     if client_url !== nothing
         if client_url == "default"
             client_url = ZMQ_CLIENT
-            distributed_args[:broker] = client_url
+                distributed_args[:broker] = client_url
         end
         if startswith(client_url, "@")
             # hack just so the server knows how to terminate itself

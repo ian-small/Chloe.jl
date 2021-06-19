@@ -677,7 +677,7 @@ const LOW_ANNOTATION_DEPTH = "has low annotation depth, probably spurious"
 const BLACK_SHEEP = "probably pseudogene as better copy exists in the genome"
 const OVERLAPPING_FEATURE = "better-scoring feature overlaps with this one"
 
-function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Float32)::Union{Nothing,SFF_Model}
+function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Real)::Union{Nothing,SFF_Model}
     gene = first(model).feature.gene
     type = featuretype(model)
     type == "" && return nothing
