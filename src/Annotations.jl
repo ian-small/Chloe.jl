@@ -741,7 +741,7 @@ function write_model2SFF(outfile::IO, model::SFF_Model)
         write(outfile, string(f.order))
         write(outfile, "\t")
         write(outfile, join([model.strand,string(f.start),string(f.length),string(f.phase)], "\t"))
-    write(outfile, "\t")
+        write(outfile, "\t")
         write(outfile, join([@sprintf("%.3g",sff.relative_length),@sprintf("%.3g",sff.stackdepth),@sprintf("%.3g",sff.gmatch),
             @sprintf("%.3g",sff.feature_prob), @sprintf("%.3g",sff.coding_prob)], "\t"))
         write(outfile, "\t")

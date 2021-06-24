@@ -119,7 +119,11 @@ function chloe_distributed(full::Bool=true; refsdir="default", address=ZMQ_WORKE
     hashfile="default", template="default", level="warn", workers=3,
     backend::MayBeString=nothing, broker::MayBeString=nothing)
 
-
+    if !isnothing(backend)
+        if backend == "default"
+            backend = ZMQ_BACKEND
+        end
+    end
     set_global_logger(level, backend; topic="annotator")
 
     if refsdir == "default"

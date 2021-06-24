@@ -384,7 +384,7 @@ function annotate_one(db::ReferenceDb,
 end
 
 function annotate_one(db::ReferenceDb, infile::String, config::ChloeConfig, output::MayBeIO=nothing)
-    open(infile) do io
+    maybe_gzread(infile) do io
         annotate_one(db, io, config, output)
     end
 end
@@ -416,7 +416,7 @@ end
 function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig)
         
     for infile in fa_files
-        open(infile) do io
+        maybe_gzread(infile) do io
             annotate_one(db, io, config)
         end
     end

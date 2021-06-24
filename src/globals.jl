@@ -4,6 +4,7 @@ const LOGLEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" 
 
 const ZMQ_WORKER = "tcp://127.0.0.1:9467"
 const ZMQ_CLIENT = "ipc:///tmp/chloe-client"
+const ZMQ_BACKEND = "ipc:///tmp/chloe-backend"
 const DEFAULT_REFS = "chloe_references"
 const DEFAULT_NUMREFS = 16
 # relative to refsdir
