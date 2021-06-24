@@ -6,28 +6,30 @@ global const MINIMUMFILLABLEGAP = 20
 global const MAXIMUMMERGEABLEGAP = 400
 
 function align(;query, target, output=Base.stdout)
-    reader = open(FASTA.Reader, query)
-    record = FASTA.Record()
-    read!(reader, record)
-    seq1 = FASTA.sequence(record)
-    close(reader)
-    for target_file in target
-        reader = open(FASTA.Reader, target_file)
+    open(query) do io
+        reader = FASTA.Reader(io)
         record = FASTA.Record()
         read!(reader, record)
-        seq2 = FASTA.sequence(record)
-        alignment = Alignment(seq1, seq2)
-        cseq1 = CircularSequence(seq1)
-        emask = entropy_mask(cseq1, Int32(KMERSIZE))
-        chain = align2seqs(cseq1, CircularSequence(seq2), emask)
-        for link in chain
-            block = link.data
-            query_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in block.src_index:block.src_index + block.blocklength - 1))
-            target_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in fulcrum(alignment) + block.tgt_index:fulcrum(alignment) + block.tgt_index + block.blocklength - 1))
-            println("$(block.src_index)\t$query_segment\t$(block.src_index + block.blocklength - 1)")
-            println("$(block.tgt_index)\t$target_segment\t$(block.tgt_index + block.blocklength - 1)\n")
+        seq1 = FASTA.sequence(record)
+        for target_file in target
+            open(target_file) do io2
+                reader = FASTA.Reader(io2)
+                record = FASTA.Record()
+                read!(reader, record)
+                seq2 = FASTA.sequence(record)
+                alignment = Alignment(seq1, seq2)
+                cseq1 = CircularSequence(seq1)
+                emask = entropy_mask(cseq1, Int32(KMERSIZE))
+                chain = align2seqs(cseq1, CircularSequence(seq2), emask)
+                for link in chain
+                    block = link.data
+                    query_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in block.src_index:block.src_index + block.blocklength - 1))
+                    target_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in fulcrum(alignment) + block.tgt_index:fulcrum(alignment) + block.tgt_index + block.blocklength - 1))
+                    println("$(block.src_index)\t$query_segment\t$(block.src_index + block.blocklength - 1)")
+                    println("$(block.tgt_index)\t$target_segment\t$(block.tgt_index + block.blocklength - 1)\n")
+                end
+            end
         end
-        close(reader)
     end
 end
 
@@ -86,7 +88,7 @@ function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask=nothing
         for link in src2tgt
             println(link)
         end
-    end
+end
 
 return src2tgt
 end

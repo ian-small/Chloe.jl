@@ -37,11 +37,11 @@ function minhash_references(; fasta_files=Vector{String}, output=output)
 end
 
 function writeminhashes(filename::String, hashes::Dict{String,Vector{Int64}})
-    outfile = open(filename, "w")
-    for (id, hash) in hashes
-        write(outfile, UInt8(length(id)), id, hash)
+    open(filename, "w") do outfile
+        for (id, hash) in hashes
+            write(outfile, UInt8(length(id)), id, hash)
+        end
     end
-    close(outfile)
 end
 
 function readminhashes(infile::String)::Dict{String,Vector{Int64}}

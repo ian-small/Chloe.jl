@@ -11,6 +11,13 @@ mutable struct ReferenceDb
     refhashes::Union{Nothing,Dict{String,Vector{Int64}}}
 end
 
+struct ChloeConfig
+    numrefs::Int
+    sensitivity::Real
+    to_gff3::Bool
+    nofilter::Bool
+end
+
 function ReferenceDb(;refsdir="default",  hashfile="default",
     template="default")
     if refsdir == "default"
@@ -33,7 +40,7 @@ function get_templates(db::ReferenceDb)
         return db.templates
     end
 end
-function get_minhashes(db::ReferenceDb)
+function get_minhashes(db::ReferenceDb, config::ChloeConfig)
     lock(db.lock) do
         if isnothing(db.templates)
             db.refhashes = readminhashes(db.hash_file)
@@ -45,12 +52,6 @@ function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference
     read_single_reference!(db.refsdir, refID, reference_feature_counts)
 end
 
-struct ChloeConfig
-    numrefs::Int
-    sensitivity::Real
-    to_gff3::Bool
-    nofilter::Bool
-end
 
 const KWARGS = ["numrefs", "sensitivity", "to_gff3", "nofilter"]
 
@@ -64,4 +65,48 @@ function ChloeConfig(dict::Dict{String,V} where V <: Any)
 end
 function Base.show(io::IO, c::ChloeConfig)
     print(io, "ChloeConfig[numrefs=$(c.numrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter)]")
+end
+
+function verify_refs(refsdir, hashfile, template)
+    # used by master process to check reference directory
+    # *before* starting worker processes...
+
+    # TODO: read json file and really check...
+    if !isdir(refsdir)
+        msg = "Reference directory $(refsdir) is not a directory!"
+        @error msg
+        throw(ArgumentError(msg))
+    end
+
+    for f in [hashfile, template, joinpath(refsdir, "ReferenceOrganisms.json")]
+        if !isfile(f)
+            msg = "missing file: $f"
+            @error msg
+            throw(ArgumentError(msg))
+        end
+    end
+    files = readdir(refsdir)    
+    sff = findall(x -> endswith(x, ".sff"), files)
+    if length(sff) == 0
+        msg = "no reference .sff files in $(refsdir)!"
+        @error msg
+        throw(ArgumentError(msg))
+    end
+end
+
+function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
+    if !isdir(refdir); refdir = dirname(refdir); end
+    path = findfastafile(refdir, refID)
+    if isnothing(path)
+        msg = "unable to find $(refID) fasta file in $(refdir)!"
+        @error msg
+        throw(ArgumentError(msg))
+    end
+    open(path) do io
+        ref = FASTA.Record()
+        reader = FASTA.Reader(io)
+        read!(reader, ref)
+        ref_features = read_features!(normpath(joinpath(refdir, refID * ".sff")), reference_feature_counts)
+        SingleReference(refID, CircularSequence(FASTA.sequence(ref)), ref_features)
+    end
 end

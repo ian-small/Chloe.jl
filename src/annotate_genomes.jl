@@ -54,48 +54,7 @@ function Base.show(io::IO, r::FwdRev{FwdRev{AlignedBlocks}})
     print(io, "Chloë Alignment: [($ff,$fr),($rf,$rr)] total=$(human(total))")
 end
 
-function verify_refs(refsdir, hashfile, template)
-    # used by master process to check reference directory
-    # *before* starting worker processes...
 
-    # TODO: read json file and really check...
-    if !isdir(refsdir)
-        msg = "Reference directory $(refsdir) is not a directory!"
-        @error msg
-        throw(ArgumentError(msg))
-    end
-
-    for f in [hashfile, template, joinpath(refsdir, "ReferenceOrganisms.json")]
-        if !isfile(f)
-            msg = "missing file: $f"
-            @error msg
-            throw(ArgumentError(msg))
-        end
-    end
-    files = readdir(refsdir)    
-    sff = findall(x -> endswith(x, ".sff"), files)
-    if length(sff) == 0
-        msg = "no reference .sff files in $(refsdir)!"
-        @error msg
-        throw(ArgumentError(msg))
-    end
-end
-
-function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
-    ref = FASTA.Record()
-    if !isdir(refdir); refdir = dirname(refdir); end
-    path = findfastafile(refdir, refID)
-    if isnothing(path)
-        msg = "unable to find $(refID) fasta file in $(refdir)!"
-        @error msg
-        throw(ArgumentError(msg))
-    end
-    reader = open(FASTA.Reader, path)
-    read!(reader, ref)
-    close(reader)
-    ref_features = read_features!(normpath(joinpath(refdir, refID * ".sff")), reference_feature_counts)
-    SingleReference(refID, CircularSequence(FASTA.sequence(ref)), ref_features)
-end
 
 MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,DFeatureStack}
@@ -330,7 +289,7 @@ function annotate_one(db::ReferenceDb,
 
     # find best references
     emask = entropy_mask(CircularSequence(target.forward.sequence), Int32(KMERSIZE))
-    refhashes = get_minhashes(db)
+    refhashes = get_minhashes(db, config)
     if !isnothing(refhashes)
         nmaskedtarget = copy(target.forward.sequence)
         for (i, bit) in enumerate(emask)
@@ -463,6 +422,12 @@ function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig
     end
 end
 
+function annotate_one(refsdir::String, infile::String, output::MayBeIO=nothing)
+
+    annotate_one(ReferenceDb(;refsdir=refsdir), infile, ChloeConfig(), output)
+
+
+end
 
 
 end # module
