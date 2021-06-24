@@ -23,7 +23,7 @@ import .Annotator: MayBeString, verify_refs, ChloeConfig
 import .ZMQLogging:set_global_logger
 import .Broker: check_endpoints, remove_endpoints
 
-include("globals.jl")
+include("../globals.jl")
 
 
 function git_version()
@@ -91,9 +91,9 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
     end
     # [ @spawnat p begin
     #     include(joinpath(HERE, "annotate_genomes.jl"))
-    #     include(joinpath(HERE, "ZMQLogger.jl"))
-    #     include(joinpath(HERE, "chloe_distributed.jl"))
-    #     include(joinpath(HERE, "tasks.jl"))        
+    #     include(joinpath(HERE, "dist/ZMQLogger.jl"))
+    #     include(joinpath(HERE, "dist/chloe_distributed.jl"))
+    #     include(joinpath(HERE, "dist/tasks.jl"))        
     #     set_global_logger(level, backend; topic="annotator")
     #     nothing
     # end for p in procs] .|> wait
@@ -410,7 +410,7 @@ function get_distributed_args()
         default = "info"
         help = "log level (warn,debug,info,error,critical)"
         "--workers", "-w"
-        arg_type = Int
+    arg_type = Int
         default = 3
         help = "number of distributed processes"
         "--broker", "-b"
