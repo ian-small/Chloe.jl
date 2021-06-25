@@ -71,7 +71,7 @@ function flatten(vanno::Vector{Vector{Annotation}})::Vector{Annotation}
     ret
 end
 
-function do_annotations(numrefs::Int, target_id::String, strand::Char, refs::Vector{SingleReference}, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, target_length::Int32)
+function do_annotations(target_id::String, strand::Char, refs::Vector{SingleReference}, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, target_length::Int32)
 
     function do_one(refsrc, ref_features, blocks)
         st = time_ns()
@@ -80,9 +80,9 @@ function do_annotations(numrefs::Int, target_id::String, strand::Char, refs::Vec
         @debug "[$(target_id)]$(strand) $(refsrc)± overlaps $(length(annotations)): $(elapsed(st))"
         return annotations
     end
-    tgt = Vector{Vector{Annotation}}(undef, numrefs)
+    tgt = Vector{Vector{Annotation}}(undef, length(refs))
 
-    Threads.@threads for i in 1:numrefs
+    Threads.@threads for i in eachindex(refs)
         blocks = blocks_aligned_to_target[i]
         tgt[i] = do_one(refs[i].ref_seq, refs[i].ref_features, blocks)
     end
@@ -105,14 +105,14 @@ function score_feature(sff::SFF_Feature, maxtemplatelength::Float32, stack::Feat
     end
 end
 
-function do_strand(numrefs::Int, target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32}, reference_feature_counts::Dict{String,Int},
+function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32}, reference_feature_counts::Dict{String,Int},
     strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate}, maxtemplatelength::Float32)::Vector{Vector{SFF_Feature}}
 
     # println(strand, '\t', blocks_aligned_to_target)
 
     t4 = time_ns()
     target_length = Int32(length(target_seq))
-    annotations = do_annotations(numrefs, target_id, strand, refs, blocks_aligned_to_target, target_length)
+    annotations = do_annotations(target_id, strand, refs, blocks_aligned_to_target, target_length)
 
     # strand_feature_stacks is basically grouped by annotations.path
     strand_feature_stacks = fill_feature_stack(target_length, annotations, feature_templates)
@@ -311,11 +311,11 @@ function annotate_one(db::ReferenceDb,
     blocks_aligned_to_targetf = Vector{FwdRev{BlockTree}}(undef, numrefs)
     blocks_aligned_to_targetr = Vector{FwdRev{BlockTree}}(undef, numrefs)
     coverages = Dict{String,Float32}()
-
+    refs = Vector{SingleReference}(undef, 0)
+    masks = FwdRev(emask, CircularMask(reverse(emask.m)))
     reference_feature_counts = Dict{String,Int}()
     refs = [get_single_reference!(db, r[1], reference_feature_counts) for r in refpicks]
-    
-    masks = FwdRev(emask, CircularMask(reverse(emask.m)))
+
     
     Threads.@threads for i in eachindex(refs)
         a = align_to_reference(refs[i], target_id, target, masks)
@@ -334,7 +334,7 @@ function annotate_one(db::ReferenceDb,
     maxtemplatelength = maximum([t.median_length for t in values(feature_templates)])
 
     function watson()
-        models = do_strand(numrefs, target_id, target.forward, refs, coverages, reference_feature_counts,
+        models = do_strand(target_id, target.forward, refs, coverages, reference_feature_counts,
             '+', blocks_aligned_to_targetf, feature_templates, maxtemplatelength)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
@@ -345,7 +345,7 @@ function annotate_one(db::ReferenceDb,
     end
         
     function crick()
-        models = do_strand(numrefs, target_id, target.reverse, refs, coverages, reference_feature_counts,
+        models = do_strand(target_id, target.reverse, refs, coverages, reference_feature_counts,
             '-', blocks_aligned_to_targetr, feature_templates, maxtemplatelength)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)

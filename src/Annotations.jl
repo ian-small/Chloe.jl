@@ -48,8 +48,8 @@ function Base.push!(ctree::FeatureTree, interval::Feature)
     if last(interval) ≤ ctree.length
         push!(ctree.ftree, interval)
     else
-        first_interval = Feature("?/?/?", first(interval), ctree.length - first(interval) + one(Int32), zero(Int8))
-        second_interval = Feature("?/?/?", 1, last(interval) - ctree.length, zero(Int8))
+        first_interval = Feature(annotation_path(interval), first(interval), ctree.length - first(interval) + one(Int32), zero(Int8))
+        second_interval = Feature(annotation_path(interval), 1, last(interval) - ctree.length, zero(Int8))
         push!(ctree.ftree, first_interval)
         ctree.wrapped_intervals[first_interval] = interval
         push!(ctree.ftree, second_interval)
@@ -262,9 +262,10 @@ function align_template(feature_stack::FeatureStack)::Tuple{Vector{Tuple{Int32,I
     isempty(hits) && return hits, median_length
     # sort by descending score
     sort!(hits, by=x -> x[2], rev=true)
+    #println(feature_stack.path, '\t', hits)
     maxscore = hits[1][2]
     # retain all hits scoring over 90% of the the top score
-    filter!(x -> x[2] ≥ maxscore * 0.9, hits)
+    filter!(x -> (x[2] ≥ maxscore * 0.9 || x[2] ≥ median_length), hits)
     return hits, median_length
 end
 
@@ -358,7 +359,7 @@ function features2models(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_F
             left_border = sff_feature.feature.start
             right_border = sff_feature.feature.start + sff_feature.feature.length - 1
         # add feature to model if the gene names match and they are less than 3kb apart; 3kb is an arbitrary limit set to include the longest intron (trnK, ~2.5kb) and may need to be reduced
-        elseif current_model[1].feature.gene == sff_feature.feature.gene && max(left_border, sff_feature.feature.start) - min(right_border, sff_feature.feature.start + sff_feature.feature.length - 1) < 6000
+        elseif current_model[1].feature.gene == sff_feature.feature.gene && max(left_border, sff_feature.feature.start) - min(right_border, sff_feature.feature.start + sff_feature.feature.length - 1) < 3000
             push!(current_model, sff_feature)
             left_border = min(left_border, sff_feature.feature.start)
             right_border = max(right_border, sff_feature.feature.start + sff_feature.feature.length - 1)
