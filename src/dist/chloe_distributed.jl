@@ -227,10 +227,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
     function ping()
         return "OK version=$VERSION git=$git #anno=$nannotations pid=$pid threads=$nthreads workers=$nlisteners on $machine"
     end
-    function config(config::Dict{String,V} where V <: Any)
-        cfg = ChloeConfig(config)
-        return "OK $(cfg)"
-    end
+
     # `bin/chloe.py terminate` uses this to find out how many calls of :terminate
     # need to be made to stop all responders. It's hard to cleanly
     # stop process(APIResponder) from the outside since it is block wait on 
@@ -354,7 +351,6 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
                 nconn,
                 exit,
                 add_workers,
-                config,
             ], address, ctx)
         )
         # :terminate called so process loop is finished

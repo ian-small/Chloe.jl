@@ -454,18 +454,6 @@ def ping(timeout, address):
 
 @cli.command()
 @addresses
-def config(timeout, address):
-    """Test ChloeConfig on the server."""
-    socket = Socket(address, timeout)
-    code, data = socket.msg(
-        cmd="config",
-        args=[dict(numrefs=55, sensitivity=0.7, nofilter=True)],
-    )
-    display(code, data)
-
-
-@cli.command()
-@addresses
 def workers(timeout, address):
     """Number of service workers"""
     socket = Socket(address, timeout)

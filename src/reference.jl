@@ -14,6 +14,7 @@ end
 struct ChloeConfig
     numrefs::Int
     sensitivity::Real
+    references::Union{Nothing,Vector{String}}
     to_gff3::Bool
     nofilter::Bool
 end
@@ -53,18 +54,28 @@ function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference
 end
 
 
-const KWARGS = ["numrefs", "sensitivity", "to_gff3", "nofilter"]
+const KWARGS = ["numrefs", "sensitivity", "to_gff3", "nofilter", "references"]
 
-function ChloeConfig(;numrefs=DEFAULT_NUMREFS, sensitivity=DEFAULT_SENSITIVITY, to_gff3::Bool=false, nofilter::Bool=false)
-    return ChloeConfig(numrefs, sensitivity, to_gff3, nofilter)
+function ChloeConfig(;numrefs=DEFAULT_NUMREFS, sensitivity=DEFAULT_SENSITIVITY,
+    references::Union{Nothing,Vector{String}}=nothing, to_gff3::Bool=false, nofilter::Bool=false)
+    return ChloeConfig(numrefs, sensitivity, references, to_gff3, nofilter)
 end
 
 # needs to be V <: Any since this is comming from a JSON blob
 function ChloeConfig(dict::Dict{String,V} where V <: Any)
-    return ChloeConfig(;Dict(Symbol(k) => v for (k, v) in dict if k in KWARGS)...)
+    function cvt(name, v)
+        if name == "references"
+            # if we actually have references then v
+            # will be Any["str1","str2"]. convert to Vector{String}
+            return string.(v)
+        end
+        # integers and float are ok
+        v
+    end
+    return ChloeConfig(;Dict(Symbol(k) => cvt(k, v) for (k, v) in dict if k in KWARGS)...)
 end
 function Base.show(io::IO, c::ChloeConfig)
-    print(io, "ChloeConfig[numrefs=$(c.numrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter)]")
+    print(io, "ChloeConfig[numrefs=$(c.numrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), references=$(c.references)]")
 end
 
 function verify_refs(refsdir, hashfile, template)
