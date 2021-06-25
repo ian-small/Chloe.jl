@@ -314,6 +314,7 @@ function annotate_one(db::ReferenceDb,
     refs = Vector{SingleReference}(undef, 0)
     masks = FwdRev(emask, CircularMask(reverse(emask.m)))
     reference_feature_counts = Dict{String,Int}()
+    # get_single_reference! throws if bad refpick
     refs = [get_single_reference!(db, r[1], reference_feature_counts) for r in refpicks]
 
     
