@@ -24,13 +24,13 @@ import .ZMQLogging:set_global_logger
 import .Broker: check_endpoints, remove_endpoints
 
 include("../globals.jl")
-
+include("dist_globals.jl")
 
 function git_version()
     try
         # older version of git don't have -C
-        # strip(read(pipeline(`git -C "$HERE" rev-parse HEAD`, stderr=devnull), String))
-        strip(read(pipeline(`sh -c 'cd "$HERE" && git rev-parse HEAD'`, stderr=devnull), String))
+        # strip(read(pipeline(`git -C "$REPO_DIR" rev-parse HEAD`, stderr=devnull), String))
+        strip(read(pipeline(`sh -c 'cd "$REPO_DIR" && git rev-parse HEAD'`, stderr=devnull), String))
     catch e
         "unknown"
     end
@@ -81,19 +81,19 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
     refsdir="default", hashfile="default", template="default")
 
     @everywhere procs begin
-        include(joinpath($HERE, "annotate_genomes.jl"))
-        include(joinpath($HERE, "dist/ZMQLogger.jl"))
-        include(joinpath($HERE, "dist/tasks.jl"))
+        include(joinpath($REPO_DIR, "annotate_genomes.jl"))
+        include(joinpath($REPO_DIR, "dist/ZMQLogger.jl"))
+        include(joinpath($REPO_DIR, "dist/tasks.jl"))
 
         set_global_logger($level, $backend; topic="annotator")
         global REFERENCE = Annotator.ReferenceDb(;refsdir=$refsdir, hashfile=$hashfile,
                    template=$template)
     end
     # [ @spawnat p begin
-    #     include(joinpath(HERE, "annotate_genomes.jl"))
-    #     include(joinpath(HERE, "dist/ZMQLogger.jl"))
-    #     include(joinpath(HERE, "dist/chloe_distributed.jl"))
-    #     include(joinpath(HERE, "dist/tasks.jl"))        
+    #     include(joinpath(REPO_DIR, "annotate_genomes.jl"))
+    #     include(joinpath(REPO_DIR, "dist/ZMQLogger.jl"))
+    #     include(joinpath(REPO_DIR, "dist/chloe_distributed.jl"))
+    #     include(joinpath(REPO_DIR, "dist/tasks.jl"))        
     #     set_global_logger(level, backend; topic="annotator")
     #     nothing
     # end for p in procs] .|> wait
@@ -104,13 +104,13 @@ function arm_procs(procs, backend::MayBeString=nothing, level::String="info";
 
     # use when toplevel has already done
     # @everywhere using Chloe
-    @everywhere procs begin
+@everywhere procs begin
         set_global_logger($level, $backend; topic="annotator")
         global REFERENCE = Annotator.ReferenceDb(;refsdir=$refsdir, hashfile=$hashfile,
                    template=$template)
     end
     # [ @spawnat p begin
-    #     set_global_logger(level, backend; topic="annotator")
+        #     set_global_logger(level, backend; topic="annotator")
     #     nothing
     # end for p in procs] .|> wait
 end
@@ -127,7 +127,7 @@ function chloe_distributed(full::Bool=true; refsdir="default", address=ZMQ_WORKE
     set_global_logger(level, backend; topic="annotator")
 
     if refsdir == "default"
-        refsdir = normpath(joinpath(HERE, "..", DEFAULT_REFS))
+        refsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_REFS))
     end
     if template == "default"
         template = normpath(joinpath(refsdir, DEFAULT_TEMPLATE))
@@ -253,7 +253,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
             # there is no way to ensure we are terminating
             # *our* listeners... we send a pid so it can check
 
-            # @async to allow for main task to count down nlisteners
+    # @async to allow for main task to count down nlisteners
             res = fetch(@async apicall(i, ":exit", pid))
             code = res["code"]
             @debug "code=$(code) workers=$(nlisteners)"
@@ -323,7 +323,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
         "Chloë is scheduled to $(msg) $(abs(n)) worker$(abs(n) !== 1 ? "s" : "")"
     end
     # we need to create separate ZMQ sockets to ensure strict
-    # request/response (not e.g. request-request response-response)
+            # request/response (not e.g. request-request response-response)
     # we expect to *connect* to a ZMQ DEALER/ROUTER (see bin/broker.py
     # or src/broker.jl) that forms the actual front end.
 
@@ -374,7 +374,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
     end
 
         @info success("Chloë done: pid=$(pid) exiting.....🍹")
-    # atexit cleanup and kill(broker) task should be called now
+        # atexit cleanup and kill(broker) task should be called now
 
 end
 

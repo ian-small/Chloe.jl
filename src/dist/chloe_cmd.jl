@@ -8,6 +8,7 @@ import Logging
 import ..Annotator
 
 include("../globals.jl")
+include("dist_globals.jl")
 
 function quiet_metafmt(level, _module, group, id, file, line)
     color = Logging.default_logcolor(level)

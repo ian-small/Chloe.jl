@@ -5,7 +5,7 @@ export TASK_KEY, set_global_logger, ZMQLogger
 import ZMQ
 MayBeString = Union{String,Nothing}
 
-include("../globals.jl")
+include("dist_globals.jl")
 
 const TASK_KEY = "CURRENT_TASK"
 
