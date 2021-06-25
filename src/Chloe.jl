@@ -9,7 +9,7 @@ export set_global_logger
 export annotate_one_task
 export read_single_reference!, inverted_repeat
 
-include("ZMQLogger.jl")
+include("dist/ZMQLogger.jl")
 include("annotate_genomes.jl")
 include("dist/broker.jl")
 include("dist/WebAPI.jl")

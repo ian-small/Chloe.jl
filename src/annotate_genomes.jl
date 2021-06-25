@@ -426,8 +426,6 @@ function annotate_one(refsdir::String, infile::String, output::MayBeIO=nothing)
 
     annotate_one(ReferenceDb(;refsdir=refsdir), infile, ChloeConfig(), output)
 
-
 end
-
 
 end # module

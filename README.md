@@ -19,16 +19,19 @@ For example:
 julia --project=. chloe.jl annotate testfa/*.fa
 ```
 
-Will create `.sff` files in the testfa directory.
+Will create `.sff` files in the current directory.
 
 This annotator is available online at: [https://chloe.plantenergy.edu.au](https://chloe.plantenergy.edu.au)
 
 ## Installing dependencies
 
 There is a `Project.toml` file that contains all the project
-dependencies.
+dependencies. So you can (as of julia 1.6) use `julia --project=.`
+Then type `]instantiate` at the julia prompt to install all the required
+libraries. (See [Activating project environment
+in Julia REPL automatically](https://bkamins.github.io/julialang/2020/05/10/julia-project-environments.html) if you want this to happen automatically.)
 
-To actually add these dependencies type
+To actually add these dependencies to the *global* environment type
 `julia bin/deps.jl`.
 
 *or* run
@@ -66,9 +69,9 @@ advantage of julia's precompilation.
 
 You can of course use julia's Distributed package.
 
-Start julia with 3 workers and load code:
+Start julia (1.6) with 3 workers and load code:
 
-`JULIA_NUM_THREADS=8 julia --project=. -p 3 -L src/remote.jl`
+`julia --project=. -t 8  -p 3 -L src/dist/remote.jl`
 
 Now you can type:
 
@@ -124,7 +127,7 @@ Also you don't need to be in the repo directory!
 Running the chloe server. In a terminal type:
 
 ```bash
-JULIA_NUM_THREADS=8 julia --project=. distributed.jl --level=info --workers=4 \
+julia -t 8 --project=. distributed.jl --level=info --workers=4 \
      --broker="default"
 ```
 
