@@ -170,7 +170,6 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
     # orfmap = threeframes(target_seq)
     features = Feature[]
     path_to_stack = Dict{String,FeatureStack}()
-    # so... features will be ordered by annotations.path
 
     for stack in strand_feature_stacks
         hits, length = align_template(stack)
@@ -197,8 +196,8 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
 
     #println(strand, '\t', sff_features)
 
-    # group by feature name on **ordered** features 
-    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sff_features)
+    # group by feature name on features ordered by mid-point
+    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features, by = x -> x.feature.start + x.feature.length/2))
 
     #println(strand, '\t', target_strand_models)
 

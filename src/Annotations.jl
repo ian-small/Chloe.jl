@@ -561,8 +561,6 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
     last_cds_examined = nothing
     for model in gene_models
         isempty(model) && continue
-        # sort features in model by mid-point to avoid cases where long intron overlaps short exon
-        sort!(model, by=f -> f.feature.start + f.feature.length / 2)
 
         #first check feature order and remove out of order features
         pointer = 1
@@ -621,7 +619,14 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
                     gap = feature.start - (previous_feature.start + previous_feature.length)
                     if feature.length ≤ 0 || (feature.type == "intron" && feature.length < 250)
                         deleteat!(model, i)
+                        if i ≤ length(model)
+                            feature = model[i].feature
+                        end
                     end
+                end
+                if (gap < 100) && (annotation_path(previous_feature) == annotation_path(feature))
+                    previous_feature.length = feature.start - previous_feature.start + feature.length 
+                    deleteat!(model, i)
                 end
             end
             i -= 1
@@ -967,7 +972,7 @@ function merge_adjacent_features!(model::SFF_Model)
             deleteat!(model.features, f2_index)
         else
             f1_index += 1
-    f2_index += 1
+            f2_index += 1
         end
     end
 end
