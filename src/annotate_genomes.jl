@@ -197,7 +197,7 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
     #println(strand, '\t', sff_features)
 
     # group by feature name on features ordered by mid-point
-    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features, by = x -> x.feature.start + x.feature.length/2))
+    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features, by = x -> x.feature))
 
     #println(strand, '\t', target_strand_models)
 

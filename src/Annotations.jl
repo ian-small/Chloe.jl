@@ -29,6 +29,10 @@ function Base.last(f::Feature)
     f.start + f.length - one(Int32)
 end
 
+function Base.isless(a::Feature, b::Feature)
+    return a.gene == b.gene ? isless(a.start + a.length/2, b.start + b.length/2) : isless(a.gene, b.gene)
+end
+
 datasize(f::Feature) = sizeof(Feature) + sizeof(f.annotation_path()) + sum(sizeof(p) for p in f._path_components)
 
 const annotation_path(f::Feature) = begin
