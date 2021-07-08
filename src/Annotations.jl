@@ -565,7 +565,6 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
     last_cds_examined = nothing
     for model in gene_models
         isempty(model) && continue
-        println(model)
         #first check feature order and remove out of order features
         pointer = 1
         while true
@@ -583,7 +582,6 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
                 pointer += 1
             end
         end
-        println(model)
         ftype = featuretype(model)
 
         # tRNA or ncRNA, check the ends are complementary
