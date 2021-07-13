@@ -161,6 +161,8 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
     target_length = Int32(length(target_seq))
     annotations = do_annotations(target_id, strand, refs, blocks_aligned_to_target, target_length)
 
+    #println(strand, '\t', annotations)
+
     # strand_feature_stacks is basically grouped by annotations.path
     strand_feature_stacks = fill_feature_stack(target_length, annotations, feature_templates)
 

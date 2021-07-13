@@ -149,7 +149,11 @@ function transfer_annotations(ref_features::FeatureArray, aligned_blocks::BlockT
                 phase = 0
             end
             # coordinates in target genome
-            tgt_start = o.start > feature.start ? block.tgt_index : mod1(block.tgt_index + (feature.start - block.src_index), target_length)
+            if o.start > feature.start # alignment must start within feature, so start in target is start of alignment
+                tgt_start = block.tgt_index
+            else # alignment starts before feature, so start in target is after start of alignment
+                tgt_start = mod1(block.tgt_index + circulardistance(block.src_index, feature.start, src_length), target_length)
+            end
             push!(annotations, Annotation(ref_features.genome_id, annotation_path(feature), tgt_start, circulardistance(o.start, o.stop, src_length) + 1, offset5, offset3, phase))
         end
     end
@@ -820,47 +824,36 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
 
     # filter out models of genes where better model of same gene exists
     # filter out models of genes where better model of overlapping gene exists
-    
-    for (i, model1) in enumerate(fwd_models)
-        for j in i + 1:length(fwd_models)
-            model2 = fwd_models[j]
-            bmodel1 = get_gene_boundaries(model1)
-            bmodel2 = get_gene_boundaries(model2)
-            if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2)) > 0 && !allowed_model_overlap(model1, model2))
+    function warningcheck!(models)
+        for (i, model1) in enumerate(models)
+            for j in i + 1:length(models)
+                model2 = models[j]
+                bmodel1 = get_gene_boundaries(model1)
+                bmodel2 = get_gene_boundaries(model2)
+                if model1.gene == model2.gene
+                    warning = BLACK_SHEEP
+                elseif length(intersect(bmodel1, bmodel2)) > 0 && !allowed_model_overlap(model1, model2)
+                    warning = OVERLAPPING_FEATURE
+                else
+                    continue
+                end
                 if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
-                    push!(model2.warnings, BLACK_SHEEP)
+                    push!(model2.warnings, warning)
                 elseif model2.gene_prob > model1.gene_prob
-                    push!(model1.warnings, BLACK_SHEEP)
+                    push!(model1.warnings, warning)
                 elseif mean_stackdepth(model1) > mean_stackdepth(model2) # if probs are equal, decide on stackdepth
-                    push!(model2.warnings, BLACK_SHEEP)
+                    push!(model2.warnings, warning)
                 elseif mean_stackdepth(model2) > mean_stackdepth(model1)
-                    push!(model1.warnings, BLACK_SHEEP)
+                    push!(model1.warnings, warning)
                 end
             end
         end
     end
-    
-    for (i, model1) in enumerate(rev_models)
-        for j in i + 1:length(rev_models)
-            model2 = rev_models[j]
-            bmodel1 = get_gene_boundaries(model1)
-            bmodel2 = get_gene_boundaries(model2)
-            if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2)) > 0 && !allowed_model_overlap(model1, model2))
-                if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
-                    push!(model2.warnings, OVERLAPPING_FEATURE)
-                elseif model2.gene_prob > model1.gene_prob
-                    push!(model1.warnings, OVERLAPPING_FEATURE)
-                elseif mean_stackdepth(model1) > mean_stackdepth(model2) # if probs are equal, decide on stackdepth
-                    push!(model2.warnings, OVERLAPPING_FEATURE)
-                elseif mean_stackdepth(model2) > mean_stackdepth(model1)
-                    push!(model1.warnings, OVERLAPPING_FEATURE)
-                end
-            end
-        end
-    end
+    warningcheck!(fwd_models)
+    warningcheck!(rev_models)
 
     for model1 in fwd_models, model2 in rev_models
-    if model1.gene == model2.gene
+        if model1.gene == model2.gene
             if model1.gene_prob > 1.05 * model2.gene_prob ##small tolerance for unequal probs to avoid deleting real duplicates in IRs
                 push!(model2.warnings, BLACK_SHEEP)
             elseif model2.gene_prob > 1.05 * model1.gene_prob
