@@ -410,7 +410,7 @@ function annotate_one(refsdir::String, numrefs::Int, refhashes::Union{Nothing,Di
 
     sffs_fwd, sffs_rev, ir = fetch.((Threads.@spawn w()) for w in [watson, crick, () -> inverted_repeat(target_forward_strand, target_reverse_strand)]) 
 
-    filter_gene_models!(sffs_fwd, sffs_rev)
+    filter_gene_models!(sffs_fwd, sffs_rev, target_length)
     if !nofilter
         filter!(m -> length(m.warnings) == 0, sffs_fwd)
         filter!(m -> length(m.warnings) == 0, sffs_rev)

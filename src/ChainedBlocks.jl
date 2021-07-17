@@ -102,21 +102,21 @@ function Base.append!(mainchain::BlockChain{AlignedBlock}, appendage::BlockChain
 end
 
 function contiguousblockgaps(link1::ChainLink{AlignedBlock}, link2::ChainLink{AlignedBlock}, src_length, tgt_length)
-    if isempty(link1)
-        srcgapstart = one(Int32)
-        tgtgapstart = one(Int32)
-    else
+
+    srcgapstart::Int32 = 1
+    tgtgapstart::Int32 = 1
+    srcgapend::Int32 = src_length
+    tgtgapend::Int32 = tgt_length
+
+    if !isempty(link1)
         block1 = link1.data
-        srcgapstart = block1.src_index + block1.blocklength
-        tgtgapstart = block1.tgt_index + block1.blocklength
+        srcgapstart = mod1(block1.src_index + block1.blocklength, src_length)
+        tgtgapstart = mod1(block1.tgt_index + block1.blocklength, tgt_length)
     end
-    if isempty(link2)
-        srcgapend = src_length
-        tgtgapend = tgt_length
-    else
+    if !isempty(link2)
         block2 = link2.data
-        srcgapend = srcgapstart > block2.src_index ? src_length + block2.src_index - one(Int32) : block2.src_index - one(Int32)
-        tgtgapend = tgtgapstart > block2.tgt_index ? tgt_length + block2.tgt_index - one(Int32) : block2.tgt_index - one(Int32)
+        srcgapend = mod1(block2.src_index - 1, src_length)
+        tgtgapend = mod1(block2.tgt_index - 1, tgt_length)
     end
     return (srcgapstart:srcgapend, tgtgapstart:tgtgapend)
 end
@@ -136,9 +136,11 @@ end
 function trymergelinks!(chain::BlockChain{AlignedBlock}, link1::ChainLink{AlignedBlock}, lenseq1, lenseq2)
     link2 = link1.next
     link1 == link2 && return link1
-    # println("attempting to merge: ",link1,"    ",link2)
     (srcgap, tgtgap) = contiguousblockgaps(link1, link2, lenseq1, lenseq2)
-    if length(srcgap) == length(tgtgap) && length(srcgap) ≤ MAXIMUMMERGEABLEGAP
+    lengthsrcgap::Int32 = srcgap.stop - srcgap.start + 1
+    lengthtgtgap::Int32 = tgtgap.stop - tgtgap.start + 1
+    if lengthsrcgap ==  lengthtgtgap && 0 < lengthsrcgap ≤ MAXIMUMMERGEABLEGAP
+        #println("merging: ",link1,"\t",link2, "\t", srcgap, "\t", tgtgap)
         # safe to not mod1() the indexes as they don't change
         link1.data = AlignedBlock(link1.data.src_index, link1.data.tgt_index, link1.data.blocklength + length(srcgap) + link2.data.blocklength)
         link1.next = link2.next

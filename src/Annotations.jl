@@ -660,10 +660,11 @@ mutable struct SFF_Model
     warnings::Vector{String}
 end
 
-function get_gene_boundaries(model::SFF_Model)::UnitRange{Int32}
-    start = first(model.features).feature.start
-    length = last(model.features).feature.start + last(model.features).feature.length - start
-    return range(start, length=length)
+function get_gene_boundaries(model::SFF_Model, glength::Int32)::UnitRange{Int32}
+    genestart = first(model.features).feature.start
+    geneend = last(model.features).feature.start + last(model.features).feature.length - 1
+    length::Int32 = geneend > genestart ? geneend - genestart + 1 : glength + geneend - genestart + 1
+    return range(genestart, length=length)
 end
 
 function mean_stackdepth(model::SFF_Model)::Float64
@@ -808,7 +809,7 @@ function allowed_model_overlap(m1, m2)::Bool
     return false
 end
 
-function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model})
+function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model}, glength::Int32)
 
     # hard floor on stackdepth
     for model in fwd_models
@@ -828,11 +829,11 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
         for (i, model1) in enumerate(models)
             for j in i + 1:length(models)
                 model2 = models[j]
-                bmodel1 = get_gene_boundaries(model1)
-                bmodel2 = get_gene_boundaries(model2)
+                bmodel1 = get_gene_boundaries(model1, glength)
+                bmodel2 = get_gene_boundaries(model2, glength)
                 if model1.gene == model2.gene
                     warning = BLACK_SHEEP
-                elseif length(intersect(bmodel1, bmodel2)) > 0 && !allowed_model_overlap(model1, model2)
+                elseif length(overlaps(bmodel1, bmodel2, glength)) > 0 && !allowed_model_overlap(model1, model2)
                     warning = OVERLAPPING_FEATURE
                 else
                     continue

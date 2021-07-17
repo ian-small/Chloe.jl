@@ -52,26 +52,25 @@ function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask=nothing
     src2tgt = blockchain(alignment, sa, ra, lcps, one(Int32):lenseq1, one(Int32):lenseq2, matchLengthThreshold(lenseq1, lenseq2), mask)
     src2tgt = circularise(src2tgt, lenseq1)
 
-    @debug "links before gapfilling: $(src2tgt.links)"
-    @debug begin
-        for link in src2tgt
-            println(link)
-        end
-    end
+    #= println("links before gapfilling: $(src2tgt.links)")
+    for link in src2tgt
+        println(link)
+    end =#
 
     Threads.@threads for gap in gaps(src2tgt)
         (srcgap, tgtgap) = contiguousblockgaps(gap[1], gap[2], lenseq1, lenseq2)
-        length(srcgap) < MINIMUMFILLABLEGAP && length(tgtgap) < MINIMUMFILLABLEGAP && continue # gap too short to attempt to fill
-        length(srcgap) == length(tgtgap) && length(srcgap) ≤ MAXIMUMMERGEABLEGAP && continue # gap is going to be merged, don't bother trying to fill
-        gapfill!(src2tgt, gap[1], gap[2], alignment, sa, ra, lcps, matchLengthThreshold(Int32(length(srcgap)), Int32(length(tgtgap))), mask)
+        #println(srcgap, " ", length(srcgap), "\t", tgtgap, " ", length(tgtgap))
+        lengthsrcgap::Int32 = srcgap.stop - srcgap.start + 1
+        lengthtgtgap::Int32 = tgtgap.stop - tgtgap.start + 1
+        (lengthsrcgap < MINIMUMFILLABLEGAP || lengthtgtgap < MINIMUMFILLABLEGAP) && continue # gap too short to attempt to fill
+        lengthsrcgap == lengthtgtgap && lengthsrcgap ≤ MAXIMUMMERGEABLEGAP && continue # gap is going to be merged, don't bother trying to fill
+        gapfill!(src2tgt, gap[1], gap[2], alignment, sa, ra, lcps, matchLengthThreshold(lengthsrcgap, lengthtgtgap), mask)
     end
 
-    @debug "links after gapfilling: $(src2tgt.links)"
-    @debug begin
-        for link in src2tgt
-            println(link)
-        end
-    end
+    #= println("links after gapfilling: $(src2tgt.links)")
+    for link in src2tgt
+        println(link)
+    end =#
 
     # merge adjacent blocks
     link = src2tgt.firstlink
@@ -81,12 +80,10 @@ function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask=nothing
         link = trymergelinks!(src2tgt, link, lenseq1, lenseq2)
     end
 
-    @debug "links after merging: $(src2tgt.links)"
-    @debug begin
-        for link in src2tgt
-            println(link)
-        end
-    end
+    #= println("links after merging: $(src2tgt.links)")
+    for link in src2tgt
+        println(link)
+    end =#
 
 return src2tgt
 end
@@ -106,7 +103,7 @@ function matchLengthThreshold(m::Int32, n::Int32)::Int32
 end
 
 function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBlock}, tail::ChainLink{AlignedBlock}, alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, minblocksize::Int32, mask=nothing)
-    @debug "gapfilling from $(head.data) to $(tail.data) minblocksize = $(minblocksize)"
+    #println("gapfilling from $(head.data) to $(tail.data) minblocksize = $(minblocksize)")
     src_length = length(alignment.seq1)
     tgt_length = length(alignment.seq2)
     (srcgap, tgtgap) = contiguousblockgaps(head, tail, src_length, tgt_length)
@@ -120,8 +117,10 @@ function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBl
     # recursion
     for gap in gaps(head, tail, chain.links + 1)
         (srcgap, tgtgap) = contiguousblockgaps(gap[1], gap[2], src_length, tgt_length)
-        length(srcgap) < MINIMUMFILLABLEGAP || length(tgtgap) < MINIMUMFILLABLEGAP && continue # gap too short to attempt to fill
-        length(srcgap) == length(tgtgap) && length(srcgap) ≤ MAXIMUMMERGEABLEGAP && continue # gap is going to be merged, don't bother trying to fill
+        lengthsrcgap::Int32 = srcgap.stop - srcgap.start + 1
+        lengthtgtgap::Int32 = tgtgap.stop - tgtgap.start + 1
+        (lengthsrcgap < MINIMUMFILLABLEGAP || lengthtgtgap < MINIMUMFILLABLEGAP) && continue # gap too short to attempt to fill
+        lengthsrcgap == lengthtgtgap && lengthsrcgap ≤ MAXIMUMMERGEABLEGAP && continue # gap is going to be merged, don't bother trying to fill
         mlt = matchLengthThreshold(Int32(length(srcgap)), Int32(length(tgtgap)))
         mlt ≥ minblocksize && continue # gap has already been searched with this minblocksize
         gapfill!(mainchain, gap[1], gap[2], alignment, sa, ra, lcps, mlt, mask)
