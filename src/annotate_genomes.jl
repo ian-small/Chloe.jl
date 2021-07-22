@@ -1,5 +1,6 @@
 module Annotator
 
+using Base:String
 using StatsBase:IntegerVector
 export annotate, annotate_one, MayBeIO, MayBeString, ReferenceDb
 export read_single_reference!, inverted_repeat, ChloeConfig
@@ -415,13 +416,12 @@ function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::
 
 end
 
-function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig)
-        
-    for infile in fa_files
-        maybe_gzread(infile) do io
-            annotate_one(db, io, config)
-        end
-    end
+function sffname(fafile::String, directory::Union{String,Nothing}=nothing)::String
+    d = if isnothing(directory) dirname(fafile) else directory end
+    f = basename(infile)
+    base = split(f, '.')[1]
+    
+    joinpath(d, "$(base).sff")
 end
 
 function annotate_one(refsdir::String, infile::String, output::MayBeIO=nothing)
@@ -429,5 +429,16 @@ function annotate_one(refsdir::String, infile::String, output::MayBeIO=nothing)
     annotate_one(ReferenceDb(;refsdir=refsdir), infile, ChloeConfig(), output)
 
 end
+
+function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
+    n = length(fa_files)
+    for infile in fa_files
+        maybe_gzread(infile) do io
+
+            annotate_one(db, io, config, if n > 1 sffname(infile, output) else output end)
+        end
+    end
+end
+
 
 end # module

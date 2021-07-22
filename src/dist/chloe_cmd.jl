@@ -21,7 +21,7 @@ function chloe(;refsdir=DEFAULT_REFS, numrefs=DEFAULT_NUMREFS, hashfile="default
         output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
     db = Annotator.ReferenceDb(;refsdir=refsdir, hashfile=hashfile, template=template)
     config = Annotator.ChloeConfig(;numrefs=numrefs, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
-    Annotator.annotate(db, fasta_files, config)
+    Annotator.annotate(db, fasta_files, config, output)
 end
 
 function getargs()
@@ -75,6 +75,7 @@ function getargs()
             arg_type = String
             default = "default"
             help = "output file"
+
     end 
 
     @add_arg_table! cmd_args["annotate"]  begin
@@ -104,7 +105,7 @@ function getargs()
             dest_name = "hashfile"
             help = "reference minhashes [default: {reference directory}/$(DEFAULT_HASHES)]"
         "--template", "-t"
-        arg_type = String
+            arg_type = String
             default = "default"
             metavar = "TSV"
             dest_name = "template"
@@ -115,10 +116,11 @@ function getargs()
             help = "probability threshold for reporting features [default: $(DEFAULT_SENSITIVITY)]"
         "--nofilter"
             action = :store_true
-        help = "don't filter output"
+            help = "don't filter output"
         "--gff", "-g"
-        action = :store_true
+            action = :store_true
             help = "save output in gff3 format instead of sff"
+
     end
 
     @add_arg_table! cmd_args["rotate"] begin
