@@ -114,6 +114,8 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
     target_length = Int32(length(target_seq))
     annotations = do_annotations(target_id, strand, refs, blocks_aligned_to_target, target_length)
 
+    # println(strand, '\t', annotations)
+
     # strand_feature_stacks is basically grouped by annotations.path
     strand_feature_stacks = fill_feature_stack(target_length, annotations, feature_templates)
 
@@ -123,7 +125,6 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
     # orfmap = threeframes(target_seq)
     features = Feature[]
     path_to_stack = Dict{String,FeatureStack}()
-    # so... features will be ordered by annotations.path
 
     for stack in strand_feature_stacks
         hits, length = align_template(stack)
@@ -150,8 +151,8 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
 
     # println(strand, '\t', sff_features)
 
-    # group by feature name on **ordered** features 
-    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sff_features)
+    # group by feature name on features ordered by mid-point
+    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features, by=x -> x.feature))
 
     # println(strand, '\t', target_strand_models)
 
@@ -360,7 +361,7 @@ function annotate_one(db::ReferenceDb,
 
     sffs_fwd, sffs_rev, ir = fetch.((Threads.@spawn w()) for w in [watson, crick, () -> inverted_repeat(target.forward, target.reverse)]) 
 
-    filter_gene_models!(sffs_fwd, sffs_rev)
+    filter_gene_models!(sffs_fwd, sffs_rev, target_length)
     if !config.nofilter
         filter!(m -> length(m.warnings) == 0, sffs_fwd)
         filter!(m -> length(m.warnings) == 0, sffs_rev)

@@ -29,6 +29,10 @@ function Base.last(f::Feature)
     f.start + f.length - one(Int32)
 end
 
+function Base.isless(a::Feature, b::Feature)
+    return a.gene == b.gene ? isless(a.start + a.length / 2, b.start + b.length / 2) : isless(a.gene, b.gene)
+end
+
 datasize(f::Feature) = sizeof(Feature) + sizeof(f.annotation_path()) + sum(sizeof(p) for p in f._path_components)
 
 const annotation_path(f::Feature) = begin
@@ -102,7 +106,7 @@ function read_features!(file::String, reference_feature_counts::Dict{String,Int}
             end
             if fields[2][1] == '+'
                 push!(f_features, feature)
-            else
+        else
                 push!(r_features, feature)
             end
         end
@@ -136,7 +140,7 @@ function transfer_annotations(ref_features::FeatureArray, aligned_blocks::BlockT
         feature = fb[1]
         block = fb[2]
         feature_overlaps = overlaps(range(block.src_index, length=block.blocklength), range(feature.start, length=feature.length), src_length)
-        for o in feature_overlaps
+            for o in feature_overlaps
             offset5 = o.start - feature.start
             offset3 = o.stop - (feature.start + feature.length - 1)
             if (feature.type == "CDS")
@@ -145,7 +149,11 @@ function transfer_annotations(ref_features::FeatureArray, aligned_blocks::BlockT
                 phase = 0
             end
             # coordinates in target genome
-            tgt_start = o.start > feature.start ? block.tgt_index : mod1(block.tgt_index + (feature.start - block.src_index), target_length)
+            if o.start > feature.start # alignment must start within feature, so start in target is start of alignment
+                tgt_start = block.tgt_index
+            else # alignment starts before feature, so start in target is after start of alignment
+                tgt_start = mod1(block.tgt_index + circulardistance(block.src_index, feature.start, src_length), target_length)
+            end
             push!(annotations, Annotation(ref_features.genome_id, annotation_path(feature), tgt_start, circulardistance(o.start, o.stop, src_length) + 1, offset5, offset3, phase))
         end
     end
@@ -205,7 +213,7 @@ function fill_feature_stack(target_length::Int32, annotations::Vector{Annotation
         index = get(indexmap, annotation.path, nothing)
         if isnothing(index)
             stack = FeatureStack(annotation.path, CircularVector(zeros(Int8, target_length)), template)
-            push!(stacks, stack)
+        push!(stacks, stack)
             indexmap[annotation.path] = length(stacks)
         else
             stack = stacks[index]
@@ -262,13 +270,13 @@ function align_template(feature_stack::FeatureStack)::Tuple{Vector{Tuple{Int32,I
     isempty(hits) && return hits, median_length
     # sort by descending score
     sort!(hits, by=x -> x[2], rev=true)
-    #println(feature_stack.path, '\t', hits)
+    # println(feature_stack.path, '\t', hits)
     maxscore = hits[1][2]
     # retain all hits scoring over 90% of the the top score
     filter!(x -> (x[2] ≥ maxscore * 0.9 || x[2] ≥ median_length), hits)
     return hits, median_length
 end
-
+    
 function weighted_mode(values::Vector{Int32}, weights::Vector{Float32})::Int32
     w, v = findmax(StatsBase.addcounts!(Dict{Int32,Float32}(), values, weights))
     return v
@@ -291,7 +299,7 @@ function refine_boundaries_by_offsets!(feat::Feature, annotations::Vector{Annota
             # ignore if we already have an annotation from this genome
             if isnothing(findfirst(a -> a.genome_id == annotation.genome_id, overlapping_annotations))
                 minstart = min(minstart, annotation.start)
-                push!(overlapping_annotations, annotation)
+    push!(overlapping_annotations, annotation)
             end
         end
     end
@@ -377,7 +385,7 @@ function features2models(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_F
         push!(gene_models, current_model)
     end
     return gene_models
-end
+        end
 
 function splice_model(target_seq::CircularSequence, model::Vector{SFF_Feature})::LongDNASeq
     cds = dna""d    # dynamically allocated so thread-safe
@@ -419,12 +427,12 @@ end
     start3::Int32 = cds.start + cds.phase
     codon = getcodon(target_seq, start3)
     if isstartcodon(codon, true, true)  # allow ACG and GTG codons if this is predicted start
-            cds.start = start3
+    cds.start = start3
         cds.length -= cds.phase
         cds.phase = 0;
         return cds
         end
-
+        
     allowACG = false
     allowGTG = false
     if cds.gene == "rps19"
@@ -444,7 +452,7 @@ end
     end
     # search for start codon 3'-5' beginning at cds.start, save result; abort if stop encountered
     start5::Int32 = 0
-    for i::Int32 in cds.start + cds.phase:-3:cds.start + cds.phase - genome_length + 3
+        for i::Int32 in cds.start + cds.phase:-3:cds.start + cds.phase - genome_length + 3
         codon = getcodon(target_seq, i)
         if isstartcodon(codon, allowACG, allowGTG)
             start5 = i <= cds.start + cds.phase ? i : i - genome_length
@@ -561,9 +569,6 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
     last_cds_examined = nothing
     for model in gene_models
         isempty(model) && continue
-        # sort features in model by mid-point to avoid cases where long intron overlaps short exon
-        sort!(model, by=f -> f.feature.start + f.feature.length / 2)
-                
         # first check feature order and remove out of order features
         pointer = 1
         while true
@@ -576,11 +581,11 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
                 else
                     deleteat!(model, pointer)
                 end
+                pointer = max(pointer - 1, 1) # back 1 to check order is still OK
             else
                 pointer += 1
             end
         end
-
         ftype = featuretype(model)
 
         # tRNA or ncRNA, check the ends are complementary
@@ -621,14 +626,21 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
                     gap = feature.start - (previous_feature.start + previous_feature.length)
                     if feature.length ≤ 0 || (feature.type == "intron" && feature.length < 250)
                         deleteat!(model, i)
+                        if i ≤ length(model)
+                            feature = model[i].feature
+                        end
                     end
+                end
+                if (gap < 100) && (annotation_path(previous_feature) == annotation_path(feature))
+                    previous_feature.length = feature.start - previous_feature.start + feature.length 
+                    deleteat!(model, i)
                 end
             end
             i -= 1
         end
 
         isempty(model) && continue
-        # if CDS, find start codon and set feature.start
+# if CDS, find start codon and set feature.start
         first_exon = first(model).feature
         if first_exon.type == "CDS"
             if lastexon.feature.gene ≠ "rps12B"
@@ -648,10 +660,11 @@ end
     warnings::Vector{String}
 end
 
-function get_gene_boundaries(model::SFF_Model)::UnitRange{Int32}
-    start = first(model.features).feature.start
-    length = last(model.features).feature.start + last(model.features).feature.length - start
-    return range(start, length=length)
+function get_gene_boundaries(model::SFF_Model, glength::Int32)::UnitRange{Int32}
+    genestart = first(model.features).feature.start
+    geneend = last(model.features).feature.start + last(model.features).feature.length - 1
+    length::Int32 = geneend > genestart ? geneend - genestart + 1 : glength + geneend - genestart + 1
+    return range(genestart, length=length)
 end
 
 function mean_stackdepth(model::SFF_Model)::Float64
@@ -706,7 +719,7 @@ function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SF
         model_prob = first(model).feature_prob
     else
         model_prob = model_prob / length(expected_exons)
-    end
+            end
     exceeds_sensitivity = false
     if model_prob ≥ sensitivity || isnan(model_prob)
         exceeds_sensitivity = true
@@ -752,7 +765,7 @@ function write_model2SFF(outfile::IO, model::SFF_Model)
     for warning in model.warnings
         @warn("$(model_id) $(warning)")
     end
-end
+        end
 
 function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String,Int32}
     maxlengths = Dict{String,Int32}()
@@ -793,10 +806,10 @@ function allowed_model_overlap(m1, m2)::Bool
     if m1.gene == "atpE" && m2.gene == "atpB"; return true; end
     if m1.gene == "rps3" && m2.gene == "rpl22"; return true; end
     if m1.gene == "rpl22" && m2.gene == "rps3"; return true; end
-    return false
+        return false
 end
 
-function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model})
+function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model}, glength::Int32)
 
     # hard floor on stackdepth
     for model in fwd_models
@@ -812,47 +825,36 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
 
     # filter out models of genes where better model of same gene exists
     # filter out models of genes where better model of overlapping gene exists
-    
-    for (i, model1) in enumerate(fwd_models)
-        for j in i + 1:length(fwd_models)
-            model2 = fwd_models[j]
-            bmodel1 = get_gene_boundaries(model1)
-            bmodel2 = get_gene_boundaries(model2)
-            if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2)) > 0 && !allowed_model_overlap(model1, model2))
-                if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
-                    push!(model2.warnings, BLACK_SHEEP)
-                elseif model2.gene_prob > model1.gene_prob
-                    push!(model1.warnings, BLACK_SHEEP)
-                elseif mean_stackdepth(model1) > mean_stackdepth(model2) # if probs are equal, decide on stackdepth
-                    push!(model2.warnings, BLACK_SHEEP)
-            elseif mean_stackdepth(model2) > mean_stackdepth(model1)
-                    push!(model1.warnings, BLACK_SHEEP)
+    function warningcheck!(models)
+        for (i, model1) in enumerate(models)
+            for j in i + 1:length(models)
+                model2 = models[j]
+                bmodel1 = get_gene_boundaries(model1, glength)
+                bmodel2 = get_gene_boundaries(model2, glength)
+                if model1.gene == model2.gene
+                    warning = BLACK_SHEEP
+                elseif length(overlaps(bmodel1, bmodel2, glength)) > 0 && !allowed_model_overlap(model1, model2)
+                    warning = OVERLAPPING_FEATURE
+                else
+                    continue
                 end
-            end
-        end
-    end
-    
-    for (i, model1) in enumerate(rev_models)
-        for j in i + 1:length(rev_models)
-            model2 = rev_models[j]
-            bmodel1 = get_gene_boundaries(model1)
-            bmodel2 = get_gene_boundaries(model2)
-            if model1.gene == model2.gene || (length(intersect(bmodel1, bmodel2)) > 0 && !allowed_model_overlap(model1, model2))
                 if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
-                    push!(model2.warnings, OVERLAPPING_FEATURE)
+                    push!(model2.warnings, warning)
                 elseif model2.gene_prob > model1.gene_prob
-                    push!(model1.warnings, OVERLAPPING_FEATURE)
+                    push!(model1.warnings, warning)
                 elseif mean_stackdepth(model1) > mean_stackdepth(model2) # if probs are equal, decide on stackdepth
-                    push!(model2.warnings, OVERLAPPING_FEATURE)
+                    push!(model2.warnings, warning)
                 elseif mean_stackdepth(model2) > mean_stackdepth(model1)
-                    push!(model1.warnings, OVERLAPPING_FEATURE)
+                    push!(model1.warnings, warning)
                 end
             end
         end
     end
+    warningcheck!(fwd_models)
+    warningcheck!(rev_models)
 
     for model1 in fwd_models, model2 in rev_models
-    if model1.gene == model2.gene
+        if model1.gene == model2.gene
             if model1.gene_prob > 1.05 * model2.gene_prob ##small tolerance for unequal probs to avoid deleting real duplicates in IRs
                 push!(model2.warnings, BLACK_SHEEP)
             elseif model2.gene_prob > 1.05 * model1.gene_prob
@@ -862,7 +864,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
     end
 end
 
-MaybeIR = Union{AlignedBlock,Nothing}
+    MaybeIR = Union{AlignedBlock,Nothing}
 
 function modelID!(model_ids::Dict{String,Int32}, model::SFF_Model)
     gene_name = model.gene
@@ -891,7 +893,7 @@ function writeSFF(outfile::Union{String,IO},
             model_id = modelID!(model_ids, model)
             write_model2SFF(outfile, model)
         end
-        for model in models.reverse
+    for model in models.reverse
             isnothing(model) && continue
             isempty(model.features) && continue
             model_id = modelID!(model_ids, model)
@@ -907,7 +909,7 @@ function writeSFF(outfile::Union{String,IO},
     end
 end
 
-function sff2gffcoords(f::Feature, strand::Char, genome_length::Integer)
+    function sff2gffcoords(f::Feature, strand::Char, genome_length::Integer)
     start = f.start
     finish = f.start + f.length - 1
     length = finish - start + 1
@@ -930,7 +932,7 @@ function writeGFF3(outfile::Union{String,IO},
         model_ids = Dict{String,Int32}()
         write(outfile, "##gff-version 3.2.1\n")
         for model in models.forward
-            isnothing(model) && continue
+        isnothing(model) && continue
             isempty(model.features) && continue
             model.gene_count = modelID!(model_ids, model)
         end
@@ -961,13 +963,13 @@ function merge_adjacent_features!(model::SFF_Model)
         f1 = model.features[f1_index].feature
         f2 = model.features[f2_index].feature
         # if adjacent features are same type, merge them into a single feature
-        if f1.type == f2.type && f2.start - f1.start - f1.length ≤ 100
+    if f1.type == f2.type && f2.start - f1.start - f1.length ≤ 100
             @debug "[$(genome_id)]$(strand) merging adjacent $(f1.path) and $(f2.path)"
             f1.length = f2.start - f1.start + f2.length
             deleteat!(model.features, f2_index)
         else
             f1_index += 1
-    f2_index += 1
+            f2_index += 1
         end
     end
 end
