@@ -14,7 +14,7 @@ end
 struct ChloeConfig
     numrefs::Int
     sensitivity::Real
-    references::Union{Nothing,Vector{String}}
+    references::Union{Nothing,Vector{AbstractString}}
     to_gff3::Bool
     nofilter::Bool
 end
@@ -57,7 +57,7 @@ end
 const KWARGS = ["numrefs", "sensitivity", "to_gff3", "nofilter", "references"]
 
 function ChloeConfig(;numrefs=DEFAULT_NUMREFS, sensitivity=DEFAULT_SENSITIVITY,
-    references::Union{Nothing,Vector{String}}=nothing, to_gff3::Bool=false, nofilter::Bool=false)
+    references::Union{Nothing,Vector{AbstractString}, Vector{String}}=nothing, to_gff3::Bool=false, nofilter::Bool=false)
     return ChloeConfig(numrefs, sensitivity, references, to_gff3, nofilter)
 end
 

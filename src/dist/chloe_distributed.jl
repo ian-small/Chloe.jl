@@ -193,6 +193,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
     function chloe(fasta::String, outputsff::MayBeString, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V <: Any}=nothing)
         start = now()
         cfg = if isnothing(config) ChloeConfig() else ChloeConfig(config) end
+        print(cfg)
         filename, target_id = fetch(@spawnat :any annotate_one_task(fasta, outputsff, task_id, cfg))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
