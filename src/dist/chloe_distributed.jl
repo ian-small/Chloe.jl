@@ -193,12 +193,11 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
     function chloe(fasta::String, outputsff::MayBeString, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V <: Any}=nothing)
         start = now()
         cfg = if isnothing(config) ChloeConfig() else ChloeConfig(config) end
-        print(cfg)
         filename, target_id = fetch(@spawnat :any annotate_one_task(fasta, outputsff, task_id, cfg))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
         nannotations += 1
-        return Dict("elapsed" => toms(elapsed), "filename" => filename, "ncid" => string(target_id))
+        return Dict("elapsed" => toms(elapsed), "filename" => filename, "ncid" => string(target_id), "config" => cfg)
     end
 
     function decompress(fasta::String)
@@ -222,7 +221,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
         @info success("finished $target_id after $elapsed")
         nannotations += 1
 
-        return Dict("elapsed" => toms(elapsed), "sff" => sff, "ncid" => string(target_id))
+        return Dict("elapsed" => toms(elapsed), "sff" => sff, "ncid" => string(target_id), "config" => cfg)
     end
 
     function ping()

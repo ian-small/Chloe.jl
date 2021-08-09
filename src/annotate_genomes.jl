@@ -276,8 +276,7 @@ function annotate_one(db::ReferenceDb,
     n = count(isambiguous, target.forward.sequence)
     r = n / target_length
     if r > .01
-        @warn "sequence [$(target_id)] contains too many ambiguous nucleotides: $(@sprintf "%.1f" r * 100)%"
-    return fname, target_id
+        error("sequence [$(target_id)] contains too many ambiguous nucleotides: $(@sprintf "%.1f" r * 100)%")
     end
     n = count(isgap, target.forward.sequence)
     if n > 0
@@ -395,7 +394,7 @@ function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::
     reader = FASTA.Reader(infile)
     records = [record for record in reader]
     if isempty(records)
-        @error "unable to read sequence from $infile"
+        error("unable to read sequence from $infile")
     elseif length(records) > 2
         @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
     end

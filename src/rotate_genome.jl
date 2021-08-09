@@ -6,7 +6,8 @@ function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, ex
         records = [record for record in FASTA.Reader(io)]
     end
     if isempty(records)
-        @error "unable to read sequence from $infile"
+        error("unable to read sequence from $infile")
+
     elseif length(records) > 1
         @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
     end
