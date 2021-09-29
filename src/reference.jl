@@ -22,7 +22,7 @@ end
 function ReferenceDb(;refsdir="default",  hashfile="default",
     template="default")
     if refsdir == "default"
-        refsdir = normpath(joinpath(REPO_DIR, "..", DEFAULT_REFS))
+        refsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_REFS))
     end
     if hashfile == "default"
         hashfile = normpath(joinpath(refsdir, DEFAULT_HASHES))
