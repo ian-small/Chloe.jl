@@ -16,7 +16,7 @@ function quiet_metafmt(level, _module, group, id, file, line)
     return color, prefix, ""
 end
 
-function chloe(;refsdir=DEFAULT_REFS, numrefs=DEFAULT_NUMREFS, hashfile="default", fasta_files=String[],
+function chloe(;refsdir="default", numrefs=DEFAULT_NUMREFS, hashfile="default", fasta_files=String[],
     template="default", sensitivity=DEFAULT_SENSITIVITY,
         output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
     db = Annotator.ReferenceDb(;refsdir=refsdir, hashfile=hashfile, template=template)
@@ -93,7 +93,7 @@ function getargs()
             default = "default"
             dest_name = "refsdir"
             metavar = "DIRECTORY"
-            help = "reference directory [default: $(DEFAULT_REFS)]"
+            help = "reference directory [default: ../$(DEFAULT_REFS)]"
         "--numrefs", "-n"
             arg_type = Int
             default = DEFAULT_NUMREFS
