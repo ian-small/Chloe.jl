@@ -198,7 +198,7 @@ function countcodons(orf::Feature, seq::CircularSequence)::Vector{Float64}
     return codonfrequencies
 end
 
-function readGLMcodingclassifer()
+#= function readGLMcodingclassifer()
     glm_coding_coeffs = Dict{String, Float64}()
     open(joinpath(@__DIR__, "GLMCodingClassifier.tsv")) do coding_coeffs
         readline(coding_coeffs) # skip header
@@ -231,4 +231,4 @@ function glm_coding_classifier(codonfrequencies::Vector{Float64})::Float32
     pred += get(GLM_Coding_Coeffs, "(Intercept)", 0.0)
     odds = exp(pred)
     return Float32(odds / (1.0 + odds))
-end
+end =#

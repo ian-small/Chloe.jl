@@ -66,8 +66,6 @@ end
 #     [tsk for p in ps for tsk in sendto(p; args...) ]
 # end
 
-
-
 function create_responder(apispecs::Vector{Function}, addr::String, ctx::ZMQ.Context)
     api = APIResponder(ZMQTransport(addr, ZMQ.REP, false, ctx), TerminatingJSONMsgFormat(), "chloe", false)
     for func in apispecs
@@ -75,7 +73,6 @@ function create_responder(apispecs::Vector{Function}, addr::String, ctx::ZMQ.Con
     end
     api
 end
-
 
 function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info";
     refsdir="default", hashfile="default", template="default")
@@ -86,8 +83,7 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
         include(joinpath($REPO_DIR, "dist/tasks.jl"))
 
         set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = Annotator.ReferenceDb(;refsdir=$refsdir, hashfile=$hashfile,
-                   template=$template)
+        global REFERENCE = Annotator.ReferenceDb(;gsrefsdir=$gsrefsdir, chloerefsdir=$chloerefsdir, template=$template)
     end
     # [ @spawnat p begin
     #     include(joinpath(REPO_DIR, "annotate_genomes.jl"))
@@ -106,8 +102,7 @@ function arm_procs(procs, backend::MayBeString=nothing, level::String="info";
     # @everywhere using Chloe
 @everywhere procs begin
         set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = Annotator.ReferenceDb(;refsdir=$refsdir, hashfile=$hashfile,
-                   template=$template)
+        global REFERENCE = Annotator.ReferenceDb(;gsrefsdir=$gsrefsdir, chloerefsdir=$chloerefsdir, template=$template)
     end
     # [ @spawnat p begin
         #     set_global_logger(level, backend; topic="annotator")
@@ -126,17 +121,17 @@ function chloe_distributed(full::Bool=true; refsdir="default", address=ZMQ_WORKE
     end
     set_global_logger(level, backend; topic="annotator")
 
-    if refsdir == "default"
-        refsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_REFS))
+    if gsrefsdir == "default"
+        gsrefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_GSREFS))
+    end
+    if chloerefsdir == "default"
+        chloerefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_CHLOEREFS))
     end
     if template == "default"
         template = normpath(joinpath(refsdir, DEFAULT_TEMPLATE))
     end  
-    if hashfile == "default"
-    hashfile = normpath(joinpath(refsdir, DEFAULT_HASHES))
-    end
     # don't wait for workers to find the wrong directory
-    verify_refs(refsdir, hashfile, template)
+    verify_refs(gsrefsdir, chloerefsdir, template)
 
     # user may have added run with 
     # julia command -p2 etc.

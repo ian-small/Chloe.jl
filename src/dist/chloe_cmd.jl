@@ -16,11 +16,11 @@ function quiet_metafmt(level, _module, group, id, file, line)
     return color, prefix, ""
 end
 
-function chloe(;refsdir="default", numrefs=DEFAULT_NUMREFS, hashfile="default", fasta_files=String[],
+function chloe(;gsrefsdir="default", chloerefsdir="default", numgsrefs=DEFAULT_NUMGSREFS, numchloerefs=DEFAULT_NUMGSREFS, fasta_files=String[],
     template="default", sensitivity=DEFAULT_SENSITIVITY,
         output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
-    db = Annotator.ReferenceDb(;refsdir=refsdir, hashfile=hashfile, template=template)
-    config = Annotator.ChloeConfig(;numrefs=numrefs, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
+    db = Annotator.ReferenceDb(;gsrefsdir=gsrefsdir, chloerefsdir=chloerefsdir, template=template)
+    config = Annotator.ChloeConfig(;numgsrefs=numgsrefs, numchloerefs=numchloerefs, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
     Annotator.annotate(db, fasta_files, config, output)
 end
 
@@ -53,10 +53,6 @@ function getargs()
             required = true
             action = :store_arg
             help = "fasta files to process (or directory of files)"
-        "--output", "-o"
-            arg_type = String
-            default = "default"
-            help = "output file [default: $(DEFAULT_HASHES)]"
     end
 
     @add_arg_table! cmd_args["align"]  begin
@@ -75,7 +71,6 @@ function getargs()
             arg_type = String
             default = "default"
             help = "output file"
-
     end 
 
     @add_arg_table! cmd_args["annotate"]  begin
@@ -91,19 +86,19 @@ function getargs()
         "--reference", "-r"
             arg_type = String
             default = "default"
-            dest_name = "refsdir"
+            dest_name = "chloerefsdir"
             metavar = "DIRECTORY"
-            help = "reference directory [default: ../$(DEFAULT_REFS)]"
-        "--numrefs", "-n"
+            help = "reference directory [default: $(DEFAULT_CHLOEREFS)]"
+        "--numgsrefs"
             arg_type = Int
-            default = DEFAULT_NUMREFS
-            dest_name = "numrefs"
-            help = "number of references to compare to [default: $(DEFAULT_NUMREFS)]"
-        "--minhashes", "-m"
-        arg_type = String
-            default = "default"
-            dest_name = "hashfile"
-            help = "reference minhashes [default: {reference directory}/$(DEFAULT_HASHES)]"
+            default = DEFAULT_NUMGSREFS
+            dest_name = "numgsrefs"
+            help = "number of references to compare to [default: $(DEFAULT_NUMGSREFS)]"
+        "--numchloerefs"
+            arg_type = Int
+            default = DEFAULT_NUMCHLOEREFS
+            dest_name = "numchloerefs"
+            help = "number of references to compare to [default: $(DEFAULT_NUMCHLOEREFS)]"
         "--template", "-t"
             arg_type = String
             default = "default"
@@ -120,7 +115,6 @@ function getargs()
         "--gff", "-g"
             action = :store_true
             help = "save output in gff3 format instead of sff"
-
     end
 
     @add_arg_table! cmd_args["rotate"] begin

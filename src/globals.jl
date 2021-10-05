@@ -1,9 +1,9 @@
 const REPO_DIR = dirname(@__FILE__)
-const DEFAULT_REFS = "chloe_references"
-const DEFAULT_NUMREFS = 16
-# relative to refsdir
-const DEFAULT_HASHES = "reference_minhashes.hash"
-const DEFAULT_TEMPLATE = "templates.tsv"
+const DEFAULT_GSREFS = "chloe_references/gsrefs"
+const DEFAULT_NUMGSREFS = 8
+const DEFAULT_CHLOEREFS = "chloe_references/chloerefs"
+const DEFAULT_NUMCHLOEREFS = 8
+const DEFAULT_TEMPLATE = "chloe_references/templates.tsv"
 const DEFAULT_SENSITIVITY = 0.5
 
 

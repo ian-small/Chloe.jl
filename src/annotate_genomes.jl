@@ -22,7 +22,6 @@ import Printf:@sprintf
 import JSON
 import Crayons:@crayon_str
 using StatsBase
-using GLM
 
 const success = crayon"bold green"
 const MINIMUM_UNASSIGNED_ORF_LENGTH = Int32(270)
@@ -100,9 +99,9 @@ function score_feature(sff::SFF_Feature, maxtemplatelength::Float32, stack::Feat
     sff.stackdepth = Float32((length(slice) > 0 ? sum(slice) :  0) / (ref_count * sff.feature.length))
     sff.relative_length = sff.feature.length / stack.template.median_length
     sff.gmatch = gmatch
-    sff.feature_prob = feature_glm(maxtemplatelength, stack.template, sff.relative_length, sff.stackdepth, gmatch)
+    sff.feature_prob = feature_xgb(maxtemplatelength, stack.template, sff.relative_length, sff.stackdepth, gmatch)
     if sff.feature.type == "CDS"
-        sff.coding_prob = glm_coding_classifier(countcodons(sff.feature, seq))
+        sff.coding_prob = 0.5 #update to XGBoost classifier score!
     end
 end
 
@@ -190,8 +189,8 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
             # count codons
             codonfrequencies = countcodons(uorf, target_seq)
             # predict with GLMCodingClassifier
-            coding_prob = glm_coding_classifier(codonfrequencies)
-            push!(target_strand_models, [SFF_Feature(uorf, 0.0, 0.0, gmatch, coding_prob / 2, coding_prob)])
+            #coding_prob = glm_coding_classifier(codonfrequencies)
+            #push!(target_strand_models, [SFF_Feature(uorf, 0.0, 0.0, gmatch, coding_prob / 2, coding_prob)])
         end
     end
 
@@ -288,26 +287,32 @@ function annotate_one(db::ReferenceDb,
     
     @info "[$target_id] seq length: $(target_length)bp"
 
-    # find best references
+    #mask low entropy regions before finding closest references
     emask = entropy_mask(CircularSequence(target.forward.sequence), Int32(KMERSIZE))
-    refhashes = get_minhashes(db, config)
-    if !isnothing(refhashes)
-        nmaskedtarget = copy(target.forward.sequence)
-        for (i, bit) in enumerate(emask)
-            if bit; nmaskedtarget[i] = DNA_N; end
-        end
-        hash = minhash(nmaskedtarget, KMERSIZE, SKETCHSIZE)
-        numrefs = min(config.numrefs, length(refhashes))
-        refpicks = searchhashes(hash, refhashes)[1:numrefs]
-    else
-        numrefs = 1
-        # FIXME this is wrong!
-        refpicks = [(split(basename(refsdir), '.')[1], 0)]
+    nmaskedtarget = copy(target.forward.sequence)
+    for (i, bit) in enumerate(emask)
+        if bit; nmaskedtarget[i] = DNA_N; end
     end
 
+    refpicks = Vector{Tuple{String,Int}}(undef, 0)
+    # find closest gs references
+    refhashes = get_gsminhashes(db, config)
+    if !isnothing(refhashes)
+        hash = minhash(nmaskedtarget, KMERSIZE, SKETCHSIZE)
+        numrefs = min(config.numgsrefs, length(refhashes))
+        append!(refpicks, searchhashes(hash, refhashes)[1:numrefs])
+    end
+
+    # find closest chloe references
+    refhashes = get_chloeminhashes(db, config)
+    if !isnothing(refhashes)
+        numrefs = min(config.numchloerefs, length(refhashes))
+        append!(refpicks, searchhashes(hash, refhashes)[1:numrefs])
+    end
+    numrefs = length(refpicks)
     t2 = time_ns()
 
-    @info "[$target_id] picked $(numrefs) reference(s): $(ns(t2 - t1))"
+    @info "[$target_id] picked $numrefs reference(s): $(ns(t2 - t1))"
 
     blocks_aligned_to_targetf = Vector{FwdRev{BlockTree}}(undef, numrefs)
     blocks_aligned_to_targetr = Vector{FwdRev{BlockTree}}(undef, numrefs)
@@ -318,7 +323,6 @@ function annotate_one(db::ReferenceDb,
     # get_single_reference! throws if bad refpick
     refs = [get_single_reference!(db, r[1], reference_feature_counts) for r in refpicks]
 
-    
     Threads.@threads for i in eachindex(refs)
         a = align_to_reference(refs[i], target_id, target, masks)
         blocks_aligned_to_targetf[i] = a[1].forward
@@ -390,6 +394,7 @@ function annotate_one(db::ReferenceDb, infile::String, config::ChloeConfig, outp
         annotate_one(db, io, config, output)
     end
 end
+
 function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO=nothing)
     reader = FASTA.Reader(infile)
     records = [record for record in reader]
@@ -412,7 +417,6 @@ function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::
         target_id = "unknown"
     end
     annotate_one(db, target_id, FwdRev(fseq, rseq), config, output)
-
 end
 
 function sffname(fafile::String, directory::Union{String,Nothing}=nothing)::String
@@ -423,17 +427,16 @@ function sffname(fafile::String, directory::Union{String,Nothing}=nothing)::Stri
     joinpath(d, "$(base).sff")
 end
 
-function annotate_one(refsdir::String, infile::String, output::MayBeIO=nothing)
+#= function annotate_one(refsdir::String, infile::String, output::MayBeIO=nothing)
 
     annotate_one(ReferenceDb(;refsdir=refsdir), infile, ChloeConfig(), output)
 
-end
+end =#
 
 function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
     n = length(fa_files)
     for infile in fa_files
         maybe_gzread(infile) do io
-
             annotate_one(db, io, config, if n > 1 sffname(infile, output) else output end)
         end
     end

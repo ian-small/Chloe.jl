@@ -1,36 +1,33 @@
-
-
-# export ReferenceDb, get_minhashes, get_templates,get_single_reference!
 include("globals.jl")
 mutable struct ReferenceDb
     lock::ReentrantLock
-    refsdir::String
+    gsrefsdir::String
+    chloerefsdir::String
     template_file::String
-    hash_file::String
     templates::Union{Nothing,Dict{String,FeatureTemplate}}
-    refhashes::Union{Nothing,Dict{String,Vector{Int64}}}
+    gsrefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
+    chloerefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
 end
 
 struct ChloeConfig
-    numrefs::Int
+    numgsrefs::Int
+    numchloerefs::Int
     sensitivity::Real
-    references::Union{Nothing,Vector{AbstractString}}
     to_gff3::Bool
     nofilter::Bool
 end
 
-function ReferenceDb(;refsdir="default",  hashfile="default",
-    template="default")
-    if refsdir == "default"
-        refsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_REFS))
+function ReferenceDb(;gsrefsdir="default", chloerefsdir="default", template="default")
+    if gsrefsdir == "default"
+        gsrefsdir = normpath(joinpath(REPO_DIR, "..", DEFAULT_GSREFS))
     end
-    if hashfile == "default"
-        hashfile = normpath(joinpath(refsdir, DEFAULT_HASHES))
+    if chloerefsdir == "default"
+        chloerefsdir = normpath(joinpath(REPO_DIR, "..", DEFAULT_CHLOEREFS))
     end
     if template == "default"
-        template = normpath(joinpath(refsdir, DEFAULT_TEMPLATE))
+        template = normpath(joinpath(REPO_DIR, "..", DEFAULT_TEMPLATE))
     end
-    return ReferenceDb(ReentrantLock(), refsdir, template, hashfile, nothing, nothing)
+    return ReferenceDb(ReentrantLock(), gsrefsdir, chloerefsdir, template, nothing, nothing, nothing)
 end
 
 function get_templates(db::ReferenceDb)
@@ -41,24 +38,57 @@ function get_templates(db::ReferenceDb)
         return db.templates
     end
 end
-function get_minhashes(db::ReferenceDb, config::ChloeConfig)
+
+function get_gsminhashes(db::ReferenceDb, config::ChloeConfig)
+    config.numgsrefs < 1 && return nothing
     lock(db.lock) do
-        if isnothing(db.templates)
-            db.refhashes = readminhashes(db.hash_file)
+        if isnothing(db.gsrefhashes)
+            db.gsrefhashes = readminhashes(normpath(joinpath(db.gsrefsdir, "reference_minhashes.hash")))
         end
-        return db.refhashes
+        return db.gsrefhashes
     end
 end
-function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
-    read_single_reference!(db.refsdir, refID, reference_feature_counts)
+
+function get_chloeminhashes(db::ReferenceDb, config::ChloeConfig)
+    config.numchloerefs < 1 && return nothing
+    lock(db.lock) do
+        if isnothing(db.chloerefhashes)
+            db.chloerefhashes = readminhashes(normpath(joinpath(db.chloerefsdir, "reference_minhashes.hash")))
+        end
+        return db.chloerefhashes
+    end
 end
 
+function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
+    path = findfastafile(db.gsrefsdir, refID)
+    if isnothing(path)
+        path = findfastafile(db.chloerefsdir, refID)
+    end
+    if !isfile(path)
+        msg = "unable to find $(refID) fasta file in $(db.gsrefsdir) or in $(db.chloerefsdir)!"
+        @error msg
+        throw(ArgumentError(msg))
+    end
+    open(path) do io
+        ref = FASTA.Record()
+        reader = FASTA.Reader(io)
+        read!(reader, ref)
+        sffpath = path[1:findlast('.', path)] * "sff" #assumes fasta files and sff files differ only by the file name extension
+        if !isfile(sffpath)
+            msg = "unable to find $(refID) sff file in $(db.gsrefsdir) or in $(db.chloerefsdir)!"
+            @error msg
+            throw(ArgumentError(msg))
+        end
+        ref_features = read_features!(sffpath, reference_feature_counts)
+        SingleReference(refID, CircularSequence(FASTA.sequence(ref)), ref_features)
+    end
+end
 
-const KWARGS = ["numrefs", "sensitivity", "to_gff3", "nofilter", "references"]
+const KWARGS = ["numgsrefs", "numchloerefs", "sensitivity", "to_gff3", "nofilter"]
 
-function ChloeConfig(;numrefs=DEFAULT_NUMREFS, sensitivity=DEFAULT_SENSITIVITY,
-    references::Union{Nothing,Vector{AbstractString}, Vector{String}}=nothing, to_gff3::Bool=false, nofilter::Bool=false)
-    return ChloeConfig(numrefs, sensitivity, references, to_gff3, nofilter)
+function ChloeConfig(;numgsrefs=DEFAULT_NUMGSREFS, numchloerefs=DEFAULT_NUMCHLOEREFS, sensitivity=DEFAULT_SENSITIVITY,
+    to_gff3::Bool=false, nofilter::Bool=false)
+    return ChloeConfig(numgsrefs, numchloerefs, sensitivity, to_gff3, nofilter)
 end
 
 # needs to be V <: Any since this is comming from a JSON blob
@@ -78,28 +108,16 @@ function Base.show(io::IO, c::ChloeConfig)
     print(io, "ChloeConfig[numrefs=$(c.numrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), references=$(c.references)]")
 end
 
-function verify_refs(refsdir, hashfile, template)
+function verify_refs(gsrefsdir, chloerefsdir, template)
     # used by master process to check reference directory
     # *before* starting worker processes...
-
-    # TODO: read json file and really check...
-    if !isdir(refsdir)
-        msg = "Reference directory $(refsdir) is not a directory!"
+    if !isdir(gsrefsdir)
+        msg = "Reference directory $(gsrefsdir) is not a directory!"
         @error msg
         throw(ArgumentError(msg))
     end
-
-    for f in [hashfile, template, joinpath(refsdir, "ReferenceOrganisms.json")]
-        if !isfile(f)
-            msg = "missing file: $f"
-            @error msg
-            throw(ArgumentError(msg))
-        end
-    end
-    files = readdir(refsdir)    
-    sff = findall(x -> endswith(x, ".sff"), files)
-    if length(sff) == 0
-        msg = "no reference .sff files in $(refsdir)!"
+    if !isdir(chloerefsdir)
+        msg = "Reference directory $(chloerefsdir) is not a directory!"
         @error msg
         throw(ArgumentError(msg))
     end
