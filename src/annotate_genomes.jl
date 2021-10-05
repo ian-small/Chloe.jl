@@ -146,7 +146,7 @@ function score_feature(sff::SFF_Feature, maxtemplatelength::Float32, stack::Feat
     sff.stackdepth = Float32(sum(stack.stack[range(sff.feature.start, length=sff.feature.length)]) / (ref_count * sff.feature.length))
     sff.relative_length = sff.feature.length / stack.template.median_length
     sff.gmatch = gmatch
-    sff.feature_prob = feature_glm(maxtemplatelength, stack.template, sff.relative_length, sff.stackdepth, gmatch)
+    sff.feature_prob = feature_xgb(maxtemplatelength, stack.template, sff.relative_length, sff.stackdepth, gmatch)
     if sff.feature.type == "CDS"
         sff.coding_prob = glm_coding_classifier(countcodons(sff.feature, seq))
     end

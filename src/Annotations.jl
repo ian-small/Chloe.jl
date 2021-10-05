@@ -1,6 +1,7 @@
 import Printf:@sprintf
 import StatsBase
 using BioSequences
+using XGBoost
 
 mutable struct Feature <: AbstractInterval{Int32}
     gene::String
@@ -791,6 +792,19 @@ function feature_glm(maxtemplatelength::Float32, template::FeatureTemplate, flen
     match = gmatch / 100
     pred = 4.61577 + 10.308 * tlength + 5.15019 * length + 0.791838 * depth + 0.0570887 * match + 1.08125 * depth * tlength + 0.487625 * depth * length + 1.77479 * depth * match
     odds = exp(pred)
+    return Float32(odds / (1.0 + odds))
+end
+
+xgb_model = Booster(model_file = joinpath(@__DIR__,"xgb.model"))
+function feature_xgb(maxtemplatelength::Float32, template::FeatureTemplate, flength::Float32, fdepth::Float32, gmatch::Float32)::Float32
+    flength ≤ 0 && return Float32(0.0)
+    fdepth ≤ 0 && return Float32(0.0)
+    tlength = template.median_length/maxtemplatelength
+    length = log(flength)
+    depth = log(fdepth)
+    match = gmatch / 100
+    pred = XGBoost.predict(xgb_model, [tlength length depth match])
+    odds = exp(pred[1])
     return Float32(odds / (1.0 + odds))
 end
 
