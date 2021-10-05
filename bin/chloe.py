@@ -106,8 +106,13 @@ def proxy(url_worker, url_client, hwm=1000):
         os._exit(1)  # pylint: disable=protected-access
 
 
-HELP = """
+HELP = f"""
 Commands to directly connect to annotator
+
+run the annotator as:
+
+    {click.style('julia --project=. distributed.jl --broker=default', fg='green')}
+
 """
 
 

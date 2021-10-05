@@ -4,7 +4,7 @@ function embl2sff(emblfilepath::String, sfffilepath::String, seqfilepath::String
     open(emblfilepath, "r") do f
         outfile = open(sfffilepath, "w")
 
-        #ID and length
+        # ID and length
         idline = readline(f)
         @assert startswith(idline, "ID   ")
         tags = split(idline[6:end], ";")
@@ -15,7 +15,7 @@ function embl2sff(emblfilepath::String, sfffilepath::String, seqfilepath::String
         seqfile = open(seqfilepath, "w")
         write(seqfile, ">", ID, "\n")
 
-        #Features
+        # Features
         fmodels = Vector{Vector{Feature}}()
         rmodels = Vector{Vector{Feature}}()
 
@@ -37,11 +37,11 @@ function embl2sff(emblfilepath::String, sfffilepath::String, seqfilepath::String
                 maybetype = split(line[6:21])
                 if !isempty(maybetype)
                     if have_model && type in ["CDS", "tRNA", "rRNA"]
-                        #println(gene, '\t', product)
+                        # println(gene, '\t', product)
                         if haskey(gene_names, gene); gene = gene_names[gene];
                         elseif haskey(gene_names, product); gene = gene_names[product]; end
                         if gene == ""; gene = product; end
-                        #println(gene, '\t', product)
+                        # println(gene, '\t', product)
                         (fmodel, rmodel) = embl2model(gene, type, coords, seqlength)
                         !isempty(fmodel) && append!(fmodels, cleanupfeatures(fmodel, seqlength))
                         !isempty(rmodel) && append!(rmodels, cleanupfeatures(rmodel, seqlength))
@@ -53,10 +53,10 @@ function embl2sff(emblfilepath::String, sfffilepath::String, seqfilepath::String
                 elseif startswith(line[22:end], "/")
                     waiting_for_coords = false
                     if startswith(line[22:end], "/gene=")
-                        gene = replace(filter(x -> !isspace(x), line[29:end-1]), "_"=>"-")
+                        gene = replace(filter(x -> !isspace(x), line[29:end - 1]), "_" => "-")
                         have_model = true
                     elseif startswith(line[22:end], "/product=")
-                        product = replace(filter(x -> !isspace(x), line[32:end-1]), "_"=>"-")
+                        product = replace(filter(x -> !isspace(x), line[32:end - 1]), "_" => "-")
                         have_model = true
                     end
                 elseif waiting_for_coords && (startswith(line[22:end], r"[0-9]") || startswith(line[22:end], "complement"))
@@ -67,7 +67,7 @@ function embl2sff(emblfilepath::String, sfffilepath::String, seqfilepath::String
             elseif startswith(line, "//")
                 readingseq = false
             elseif readingseq
-                write(seqfile, uppercase(join(split(line)[1:end-1])))
+                write(seqfile, uppercase(join(split(line)[1:end - 1])))
             end
         end
         println("fmodels: $(length(fmodels)) rmodels: $(length(rmodels))")
@@ -100,8 +100,8 @@ const annotation_path(f::Feature) = begin
     join([f.gene, f.type, string(f.order)], "/")
 end
 
-#check if features overlap the end of the genome and should be merged
-#split rps12 models into A and B models
+# check if features overlap the end of the genome and should be merged
+# split rps12 models into A and B models
 function cleanupfeatures(model::Vector{Feature}, genome_length::Int32)
     models = Vector{Vector{Feature}}()
     firstf = first(model)
@@ -109,13 +109,13 @@ function cleanupfeatures(model::Vector{Feature}, genome_length::Int32)
     if lastf.start + lastf.length == genome_length + 1
         if lastf.gene == firstf.gene
             if firstf.start == 1
-            #must be contiguous and same feature if we got as far as here
+            # must be contiguous and same feature if we got as far as here
             lastf.length += firstf.length
             deleteat!(model, 1)
             end
         end
     end
-    #remove stop codon from CDS features
+    # remove stop codon from CDS features
     if lastf.type == "CDS"
         lastf.length -= 3
     end
@@ -132,7 +132,7 @@ function encloses(text::String, start_index::Integer)
     for i in start_index:length(text)
         if text[i] == '('
             enclosures += 1
-        elseif text[i] ==')'
+        elseif text[i] == ')'
             enclosures -= 1
         end
         if enclosures == 0
@@ -142,16 +142,16 @@ function encloses(text::String, start_index::Integer)
     @assert false "broken enclosure: $text"
 end
 
-function embl2model(gene::AbstractString, type::AbstractString, coords::AbstractString, seqlength::Int32, strand::Char = '+')
-    #println(coords)
+function embl2model(gene::AbstractString, type::AbstractString, coords::AbstractString, seqlength::Int32, strand::Char='+')
+    # println(coords)
     ffeatures = Vector{Feature}()
     rfeatures = Vector{Feature}()
     if startswith(coords, "complement") && encloses(coords, 11)
-        ffeatures, rfeatures = embl2model(gene, type, coords[12:end-1], seqlength, '-')
+        ffeatures, rfeatures = embl2model(gene, type, coords[12:end - 1], seqlength, '-')
     elseif startswith(coords, "join") && encloses(coords, 5)
-        ffeatures, rfeatures = embl2model(gene, type, coords[6:end-1], seqlength, strand)
+        ffeatures, rfeatures = embl2model(gene, type, coords[6:end - 1], seqlength, strand)
     elseif startswith(coords, "order") && endswith(coords, ")")
-        ffeatures, rfeatures = embl2model(gene, type, coords[7:end-1], seqlength, strand)
+        ffeatures, rfeatures = embl2model(gene, type, coords[7:end - 1], seqlength, strand)
     else
         ranges = split(coords, ",")
         if strand == '-'
@@ -159,7 +159,7 @@ function embl2model(gene::AbstractString, type::AbstractString, coords::Abstract
         end
         cumulative_length = 0
         for (index, range) in enumerate(ranges)
-            #println(range)
+            # println(range)
             if gene == "rps12" || gene == "rps12A"
                 gene = index == 1 ? "rps12A" : "rps12B"
             end
@@ -175,7 +175,7 @@ end
 function embl2feature(gene::AbstractString, type::AbstractString, index::Int, range::AbstractString, cumulative_length::Int, seqlength::Int32, strand::Char)
     if startswith(range, "complement")
         strand = '-'
-        range = range[12:end-1]
+        range = range[12:end - 1]
     end
     positions = split(range, r"[<>.]+", keepempty=false)
     start::Int32 = parse(Int32, positions[1])
@@ -185,12 +185,12 @@ function embl2feature(gene::AbstractString, type::AbstractString, index::Int, ra
         stop = start
     end
     feature_length::Int32 =  stop - start + 1
-    #reverse complement if - strand
+    # reverse complement if - strand
     start = strand == '-' ? seqlength - stop + 1 : start
     phase = type == "CDS" ? phase_counter(Int8(0), cumulative_length) : 0
     order = 2 * index - 1
     if gene == "rps12B"; order -= 1; end;
-    fname = gene*"/"*type*"/"*string(order)
+    fname = gene * "/" * type * "/" * string(order)
     return Feature(fname, start, feature_length, phase), strand
 end
 
@@ -212,10 +212,10 @@ function writeSFF(outfile::IO, id::AbstractString, genome_length::Int32, f_model
         model_ids = Dict{String,Int32}()
         write(outfile, id, "\t", string(genome_length), "\n")
         for model in f_models
-            #println(model)
+            # println(model)
             isempty(model) && continue
             model_id = getmodelID!(model_ids, model)
-            #println(model_id)
+            # println(model_id)
             write_model2SFF(outfile, model_id, model, '+')
         end
         for model in r_models
@@ -231,11 +231,11 @@ end
 function write_model2SFF(outfile::IO, model_id::String, model::Vector{Feature}, strand::Char)
 
     for feature in model
-        #println(feature)
+        # println(feature)
         relative_length = get_relative_length(feature)
-        #println(relative_length)
+        # println(relative_length)
         if relative_length == 0
-            continue #avoid writing unrecognised features
+            continue # avoid writing unrecognised features
         end
         write(outfile, model_id)
         write(outfile, "/")
@@ -245,33 +245,33 @@ function write_model2SFF(outfile::IO, model_id::String, model::Vector{Feature}, 
         write(outfile, "\t")
         write(outfile, join([strand,string(feature.start),string(feature.length),string(feature.phase)], "\t"))
         write(outfile, "\t", @sprintf("%.3f",relative_length))
-        write(outfile, "\t0\t\t") #0 for stack depth, empty notes column
+        write(outfile, "\t0\t\t") # 0 for stack depth, empty notes column
         write(outfile, "\n")
     end
 
 end
 
-const unknown_features = Dict{String, Int}()
+const unknown_features = Dict{String,Int}()
 
 function get_relative_length(f::Feature)
     fname = annotation_path(f)
     template = get(templates, fname, nothing)
     if isnothing(template)
-        #println("failed to find template $fname")
+        # println("failed to find template $fname")
         count = 0
         if haskey(unknown_features, fname); count = unknown_features[fname]; end
         unknown_features[fname] = count + 1
         return 0
     end
-    return f.length/template.median_length
+    return f.length / template.median_length
 end
 
-struct FeatureTemplate
+struct FeatureTemplate2
     path::String  # similar to .sff path
     median_length::Float32
-end
+    end
 
-const templates = Dict{String,FeatureTemplate}()
+const templates = Dict{String,FeatureTemplate2}()
 
 function read_templates(file::String)
     if !isfile(file)
@@ -281,21 +281,21 @@ function read_templates(file::String)
         error("no data in \"$(file)!\"")
     end
     open(file) do f
-        readline(f) #skip header
+        readline(f) # skip header
         for line in eachline(f)
             fields = split(line, '\t')
-            template = FeatureTemplate(fields[1], parse(Float32, fields[3]))
+            template = FeatureTemplate2(fields[1], parse(Float32, fields[3]))
             templates[template.path] = template
         end
     end
 end
 
-const gene_names = Dict{String, String}()
+const gene_names = Dict{String,String}()
 
 function read_name_mappings(file::String)
-    open(file) do f
+            open(file) do f
         for line in eachline(f)
-            names = split(line,"\t")
+            names = split(line, "\t")
             gene_names[names[1]] = names[2]
         end
     end
@@ -306,7 +306,7 @@ function addintrons!(models::Vector{Vector{Feature}})
         exons = length(model)
         i = 1
         while i < exons
-            #insert intron
+            # insert intron
             intron_order = i + 1
             if model[1].gene == "rps12B"; intron_order += 1; end
             intronpath = join([model[1].gene, "intron", string(intron_order)], "/")
@@ -318,15 +318,15 @@ function addintrons!(models::Vector{Vector{Feature}})
 end
 
 function dir2sff(dir::String)
-    files = filter(x->endswith(x, ".embl"), readdir(dir, join = true))
+    files = filter(x -> endswith(x, ".embl"), readdir(dir, join=true))
 	for file in files
-		id = split(basename(file),".")[1]
+		id = split(basename(file), ".")[1]
         println(id)
-        outfile = joinpath(dir, id*".sff")
-        seqfile = joinpath(dir, id*".fasta")
+        outfile = joinpath(dir, id * ".sff")
+        seqfile = joinpath(dir, id * ".fasta")
 		embl2sff(file, outfile, seqfile)
 	end
-    for (f, c) in sort(collect(unknown_features), by = x -> x[2], rev = true)
+    for (f, c) in sort(collect(unknown_features), by=x -> x[2], rev=true)
         println(f, "\t", c)
     end
 end

@@ -6,9 +6,9 @@
 To run the annotator or write gff3 or create suffix array files type:
 
 ```bash
-julia chloe.jl --help
+julia --project=. chloe.jl --help
 # or for a specific command e.g.
-julia chloe.jl annotate --help
+julia --project=. chloe.jl annotate --help
 ```
 
 (See installing dependencies below)
@@ -16,19 +16,22 @@ julia chloe.jl annotate --help
 For example:
 
 ```bash
-julia chloe.jl annotate testfa/*.fa
+julia --project=. chloe.jl annotate testfa/*.fa
 ```
 
-Will create `.sff` files in the testfa directory.
+Will create `.sff` files in the current directory.
 
 This annotator is available online at: [https://chloe.plantenergy.edu.au](https://chloe.plantenergy.edu.au)
 
 ## Installing dependencies
 
 There is a `Project.toml` file that contains all the project
-dependencies.
+dependencies. So you can (as of julia 1.6) use `julia --project=.`
+Then type `]instantiate` at the julia prompt to install all the required
+libraries. (See [Activating project environment
+in Julia REPL automatically](https://bkamins.github.io/julialang/2020/05/10/julia-project-environments.html) if you want this to happen automatically.)
 
-To actually add these dependencies type
+To actually add these dependencies to the *global* environment type
 `julia bin/deps.jl`.
 
 *or* run
@@ -66,27 +69,23 @@ advantage of julia's precompilation.
 
 You can of course use julia's Distributed package.
 
-Start julia with 3 workers and load code:
+Start julia (1.6) with 3 workers and load code:
 
-`JULIA_NUM_THREADS=8 julia -p 3 -L src/remote.jl`
+`julia --project=. -t 8  -p 3 -L src/dist/remote.jl`
 
 Now you can type:
 
 ```julia
 using Distributed
 # just read reference Data on remote workers
-@everywhere workers() begin
-    global REFS = readDefaultReferences()
-end
-# get a fasta file
-fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
+
 # note that REFS is not defined locally in the REPL!
-r = @spawnat :any annotate_one(REFS, fasta)
+reference_directory = "/some/directory"
+r = @spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa")
 io, uid = fetch(r)
 sff = String(take!(io))
 # this works too.., just tell Chloe the filename
-r = @spawnat :any annotate_one(REFS, "testfa/NC_020019.1.fa")
-r = @spawnat :any annotate_one(REFS, "testfa/NC_020019.1.fa", "write_to_this_file.sff")
+r = @spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa", "write_to_this_file.sff")
 ```
 
 This also works:
@@ -94,16 +93,13 @@ This also works:
 ```julia
 using Distrbuted
 addprocs(3)
-@everywhere workers() begin
-    include("src/remote.jl")
-    REFS = readDefaultReferences()
-end
+
 fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
-io, uid = fetch(@spawnat :any annotate_one(REFS, fasta))
+io, uid = fetch(@spawnat :any annotate_one(reference_directory, fasta))
 # get chloe sff as a string
 sff = String(take!(io))
 # *OR*
-sff_filename, uid = fetch(@spawnat :any annotate_one(REFS, "testfa/NC_020019.1.fa", nothing))
+sff_filename, uid = fetch(@spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa", nothing))
 # sff_filename is where chloe wrote the data:
 # in this case NC_020019.1.sff in the local directory
 # instead of `nothing` specify an actual filename.
@@ -116,11 +112,10 @@ using Distributed
 addprocs(4)
 @everywhere workers() begin
     using Chloe
-    global REFS = readDefaultReferences()
 end
 # Note that neither REFS nor annotate_one is defined in the REPL
 # ...but all is still good.
-r = @spawnat :any annotate_one(REFS, "testfa/NC_020019.1.fa")
+r = @spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa")
 # etc...
 ```
 
@@ -132,8 +127,8 @@ Also you don't need to be in the repo directory!
 Running the chloe server. In a terminal type:
 
 ```bash
-JULIA_NUM_THREADS=8 julia distributed.jl --level=info --workers=4 \
-     --broker=ipc:///tmp/chloe-client
+julia -t 8 --project=. distributed.jl --level=info --workers=4 \
+     --broker="default"
 ```
 
 (Julia as of 1.4 refuses to use more threads that the number of CPUs on your machine:
@@ -196,7 +191,7 @@ Then -- on your puny laptop -- you can run something like:
 ```sh
 ssh  you@bigserver -t -o ExitOnForwardFailure=yes -L 9476:127.0.0.1:9467 \
     'cd /path/to/chloe;
-    JULIA_NUM_THREADS={BIGNUM} /path/to/bin/julia --startup-file=no --color=yes
+    JULIA_NUM_THREADS={BIGNUM} /path/to/bin/julia --project=. --startup-file=no --color=yes
     distributed.jl --broker=tcp://127.0.0.1:9467 -l info --workers=4'
 ```
 
@@ -260,7 +255,7 @@ all needed code on all nodes as early as possible.
 
 ---
 
-This only really is of interest with using the `add_worker` method that tries 
+This only really is of interest with using the `add_worker` method that tries
 to add new workers to the running server. If the server was
 started by loading `Chloe` as a package then you can't add new workers by just sending
 the required code: The new worker seems to be expecting a Chloe module.

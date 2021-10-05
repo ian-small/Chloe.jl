@@ -7,7 +7,8 @@ import Logging
 
 import ..Annotator
 
-include("globals.jl")
+include("../globals.jl")
+include("dist_globals.jl")
 
 function quiet_metafmt(level, _module, group, id, file, line)
     color = Logging.default_logcolor(level)
@@ -15,18 +16,12 @@ function quiet_metafmt(level, _module, group, id, file, line)
     return color, prefix, ""
 end
 
-function chloe(;refsdir=DEFAULT_REFS, numrefs=DEFAULT_NUMREFS, hashfile=DEFAULT_HASHES, fasta_files=String[],
-    template=DEFAULT_TEMPLATE, sensitivity=DEFAULT_SENSITIVITY, output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
-    if refsdir == "default"
-        refsdir = normpath(joinpath(HERE, "..", DEFAULT_REFS))
-    end
-    if hashfile == "default"
-        hashfile = normpath(joinpath(HERE, "..", DEFAULT_HASHES))
-    end
-    if template == "default"
-        template = normpath(joinpath(HERE, "..", DEFAULT_TEMPLATE))
-    end
-    Annotator.annotate(refsdir, numrefs, hashfile, template, fasta_files, sensitivity, output, gff, nofilter)
+function chloe(;refsdir=DEFAULT_REFS, numrefs=DEFAULT_NUMREFS, hashfile="default", fasta_files=String[],
+    template="default", sensitivity=DEFAULT_SENSITIVITY,
+        output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
+    db = Annotator.ReferenceDb(;refsdir=refsdir, hashfile=hashfile, template=template)
+    config = Annotator.ChloeConfig(;numrefs=numrefs, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
+    Annotator.annotate(db, fasta_files, config, output)
 end
 
 function getargs()
@@ -80,6 +75,7 @@ function getargs()
             arg_type = String
             default = "default"
             help = "output file"
+
     end 
 
     @add_arg_table! cmd_args["annotate"]  begin
@@ -103,19 +99,19 @@ function getargs()
             default = DEFAULT_NUMREFS
             dest_name = "numrefs"
             help = "number of references to compare to [default: $(DEFAULT_NUMREFS)]"
-        "--minhashes"
-            arg_type = String
+        "--minhashes", "-m"
+        arg_type = String
             default = "default"
             dest_name = "hashfile"
-            help = "reference minhashes [default: $(DEFAULT_HASHES)]"
+            help = "reference minhashes [default: {reference directory}/$(DEFAULT_HASHES)]"
         "--template", "-t"
             arg_type = String
             default = "default"
             metavar = "TSV"
             dest_name = "template"
-            help = "template tsv [default: $(DEFAULT_TEMPLATE)]"
+            help = "template tsv [default: {reference directory}/$(DEFAULT_TEMPLATE)]"
         "--sensitivity", "-s"
-            arg_type = Float16
+            arg_type = Real
             default = DEFAULT_SENSITIVITY
             help = "probability threshold for reporting features [default: $(DEFAULT_SENSITIVITY)]"
         "--nofilter"
@@ -124,6 +120,7 @@ function getargs()
         "--gff", "-g"
             action = :store_true
             help = "save output in gff3 format instead of sff"
+
     end
 
     @add_arg_table! cmd_args["rotate"] begin

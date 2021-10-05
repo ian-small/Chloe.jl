@@ -63,11 +63,11 @@ function Base.string(link::ChainLink{AlignedBlock})
 end
 
 function Base.show(io::IO, link::ChainLink{AlignedBlock})
-    return print(link)
+    return print(io, link)
 end
 
 function Base.print(io::IO, link::ChainLink{AlignedBlock})
-    return print(string(link))
+    return print(io, string(link))
 end
 
 function Base.append!(chain::BlockChain{AlignedBlock}, b::AlignedBlock)

@@ -6,28 +6,30 @@ global const MINIMUMFILLABLEGAP = 20
 global const MAXIMUMMERGEABLEGAP = 400
 
 function align(;query, target, output=Base.stdout)
-    reader = open(FASTA.Reader, query)
-    record = FASTA.Record()
-    read!(reader, record)
-    seq1 = FASTA.sequence(record)
-    close(reader)
-    for target_file in target
-        reader = open(FASTA.Reader, target_file)
+    open(query) do io
+        reader = FASTA.Reader(io)
         record = FASTA.Record()
         read!(reader, record)
-        seq2 = FASTA.sequence(record)
-        alignment = Alignment(seq1, seq2)
-        cseq1 = CircularSequence(seq1)
-        emask = entropy_mask(cseq1, Int32(KMERSIZE))
-        chain = align2seqs(cseq1, CircularSequence(seq2), emask)
-        for link in chain
-            block = link.data
-            query_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in block.src_index:block.src_index + block.blocklength - 1))
-            target_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in fulcrum(alignment) + block.tgt_index:fulcrum(alignment) + block.tgt_index + block.blocklength - 1))
-            println("$(block.src_index)\t$query_segment\t$(block.src_index + block.blocklength - 1)")
-            println("$(block.tgt_index)\t$target_segment\t$(block.tgt_index + block.blocklength - 1)\n")
+        seq1 = FASTA.sequence(record)
+        for target_file in target
+            open(target_file) do io2
+                reader = FASTA.Reader(io2)
+                record = FASTA.Record()
+                read!(reader, record)
+                seq2 = FASTA.sequence(record)
+                alignment = Alignment(seq1, seq2)
+                cseq1 = CircularSequence(seq1)
+                emask = entropy_mask(cseq1, Int32(KMERSIZE))
+                chain = align2seqs(cseq1, CircularSequence(seq2), emask)
+                for link in chain
+                    block = link.data
+                    query_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in block.src_index:block.src_index + block.blocklength - 1))
+                    target_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in fulcrum(alignment) + block.tgt_index:fulcrum(alignment) + block.tgt_index + block.blocklength - 1))
+                    println("$(block.src_index)\t$query_segment\t$(block.src_index + block.blocklength - 1)")
+                    println("$(block.tgt_index)\t$target_segment\t$(block.tgt_index + block.blocklength - 1)\n")
+                end
+            end
         end
-        close(reader)
     end
 end
 
@@ -59,7 +61,7 @@ function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask=nothing
 
     Threads.@threads for gap in gaps(src2tgt)
         (srcgap, tgtgap) = contiguousblockgaps(gap[1], gap[2], lenseq1, lenseq2)
-        #println(srcgap, " ", length(srcgap), "\t", tgtgap, " ", length(tgtgap))
+        # println(srcgap, " ", length(srcgap), "\t", tgtgap, " ", length(tgtgap))
         lengthsrcgap::Int32 = srcgap.stop - srcgap.start + 1
         lengthtgtgap::Int32 = tgtgap.stop - tgtgap.start + 1
         (lengthsrcgap < MINIMUMFILLABLEGAP || lengthtgtgap < MINIMUMFILLABLEGAP) && continue # gap too short to attempt to fill
@@ -103,17 +105,17 @@ function matchLengthThreshold(m::Int32, n::Int32)::Int32
 end
 
 function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBlock}, tail::ChainLink{AlignedBlock}, alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, minblocksize::Int32, mask=nothing)
-    #println("gapfilling from $(head.data) to $(tail.data) minblocksize = $(minblocksize)")
+    # println("gapfilling from $(head.data) to $(tail.data) minblocksize = $(minblocksize)")
     src_length = length(alignment.seq1)
     tgt_length = length(alignment.seq2)
     (srcgap, tgtgap) = contiguousblockgaps(head, tail, src_length, tgt_length)
     chain = blockchain(alignment, sa, ra, lcps, srcgap, tgtgap, minblocksize, mask)
     length(chain) == 0 && return mainchain
-    lock(REENTRANT_LOCK)
-    head.next = chain.firstlink
-    chain.lastlink.next = tail
-    mainchain.links += chain.links
-    unlock(REENTRANT_LOCK)
+    lock(REENTRANT_LOCK) do
+        head.next = chain.firstlink
+        chain.lastlink.next = tail
+        mainchain.links += chain.links
+    end
     # recursion
     for gap in gaps(head, tail, chain.links + 1)
         (srcgap, tgtgap) = contiguousblockgaps(gap[1], gap[2], src_length, tgt_length)

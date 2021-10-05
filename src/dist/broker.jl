@@ -7,10 +7,7 @@ import ZeroMQ_jll
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 
 function remove_endpoints(endpoints::String...)
-    # this doesn't seem to work
-    # a test bind to an already bound
-    # ipc:///named-socket seems to stuff
-    # everything up.....
+
     function cleanup(fname)
         atexit(() -> rm(fname; force=true))
     end

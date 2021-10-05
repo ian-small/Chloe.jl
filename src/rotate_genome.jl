@@ -2,20 +2,19 @@ using BioSequences
 using FASTX
 
 function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0)
-    reader = open(FASTA.Reader, infile)
-    records = Vector{FASTA.Record}()
-    for record in reader
-        push!(records, record)
+    open(infile) do io
+        records = [record for record in FASTA.Reader(io)]
     end
     if isempty(records)
-        @error "unable to read sequence from $infile"
+        error("unable to read sequence from $infile")
+
     elseif length(records) > 1
         @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
     end
     fseq = CircularSequence(FASTA.sequence(records[1]))
     rseq = reverse_complement(fseq)
     ir = Annotator.inverted_repeat(fseq, rseq)
-    close(reader)
+
 
     out = LongDNASeq(dna""d)
 
@@ -82,9 +81,14 @@ function rotategenomes(;fasta_files::Vector{String}, output::Union{String,Nothin
         end
         if !isnothing(outfile)
             io = open(outfile, "w")
+            @info "$(fasta) rotating to $(outfile)"
         end
-        @info "$(fasta) rotating to $(outfile)"
-        rotategenome(fasta, io, flip_LSC, flip_SSC, extend)
-        close(io)
+        try
+            rotategenome(fasta, io, flip_LSC, flip_SSC, extend)
+        finally
+            if io != stdout
+                close(io)
+            end
+        end
     end
 end

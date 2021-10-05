@@ -5,7 +5,7 @@ export TASK_KEY, set_global_logger, ZMQLogger
 import ZMQ
 MayBeString = Union{String,Nothing}
 
-include("globals.jl")
+include("dist_globals.jl")
 
 const TASK_KEY = "CURRENT_TASK"
 
@@ -99,7 +99,7 @@ function set_global_logger(level::String="warn", endpoint::MayBeString=nothing; 
     end
     llevel = get(LOGLEVELS, level, Logging.Warn)
 
-    if endpoint === nothing
+        if endpoint === nothing
         logger = Logging.ConsoleLogger(stderr, llevel, meta_formatter=quiet ? quiet_metafmt : Logging.default_metafmt)
     else
         logger = ZMQLogger(endpoint::String, llevel; topic=topic)
