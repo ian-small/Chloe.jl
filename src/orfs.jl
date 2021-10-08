@@ -98,33 +98,6 @@ function isstopcodon(codon::Union{Nothing,Tuple{DNA,DNA,DNA}}, allow_editing::Bo
     return false;
 end
 
-#= function getallorfs(seq::CircularSequence, strand::Char, minorflength::Int32)
-    starts = framedstarts(seq)
-    stops = framedstops(seq)
-    orfs = AFeature()
-    orf_counter = 1
-    strandprefix = strand == '+' ? "f" : "r"
-    for f in 1:3
-        frame = stops.frames[f]
-        pstop = frame[Int32(-1)]
-        for stop in frame[1:length(frame)]
-            distance_from_pstop = circulardistance(pstop, stop, length(seq))
-            if distance_from_pstop ≥ minorflength
-                #worth looking for start
-                start = starts.frames[f][Int32(searchsortedfirst(starts.frames[f].v, pstop))]
-                distance_from_start = circulardistance(start, stop, length(seq))
-                if distance_from_start ≥ minorflength && distance_from_start ≤ distance_from_pstop
-                    #println(pstop, '\t', start, '\t', stop, '\t', distance_from_start)
-                    push!(orfs, Feature("unassigned_orf_" * strandprefix * string(orf_counter) * "/1/CDS/1", start, distance_from_start + 3, 0))
-                    orf_counter += 1
-                end
-            end
-            pstop = stop
-        end
-    end
-    return orfs
-end
- =#
 function getallorfs(seq::CircularSequence, strand::Char, minorflength::Int32)
     stops = framedstops(seq)
     orfs = Feature[]
@@ -198,37 +171,14 @@ function countcodons(orf::Feature, seq::CircularSequence)::Vector{Float64}
     return codonfrequencies
 end
 
-#= function readGLMcodingclassifer()
-    glm_coding_coeffs = Dict{String, Float64}()
-    open(joinpath(@__DIR__, "GLMCodingClassifier.tsv")) do coding_coeffs
-        readline(coding_coeffs) # skip header
-        for line in readlines(coding_coeffs)
-            fields = split(line, "\t")
-            glm_coding_coeffs[fields[1]] = parse(Float64,fields[2])
-        end
-    end
-    return glm_coding_coeffs
-end
-
-const GLM_Coding_Coeffs = readGLMcodingclassifer()
-
-function glm_coding_classifier(codonfrequencies::Vector{Float64})::Float32
+xgb_coding_model = Booster(model_file = joinpath(@__DIR__,"xgb.coding.model"))
+function xgb_coding_classifier(codonfrequencies::Vector{Float64})::Float32
     #explicit test for stop codons
     codonfrequencies[49] > 0 && return Float32(0.0) #TAA
     codonfrequencies[51] > 0 && return Float32(0.0) #TAG
     codonfrequencies[57] > 0 && return Float32(0.0) #TGA
-    #test with GLM
-    pred = 0.0
-    for (i,v) in enumerate(codonfrequencies)
-        if i < 65
-            key = codon_strings[i]
-        else
-            key = "orf_length"
-        end
-        coef = get(GLM_Coding_Coeffs, key, 0.0)
-        pred += coef * v
-    end
-    pred += get(GLM_Coding_Coeffs, "(Intercept)", 0.0)
-    odds = exp(pred)
+    #test with XGB (is there a better way to construct the input matrix?)
+    pred = XGBoost.predict(xgb_coding_model, reshape(codonfrequencies[vcat(collect(1:48),[50],collect(52:56),collect(58:end))], 1,:))
+    odds = exp(pred[1])
     return Float32(odds / (1.0 + odds))
-end =#
+end
