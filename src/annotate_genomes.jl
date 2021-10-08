@@ -422,7 +422,7 @@ end
 
 function sffname(fafile::String, directory::Union{String,Nothing}=nothing)::String
     d = if isnothing(directory) dirname(fafile) else directory end
-    f = basename(infile)
+    f = basename(fafile)
     base = split(f, '.')[1]
     
     joinpath(d, "$(base).sff")
