@@ -101,7 +101,7 @@ function score_feature(sff::SFF_Feature, maxtemplatelength::Float32, stack::Feat
     sff.gmatch = gmatch
     sff.feature_prob = feature_xgb(maxtemplatelength, stack.template, sff.relative_length, sff.stackdepth, gmatch)
     if sff.feature.type == "CDS"
-        sff.coding_prob = 0.5 #update to XGBoost classifier score!
+        sff.coding_prob = 0.5 # update to XGBoost classifier score!
     end
 end
 
@@ -189,8 +189,8 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
             # count codons
             codonfrequencies = countcodons(uorf, target_seq)
             # predict with GLMCodingClassifier
-            #coding_prob = glm_coding_classifier(codonfrequencies)
-            #push!(target_strand_models, [SFF_Feature(uorf, 0.0, 0.0, gmatch, coding_prob / 2, coding_prob)])
+            # coding_prob = glm_coding_classifier(codonfrequencies)
+            # push!(target_strand_models, [SFF_Feature(uorf, 0.0, 0.0, gmatch, coding_prob / 2, coding_prob)])
         end
     end
 
@@ -287,7 +287,7 @@ function annotate_one(db::ReferenceDb,
     
     @info "[$target_id] seq length: $(target_length)bp"
 
-    #mask low entropy regions before finding closest references
+    # mask low entropy regions before finding closest references
     emask = entropy_mask(CircularSequence(target.forward.sequence), Int32(KMERSIZE))
     nmaskedtarget = copy(target.forward.sequence)
     for (i, bit) in enumerate(emask)
