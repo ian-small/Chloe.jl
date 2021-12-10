@@ -5,7 +5,7 @@ using Statistics
 const KMERSIZE = 10
 const SKETCHSIZE = 400
 
-function minhash_references(; fasta_files=Vector{String}, output=output)
+function minhash_references(; fasta_files=Vector{String}, output="reference_minhashes.hash")
     seqs = Vector{FASTA.Record}()
     for file in fasta_files
         println(file)
