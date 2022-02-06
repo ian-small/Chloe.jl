@@ -422,7 +422,7 @@ if isFeatureName(cds, "rps19")
     end
 end
 
-    function findStartCodon!(cds::Feature, genome_length::Int32, target_seq::CircularSequence)
+function findStartCodon!(cds::Feature, genome_length::Int32, target_seq::CircularSequence)
     # assumes phase has been correctly set
     # search for start codon 5'-3' beginning at cds.start, save result; abort if stop encountered
     start3::Int32 = cds.start + cds.phase
@@ -651,7 +651,7 @@ function refine_gene_models!(gene_models::Vector{Vector{SFF_Feature}}, target_se
     end
 end
 
-    mutable struct SFF_Model
+mutable struct SFF_Model
     gene::String
     gene_prob::Float32 # mean of probs of comonent features
     strand::Char
@@ -661,7 +661,7 @@ end
     warnings::Vector{String}
 end
 
-function get_gene_boundaries(model::SFF_Model, glength::Int32)::UnitRange{Int32}
+function get_model_boundaries(model::SFF_Model, glength::Int32)::UnitRange{Int32}
     genestart = first(model.features).feature.start
     geneend = last(model.features).feature.start + last(model.features).feature.length - 1
     length::Int32 = geneend > genestart ? geneend - genestart + 1 : glength + geneend - genestart + 1
@@ -680,7 +680,7 @@ gene_length(model::Vector{Feature}) = begin
     maximum([f.start + f.length for f in model]) - minimum([f.start for f in model])
 end
 
-gene_length(model::Vector{SFF_Model}) = begin
+gene_length(model::SFF_Model) = begin
     maximum([m.feature.start + m.feature.length for m in model]) - minimum([m.feature.start for m in model])
 end
 
@@ -811,7 +811,7 @@ function allowed_model_overlap(m1, m2)::Bool
         return false
 end
 
-function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model}, glength::Int32)
+function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model}, glength::Int32, ir1::SFF_Model, ir2::SFF_Model)
 
     # hard floor on stackdepth
     for model in fwd_models
@@ -831,8 +831,8 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
         for (i, model1) in enumerate(models)
             for j in i + 1:length(models)
                 model2 = models[j]
-                bmodel1 = get_gene_boundaries(model1, glength)
-                bmodel2 = get_gene_boundaries(model2, glength)
+                bmodel1 = get_model_boundaries(model1, glength)
+                bmodel2 = get_model_boundaries(model2, glength)
                 if model1.gene == model2.gene
                     warning = BLACK_SHEEP
                 elseif length(overlaps(bmodel1, bmodel2, glength)) > 0 && !allowed_model_overlap(model1, model2)
@@ -855,18 +855,28 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
     warningcheck!(fwd_models)
     warningcheck!(rev_models)
 
+    #deal with duplicated modes on opposite strands, e.g. in the IR
     for model1 in fwd_models, model2 in rev_models
         if model1.gene == model2.gene
-            if model1.gene_prob > 1.05 * model2.gene_prob ##small tolerance for unequal probs to avoid deleting real duplicates in IRs
-                push!(model2.warnings, BLACK_SHEEP)
-            elseif model2.gene_prob > 1.05 * model1.gene_prob
-                push!(model1.warnings, BLACK_SHEEP)
+            #if both models are within the IRs, both can be kept, if not, one is flagged
+            ir1_boundaries = get_model_boundaries(ir1, glength)
+            ir2_boundaries = get_model_boundaries(ir2, glength)
+            model1_boundaries = get_model_boundaries(model1, glength)
+            model1_maxIRintersect = model1.strand == '+' ? length(intersect(model1_boundaries, ir1_boundaries)) : length(intersect(model1_boundaries, ir2_boundaries))
+            model2_boundaries = get_model_boundaries(model2, glength)
+            model2_maxIRintersect = model2.strand == '+' ? length(intersect(model2_boundaries, ir1_boundaries)) : length(intersect(model2_boundaries, ir2_boundaries))
+            if length(model1_maxIRintersect) ≠ length(model1_boundaries) || length(model2_maxIRintersect) ≠ length(model2_boundaries)
+                if model1.gene_prob > model2.gene_prob
+                    push!(model2.warnings, BLACK_SHEEP)
+                elseif model2.gene_prob > model1.gene_prob
+                    push!(model1.warnings, BLACK_SHEEP)
+                end
             end
         end
     end
 end
 
-    MaybeIR = Union{AlignedBlock,Nothing}
+MaybeIR = Union{AlignedBlock,Nothing}
 
 function modelID!(model_ids::Dict{String,Int32}, model::SFF_Model)
     gene_name = model.gene
