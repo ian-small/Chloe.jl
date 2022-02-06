@@ -811,7 +811,7 @@ function allowed_model_overlap(m1, m2)::Bool
         return false
 end
 
-function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model}, glength::Int32, ir1::SFF_Model, ir2::SFF_Model)
+function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model}, glength::Int32, ir1::Union{Nothing, SFF_Model}, ir2::Union{Nothing, SFF_Model})
 
     # hard floor on stackdepth
     for model in fwd_models
@@ -858,19 +858,20 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
     #deal with duplicated modes on opposite strands, e.g. in the IR
     for model1 in fwd_models, model2 in rev_models
         if model1.gene == model2.gene
-            #if both models are within the IRs, both can be kept, if not, one is flagged
-            ir1_boundaries = get_model_boundaries(ir1, glength)
-            ir2_boundaries = get_model_boundaries(ir2, glength)
-            model1_boundaries = get_model_boundaries(model1, glength)
-            model1_maxIRintersect = model1.strand == '+' ? length(intersect(model1_boundaries, ir1_boundaries)) : length(intersect(model1_boundaries, ir2_boundaries))
-            model2_boundaries = get_model_boundaries(model2, glength)
-            model2_maxIRintersect = model2.strand == '+' ? length(intersect(model2_boundaries, ir1_boundaries)) : length(intersect(model2_boundaries, ir2_boundaries))
-            if length(model1_maxIRintersect) ≠ length(model1_boundaries) || length(model2_maxIRintersect) ≠ length(model2_boundaries)
-                if model1.gene_prob > model2.gene_prob
-                    push!(model2.warnings, BLACK_SHEEP)
-                elseif model2.gene_prob > model1.gene_prob
-                    push!(model1.warnings, BLACK_SHEEP)
-                end
+            if !isnothing(ir1) && !isnothing(ir2)
+                #if both models are within the IRs, both can be kept, if not, one is flagged
+                ir1_boundaries = get_model_boundaries(ir1, glength)
+                ir2_boundaries = get_model_boundaries(ir2, glength)
+                model1_boundaries = get_model_boundaries(model1, glength)
+                model1_maxIRintersect = model1.strand == '+' ? length(intersect(model1_boundaries, ir1_boundaries)) : length(intersect(model1_boundaries, ir2_boundaries))
+                model2_boundaries = get_model_boundaries(model2, glength)
+                model2_maxIRintersect = model2.strand == '+' ? length(intersect(model2_boundaries, ir1_boundaries)) : length(intersect(model2_boundaries, ir2_boundaries))
+                length(model1_maxIRintersect) == length(model1_boundaries) && length(model2_maxIRintersect) == length(model2_boundaries) && continue
+            end
+            if model1.gene_prob > model2.gene_prob
+                push!(model2.warnings, BLACK_SHEEP)
+            elseif model2.gene_prob > model1.gene_prob
+                push!(model1.warnings, BLACK_SHEEP)
             end
         end
     end
