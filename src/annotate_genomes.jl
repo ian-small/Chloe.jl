@@ -288,7 +288,7 @@ function annotate_one(db::ReferenceDb,
     
     @info "[$target_id] seq length: $(target_length)bp"
 
-    #mask low entropy regions before finding closest references
+    # mask low entropy regions before finding closest references
     emask = entropy_mask(CircularSequence(target.forward.sequence), Int32(KMERSIZE))
     nmaskedtarget = copy(target.forward.sequence)
     for (i, bit) in enumerate(emask)
@@ -428,7 +428,7 @@ end
 function sffname(fafile::String, directory::Union{String,Nothing}=nothing)::String
     d = if isnothing(directory) dirname(fafile) else directory end
     f = basename(fafile)
-    base = split(f, '.')[1]
+    base = rsplit(f, '.'; limit=2)[1]
     
     joinpath(d, "$(base).sff")
 end

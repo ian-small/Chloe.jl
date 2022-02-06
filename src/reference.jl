@@ -17,15 +17,15 @@ struct ChloeConfig
     nofilter::Bool
 end
 
-function ReferenceDb(;gsrefsdir="default", chloerefsdir="default", template="default")
+function ReferenceDb(; gsrefsdir = "default", chloerefsdir = "default", template = "default")
     if gsrefsdir == "default"
-        gsrefsdir = normpath(joinpath(REPO_DIR, "..", DEFAULT_GSREFS))
+        gsrefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_GSREFS))
     end
     if chloerefsdir == "default"
-        chloerefsdir = normpath(joinpath(REPO_DIR, "..", DEFAULT_CHLOEREFS))
+        chloerefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_CHLOEREFS))
     end
     if template == "default"
-        template = normpath(joinpath(REPO_DIR, "..", DEFAULT_TEMPLATE))
+        template = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_TEMPLATE))
     end
     return ReferenceDb(ReentrantLock(), gsrefsdir, chloerefsdir, template, nothing, nothing, nothing)
 end
@@ -86,13 +86,13 @@ end
 
 const KWARGS = ["numgsrefs", "numchloerefs", "sensitivity", "to_gff3", "nofilter"]
 
-function ChloeConfig(;numgsrefs=DEFAULT_NUMGSREFS, numchloerefs=DEFAULT_NUMCHLOEREFS, sensitivity=DEFAULT_SENSITIVITY,
-    to_gff3::Bool=false, nofilter::Bool=false)
+function ChloeConfig(; numgsrefs = DEFAULT_NUMGSREFS, numchloerefs = DEFAULT_NUMCHLOEREFS, sensitivity = DEFAULT_SENSITIVITY,
+    to_gff3::Bool = false, nofilter::Bool = false)
     return ChloeConfig(numgsrefs, numchloerefs, sensitivity, to_gff3, nofilter)
 end
 
 # needs to be V <: Any since this is comming from a JSON blob
-function ChloeConfig(dict::Dict{String,V} where V <: Any)
+function ChloeConfig(dict::Dict{String,V} where {V<:Any})
     function cvt(name, v)
         if name == "references"
             # if we actually have references then v
@@ -102,7 +102,7 @@ function ChloeConfig(dict::Dict{String,V} where V <: Any)
         # integers and float are ok
         v
     end
-    return ChloeConfig(;Dict(Symbol(k) => cvt(k, v) for (k, v) in dict if k in KWARGS)...)
+    return ChloeConfig(; Dict(Symbol(k) => cvt(k, v) for (k, v) in dict if k in KWARGS)...)
 end
 function Base.show(io::IO, c::ChloeConfig)
     print(io, "ChloeConfig[numrefs=$(c.numrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), references=$(c.references)]")
@@ -124,7 +124,9 @@ function verify_refs(gsrefsdir, chloerefsdir, template)
 end
 
 function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
-    if !isdir(refdir); refdir = dirname(refdir); end
+    if !isdir(refdir)
+        refdir = dirname(refdir)
+    end
     path = findfastafile(refdir, refID)
     if isnothing(path)
         msg = "unable to find $(refID) fasta file in $(refdir)!"
