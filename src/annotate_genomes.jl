@@ -366,18 +366,23 @@ function annotate_one(db::ReferenceDb,
 
     sffs_fwd, sffs_rev, ir = fetch.((Threads.@spawn w()) for w in [watson, crick, () -> inverted_repeat(target.forward, target.reverse)]) 
 
-    filter_gene_models!(sffs_fwd, sffs_rev, target_length)
+    ir1 = ir2 = nothing
+    if ir.blocklength >= 1000
+        @info "[$target_id] inverted repeat $(ir.blocklength)"
+        ir1 = SFF_Model("IR-1", 0.0, '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], [])
+        ir2 = SFF_Model("IR-2", 0.0, '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], [])
+    end
+
+    filter_gene_models!(sffs_fwd, sffs_rev, target_length, ir1, ir2)
+
     if !config.nofilter
         filter!(m -> length(m.warnings) == 0, sffs_fwd)
         filter!(m -> length(m.warnings) == 0, sffs_rev)
     end
-   
-    if ir.blocklength >= 1000
-        @info "[$target_id] inverted repeat $(ir.blocklength)"
-        push!(sffs_fwd, SFF_Model("IR-1", 0.0, '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], []))
-        push!(sffs_rev, SFF_Model("IR-2", 0.0, '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, 0), 0.0, 0.0, 0.0, 0.0, 0.0)], []))
-    else
-        ir = nothing
+
+    if !isnothing(ir1)
+        push!(sffs_fwd, ir1)
+        push!(sffs_rev, ir2)
     end
     
     writeSFF(fname, target_id, target_length, geomean(values(coverages)), FwdRev(sffs_fwd, sffs_rev))
