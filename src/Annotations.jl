@@ -85,7 +85,7 @@ mutable struct SFF_Feature
     coding_prob::Float32
 end
 
-function read_features!(file::String, reference_feature_counts::Dict{String,Int})::FwdRev{FeatureArray}
+function read_sff_features!(file::String, reference_feature_counts::Dict{String,Int})::FwdRev{FeatureArray}
     open(file) do f
         header = split(readline(f), '\t')
         genome_id = header[1]
@@ -655,7 +655,7 @@ end
 
 mutable struct SFF_Model
     gene::String
-    gene_prob::Float32 # mean of probs of comonent features
+    gene_prob::Float32 # mean of probs of component features
     strand::Char
     gene_count::Int8
     exon_count::Int8
@@ -694,7 +694,7 @@ const LOW_ANNOTATION_DEPTH = "has low annotation depth, probably spurious"
 const BLACK_SHEEP = "probably pseudogene as better copy exists in the genome"
 const OVERLAPPING_FEATURE = "better-scoring feature overlaps with this one"
 
-function toSFF(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Real)::Union{Nothing,SFF_Model}
+function toSFFModel(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Real)::Union{Nothing,SFF_Model}
     gene = first(model).feature.gene
     type = featuretype(model)
     type == "" && return nothing
@@ -925,13 +925,13 @@ function writeSFF(outfile::Union{String,IO},
         for model in models.forward
             isnothing(model) && continue
             isempty(model.features) && continue
-            modelID!(model_ids, model)
+            modelID!(model_ids, model) # updates model.gene_count
             write_model2SFF(outfile, model)
         end
         for model in models.reverse
             isnothing(model) && continue
             isempty(model.features) && continue
-            modelID!(model_ids, model)
+            modelID!(model_ids, model)# updates model.gene_count
             write_model2SFF(outfile, model)
         end
     end
@@ -969,12 +969,12 @@ function writeGFF3(outfile::Union{String,IO},
         for model in models.forward
             isnothing(model) && continue
             isempty(model.features) && continue
-            modelID!(model_ids, model)
+            modelID!(model_ids, model) # changes model.genome_count
         end
         for model in models.reverse
             isnothing(model) && continue
             isempty(model.features) && continue
-            modelID!(model_ids, model)
+            modelID!(model_ids, model) # changes model.genome_count
         end
         allmodels = sort(vcat(models.forward, models.reverse), by = m -> sff2gffcoords(first(m.features).feature, m.strand, genome_length)[1])
         for model in allmodels
