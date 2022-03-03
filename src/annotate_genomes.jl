@@ -389,7 +389,7 @@ function annotate_one(db::ReferenceDb,
 
     writeSFF(fname, target_id, target_length, geomean(values(coverages)), FwdRev(sffs_fwd, sffs_rev))
     if config.to_gff3 && fname isa String
-        writeGFF3("$(splitext(fname)[0]).gff3", target_id, target_length, FwdRev(sffs_fwd, sffs_rev))
+        writeGFF3("$(splitext(fname)[1]).gff3", target_id, target_length, FwdRev(sffs_fwd, sffs_rev))
     end
 
     @info success("[$target_id] Overall: $(elapsed(t1))")
