@@ -231,48 +231,21 @@ function inverted_repeat(target::CircularSequence, revtarget::CircularSequence):
     return ir
 end
 
-"""
-    annotate_one(refsdir::String, target_id::String, seq::String, [,output_sff_file])
-
-Annotate a single sequence containting a *single* circular
-DNA entry
-
-writes an .sff file to `output_sff_file` or uses the sequence id in the
-fasta file to write `{seq_id}.sff` in the current directory.
-
-If `output_sff_file` is a *directory* write `{seq_id}.sff` into that
-directory.
-
-returns a 2-tuple: (ultimate sff output filename, sequence id)
-
-If `output_sff_file` is an IOBuffer then that buffer will be returned
-with the annotation within it.
-"""
-function annotate_one(db::ReferenceDb,
+struct ChloeAnnotation
+    target_id::String
+    target_length::Int32
+    coverages::Dict{String,Float32}
+    annotation::FwdRev{Vector{SFF_Model}}
+end
+function annotate_one_worker(db::ReferenceDb,
     target_id::String,
     target::FwdRev{CircularSequence},
     config::ChloeConfig,
-    output::MayBeIO = nothing
-)::Tuple{Union{String,IO},String}
+)::ChloeAnnotation
 
     t1 = time_ns()
-
-    fname = if output !== nothing
-        if output isa String
-            if isdir(output)
-                joinpath(output, "$(target_id).sff")
-            else
-                output # filename
-            end
-        else
-            output # IOBuffer
-        end
-    else
-        "$(target_id).sff"
-    end
-
     # sanity checks
-    target_length = length(target.forward)
+    target_length = Int32(length(target.forward))
     n = count(isambiguous, target.forward.sequence)
     r = n / target_length
     if r > 0.01
@@ -386,16 +359,65 @@ function annotate_one(db::ReferenceDb,
         push!(sffs_fwd, ir1)
         push!(sffs_rev, ir2)
     end
-
-    writeSFF(fname, target_id, target_length, geomean(values(coverages)), FwdRev(sffs_fwd, sffs_rev))
-    if config.to_gff3 && fname isa String
-        writeGFF3("$(splitext(fname)[1]).gff3", target_id, target_length, FwdRev(sffs_fwd, sffs_rev))
-    end
-
     @info success("[$target_id] Overall: $(elapsed(t1))")
-    return fname, target_id
+    return ChloeAnnotation(target_id, target_length, coverages, FwdRev(sffs_fwd, sffs_rev))
 
 end
+
+function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO = nothing)::Tuple{Union{String,IO},String}
+    ext = asgff3 ? "gff3" : "sff"
+    fname = if output !== nothing
+        if output isa String
+            if isdir(output)
+                joinpath(output, "$(result.target_id).$(ext)")
+            else
+                output # filename
+            end
+        else
+            output # IOBuffer
+        end
+    else
+        "$(result.target_id).$(ext)"
+    end
+    if !asgff3
+        writeSFF(fname, result.target_id, result.target_length, geomean(values(result.coverages)), result.annotation)
+    else
+        writeGFF3(fname, result.target_id, result.target_length, result.annotation)
+    end
+
+    return fname, result.target_id
+end
+
+"""
+    annotate_one(refsdir::String, target_id::String, seq::String, [,output_sff_file])
+
+Annotate a single sequence containting a *single* circular
+DNA entry
+
+writes an .sff file to `output_sff_file` or uses the sequence id in the
+fasta file to write `{seq_id}.sff` in the current directory.
+
+If `output_sff_file` is a *directory* write `{seq_id}.sff` into that
+directory.
+
+returns a 2-tuple: (ultimate sff output filename, sequence id)
+
+If `output_sff_file` is an IOBuffer then that buffer will be returned
+with the annotation within it.
+"""
+function annotate_one(db::ReferenceDb,
+    target_id::String,
+    target::FwdRev{CircularSequence},
+    config::ChloeConfig,
+    output::MayBeIO = nothing
+)::Tuple{Union{String,IO},String}
+
+    result = annotate_one_worker(db, target_id, target, config)
+    write_result(result, config.to_gff3, output)
+
+end
+
+
 
 function annotate_one(db::ReferenceDb, infile::String, config::ChloeConfig, output::MayBeIO = nothing)
     maybe_gzread(infile) do io
@@ -403,7 +425,7 @@ function annotate_one(db::ReferenceDb, infile::String, config::ChloeConfig, outp
     end
 end
 
-function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO = nothing)
+function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     reader = FASTA.Reader(infile)
     records = [record for record in reader]
     if isempty(records)
@@ -424,7 +446,12 @@ function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::
     if isnothing(target_id)
         target_id = "unknown"
     end
-    annotate_one(db, target_id, FwdRev(fseq, rseq), config, output)
+    return target_id, FwdRev(fseq, rseq)
+end
+
+function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO = nothing)
+    target_id, seqs = fasta_reader(infile)
+    annotate_one(db, target_id, seqs, config, output)
 end
 
 function sffname(fafile::String, directory::Union{String,Nothing} = nothing)::String
