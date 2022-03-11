@@ -751,11 +751,8 @@ function write_model2SFF(outfile::IO, model::SFF_Model)
     model_id = model.gene * "/" * string(model.gene_count)
     for sff in model.features
         f = sff.feature
-        write(outfile, model_id)
-        write(outfile, "/")
-        write(outfile, f.type)
-        write(outfile, "/")
-        write(outfile, string(f.order))
+        id = "$(model.gene)/$(model.gene_count)/$(f.type)/$(f.order)"
+        write(outfile, id)
         write(outfile, "\t")
         write(outfile, join([model.strand, string(f.start), string(f.length), string(f.phase)], "\t"))
         write(outfile, "\t")
@@ -913,6 +910,27 @@ function modelID!(model_ids::Dict{String,Int32}, model::SFF_Model)
     model.gene_count = instance_count
 end
 
+function update_genecount!(models::FwdRev{Vector{SFF_Model}})::FwdRev{Vector{SFF_Model}}
+    model_ids = Dict{String,Int32}()
+    fwd = SFF_Model[]
+    rev = SFF_Model[]
+    for model in models.forward
+        isnothing(model) && continue
+        isempty(model.features) && continue
+        modelID!(model_ids, model) # updates model.gene_count
+        push!(fwd, model)
+
+    end
+    for model in models.reverse
+        isnothing(model) && continue
+        isempty(model.features) && continue
+        modelID!(model_ids, model)# updates model.gene_count
+        push!(rev, model)
+
+    end
+    return FwdRev(fwd,rev)
+end
+
 function writeSFF(outfile::Union{String,IO},
     id::String, # NCBI id
     genome_length::Int32,
@@ -920,18 +938,11 @@ function writeSFF(outfile::Union{String,IO},
     models::FwdRev{Vector{SFF_Model}})
 
     function out(outfile::IO)
-        model_ids = Dict{String,Int32}()
         write(outfile, id, "\t", string(genome_length), "\t", @sprintf("%.3f", mean_coverage), "\n")
         for model in models.forward
-            isnothing(model) && continue
-            isempty(model.features) && continue
-            modelID!(model_ids, model) # updates model.gene_count
             write_model2SFF(outfile, model)
         end
         for model in models.reverse
-            isnothing(model) && continue
-            isempty(model.features) && continue
-            modelID!(model_ids, model)# updates model.gene_count
             write_model2SFF(outfile, model)
         end
     end
@@ -964,18 +975,7 @@ function writeGFF3(outfile::Union{String,IO},
     models::FwdRev{Vector{SFF_Model}})
 
     function out(outfile::IO)
-        model_ids = Dict{String,Int32}()
         write(outfile, "##gff-version 3.2.1\n")
-        for model in models.forward
-            isnothing(model) && continue
-            isempty(model.features) && continue
-            modelID!(model_ids, model) # changes model.genome_count
-        end
-        for model in models.reverse
-            isnothing(model) && continue
-            isempty(model.features) && continue
-            modelID!(model_ids, model) # changes model.genome_count
-        end
         allmodels = sort(vcat(models.forward, models.reverse), by = m -> sff2gffcoords(first(m.features).feature, m.strand, genome_length)[1])
         for model in allmodels
             write_model2GFF3(outfile, model, genome_id, genome_length)
@@ -1030,18 +1030,17 @@ function write_model2GFF3(outfile, model::SFF_Model, genome_id::String, genome_l
 
     merge_adjacent_features!(model)
 
-    features = model.features
     id = model.gene
     if model.gene_count > 1
         id = id * "-" * string(model.gene_count)
     end
 
-    start = minimum(f.feature.start for f in features)
+    start = minimum(f.feature.start for f in model.features)
     ft = featuretype(model.features)
     if ft == "CDS" && !startswith(id, "rps12A")
-        last(features).feature.length += 3 # add stop codon
+        last(model.features).feature.length += 3 # add stop codon
     end
-    finish = maximum(f.feature.start + f.feature.length - 1 for f in features)
+    finish = maximum(f.feature.start + f.feature.length - 1 for f in model.features)
     length = finish - start + 1
 
     if model.strand == '-'

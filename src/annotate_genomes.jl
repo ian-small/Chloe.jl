@@ -365,6 +365,7 @@ function annotate_one_worker(db::ReferenceDb,
 end
 
 function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO = nothing)::Tuple{Union{String,IO},String}
+    models = update_genecount!(result.annotation)
     ext = asgff3 ? "gff3" : "sff"
     fname = if output !== nothing
         if output isa String
@@ -380,9 +381,9 @@ function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO = n
         "$(result.target_id).$(ext)"
     end
     if !asgff3
-        writeSFF(fname, result.target_id, result.target_length, geomean(values(result.coverages)), result.annotation)
+        writeSFF(fname, result.target_id, result.target_length, geomean(values(result.coverages)), models)
     else
-        writeGFF3(fname, result.target_id, result.target_length, result.annotation)
+        writeGFF3(fname, result.target_id, result.target_length, models)
     end
 
     return fname, result.target_id
