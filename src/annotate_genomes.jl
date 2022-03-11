@@ -454,7 +454,8 @@ function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::
     annotate_one(db, target_id, seqs, config, output)
 end
 
-function sffname(fafile::String, directory::Union{String,Nothing} = nothing)::String
+function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing} = nothing)::String
+    ext = asgff3 ? "gff3" : "sff"
     d = if isnothing(directory)
         dirname(fafile)
     else
@@ -463,7 +464,7 @@ function sffname(fafile::String, directory::Union{String,Nothing} = nothing)::St
     f = basename(fafile)
     base = rsplit(f, '.'; limit = 2)[1]
 
-    joinpath(d, "$(base).sff")
+    joinpath(d, "$(base).$(ext)")
 end
 
 #= function annotate_one(refsdir::String, infile::String, output::MayBeIO=nothing)
@@ -477,7 +478,7 @@ function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig
     for infile in fa_files
         maybe_gzread(infile) do io
             annotate_one(db, io, config, if n > 1
-                sffname(infile, output)
+                sffname(infile, config.to_gff3, output)
             else
                 output
             end)
