@@ -6,7 +6,7 @@ struct FramedMatches
     frames::Vector{CircularVector}
 end
 
-function codonmatches(seq::LongDNASeq, pattern)
+function codonmatches(seq::BioSequences.NucleicSeqOrView, pattern)
     frames = Vector{CircularVector}(undef,3)
     for f in 1:3
         frames[f] = CircularVector(Vector{Int32}())
@@ -19,8 +19,8 @@ function codonmatches(seq::LongDNASeq, pattern)
 end
 
 function framedstops(seq::CircularSequence)
-    matchmap = codonmatches(seq.sequence, stopcodon)
-    penultimate::Int32 = length(seq.sequence) - one(Int32)
+    matchmap = codonmatches(seq[1:seq.length], stopcodon)
+    penultimate::Int32 = seq.length - one(Int32)
     penultimate_codon = getcodon(seq, penultimate)
     ultimate::Int32 = penultimate + one(Int32)
     ultimate_codon = getcodon(seq, ultimate)
@@ -34,8 +34,8 @@ function framedstops(seq::CircularSequence)
 end
 
 function framedstarts(seq::CircularSequence)
-    matchmap = codonmatches(seq.sequence, startcodon)
-    penultimate::Int32 = length(seq.sequence) - one(Int32)
+    matchmap = codonmatches(seq[1:seq.length], startcodon)
+    penultimate::Int32 = seq.length - one(Int32)
     penultimate_codon = getcodon(seq, penultimate)
     ultimate::Int32 = penultimate + one(Int32)
     ultimate_codon = getcodon(seq, ultimate)

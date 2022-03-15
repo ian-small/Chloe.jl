@@ -1,6 +1,7 @@
 import CodecZlib: GzipDecompressorStream, GzipCompressorStream
 import Base
 using IntervalTrees
+using BioSequences
 import Printf: @sprintf
 
 const REENTRANT_LOCK = ReentrantLock()
@@ -17,100 +18,10 @@ datasize(f::FwdRev{T}) where T = sizeof(FwdRev{T}) + datasize(f.forward) + datas
 datasize(v::Vector{T}) where T = length(v) == 0 ? 0 : sum(datasize(a) for a in v)
 datasize(t::Dict{K,V}) where {K,V} = length(t) == 0 ? 0 : sum(datasize(e.first) + datasize(e.second) for e in t)
 
-struct CircularVector
-    v::Vector{Int32}
-end
-
-@inline Base.length(cv::CircularVector) = Int32(length(cv.v))
-@inline Base.getindex(cv::CircularVector, i::Int32) = @inbounds getindex(cv.v, mod1(i, length(cv)))
-function Base.getindex(cv::CircularVector, r::UnitRange{<:Integer})
-    len = length(cv)
-	start = mod1(r.start, len)
-    stop = mod1(r.stop, len)
-	if start < stop
-		return cv.v[start:stop]
-    else
-        return vcat(cv.v[start:end],cv.v[1:stop])
-    end
-end
-@inline Base.setindex!(cv::CircularVector, value::Int32, i::Int32) = @inbounds setindex!(cv.v, value, mod1(i, length(cv)))
-@inline Base.push!(cv::CircularVector, value::Int32) = @inbounds push!(cv.v, value)
-@inline Base.sum(cv::CircularVector) = sum(cv.v)
-function Base.sum(cv::CircularVector, r::UnitRange{<:Integer})
-    sum = 0
-    for i in r
-        sum += cv[i]
-    end
-    return sum
-end
-
-struct CircularMask
-    m::BitVector
-end
-
-@inline Base.length(cm::CircularMask) = Int32(length(cm.m))
-@inline Base.getindex(cm::CircularMask, i::Int32) = @inbounds getindex(cm.m, mod1(i, length(cm)))
-function Base.getindex(cm::CircularMask, r::UnitRange{<:Integer})
-    len = length(cm)
-	start = mod1(r.start, len)
-    stop = mod1(r.stop, len)
-	if start < stop
-		return cm.m[start:stop]
-    else
-        return vcat(cm.m[start:end],cm.m[1:stop])
-    end
-end
-@inline Base.setindex!(cm::CircularMask, value::Bool, i::Int32) = @inbounds setindex!(cm.m, value, mod1(i, length(cm)))
-function Base.setindex!(cm::CircularMask, value::Bool, r::UnitRange{<:Integer})
-    for i in r
-        setindex!(cm.m, value, mod1(i, length(cm)))
-    end
-end
-function Base.sum(cm::CircularMask, r::UnitRange{<:Integer})
-    len = length(cm)
-	start = mod1(r.start, len)
-    stop = mod1(r.stop, len)
-	if start < stop
-		return sum(cm.m[start:stop])
-    else
-        return sum(cm.m[start:end]) + sum(cm.m[1:stop])
-    end
-end
-Base.iterate(cm::CircularMask) = iterate(cm.m)
-Base.iterate(cm::CircularMask, state) = iterate(cm.m, state)
-
-using BioSequences
-
-struct CircularSequence
-    sequence::LongDNASeq
-end
-
-@inline Base.length(cs::CircularSequence) = Int32(length(cs.sequence))
-@inline Base.getindex(cs::CircularSequence, i::Int32) = @inbounds getindex(cs.sequence, mod1(i, length(cs)))
-
-function Base.getindex(cs::CircularSequence, r::UnitRange{<:Integer})
-    len = length(cs.sequence)
-	start = mod1(r.start, len)
-    stop = mod1(r.stop, len)
-	if start < stop
-		return cs.sequence[start:stop]
-    else
-        return append!(cs.sequence[start:end],cs.sequence[1:stop])
-    end
-end
-
-function reverse_complement(cs::CircularSequence)
-    return CircularSequence(BioSequences.reverse_complement(cs.sequence))
-end
-
-@inline function getcodon(seq::LongDNASeq, index::Int32)
+@inline function getcodon(seq::LongDNA, index::Int32)
     index ≤ 0 && return nothing
     index + 2 > length(seq) && return nothing
     return (seq[index], seq[index + 1], seq[index + 2])
-end
-
-@inline function getcodon(cs::CircularSequence, index::Int32)
-    return (cs[index], cs[index + Int32(1)], cs[index + Int32(2)])
 end
 
 function gbff2fasta(infile::String)
@@ -291,16 +202,4 @@ function findfastafile(dir::String, base::AbstractString)::Union{String,Nothing}
     end
     return nothing
 end
-
-using GenomicAnnotations
-function genbank2fasta(files::String)
-    for file in filter(x->endswith(x, ".gb"), readdir(files, join = true))
-        chr = readgbk(file)[1]
-        outfilename = replace(split(basename(file),".")[1]," "=>"_")
-        open(FASTA.Writer, outfilename*".fasta") do w
-            write(w, FASTA.Record(chr.name, chr.sequence))
-        end
-    end
-end
-
 

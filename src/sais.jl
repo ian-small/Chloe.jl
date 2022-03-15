@@ -23,25 +23,31 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  * OTHER DEALINGS IN THE SOFTWARE.
  =#
-using BioSequences
- 
+
 struct Alignment <: AbstractVector{UInt8}
-    seq1::LongDNASeq
-    seq2::LongDNASeq
+    seq1::LongDNA{2} # sequence * sequence[1:end -1]
+    lenseq1::Int32 # length of original sequence, not length of seq1 
+    seq2::LongDNA{2} # sequence * sequence[1:end -1]
+    lenseq2::Int32 # length of original sequence, not length of seq2 
 end
 
-Base.size(a::Alignment) = (2 * length(a.seq1) + 2 * length(a.seq2) - 1,)
+function Alignment(seq1::CircularSequence, seq2::CircularSequence)
+    return Alignment(seq1.sequence, seq1.length, seq2.sequence, seq2.length)
+end
 
-@inline fulcrum(a::Alignment) = 2 * length(a.seq1) 
+Base.size(a::Alignment) = (length(a.seq1) + 1 + length(a.seq2), )
+
+@inline fulcrum(a::Alignment) = length(a.seq1) + 1
 
 @inline function Base.getindex(a::Alignment, i::Integer)
     f = fulcrum(a)
-    if i < f; return reinterpret(UInt8,a.seq1[mod1(i, length(a.seq1))]); end
-    if i > f; return reinterpret(UInt8,a.seq2[mod1(i - f, length(a.seq2))]); end
+    if i < f; return reinterpret(UInt8,a.seq1[i]); end
+    if i > f; return reinterpret(UInt8,a.seq2[i - f]); end
     return reinterpret(UInt8,DNA_Gap)
 end
 
 Base.setindex!(a::Alignment, v, i::Integer) = value #don't do anything
+
 
 struct IntVector <: AbstractVector{Integer}
     vec::Array{Int,1}
