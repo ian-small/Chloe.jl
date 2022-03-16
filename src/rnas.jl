@@ -2,7 +2,7 @@ const RNApairs = Dict((DNA_A, DNA_A) => 0, (DNA_A, DNA_C) => 0, (DNA_A, DNA_G) =
     (DNA_G, DNA_A) => 0, (DNA_G, DNA_C) => 1, (DNA_G, DNA_G) => 0, (DNA_G, DNA_T) => 1, (DNA_T, DNA_A) => 1, (DNA_T, DNA_C) => 0, (DNA_T, DNA_G) => 1, (DNA_T, DNA_T) => 0)
 
 
-function complementaryRNAscore(seq1::LongDNASeq, seq2::LongDNASeq)
+function complementaryRNAscore(seq1::BioSequences.NucleicSeqOrView, seq2::BioSequences.NucleicSeqOrView)
     @assert length(seq1) == length(seq2)
     score = 0
     for n in 1:length(seq1)
@@ -11,7 +11,7 @@ function complementaryRNAscore(seq1::LongDNASeq, seq2::LongDNASeq)
     return score
 end
 
-function longest_complementary_match(seq1::LongDNASeq, seq2::LongDNASeq)
+function longest_complementary_match(seq1::BioSequences.NucleicSeqOrView, seq2::BioSequences.NucleicSeqOrView)
     rseq2 = reverse(seq2)
     len = length(rseq2)
     L = zeros(Int8, len, len)
@@ -105,7 +105,7 @@ function tRNAends!(seq::CircularSequence, model::Vector{SFF_Feature})
     #println(first(model).feature.gene, "\t", t, "\t", a)
 end
 
-function Tstemscore(seq::LongDNASeq)
+function Tstemscore(seq::BioSequences.NucleicSeqOrView)
     #relies on all chloroplast tRNAs having a canonical T-stem structure
     #scores 25 nt at 3' end of tRNA for match to TφC loop and T stem
     @assert length(seq) == 25

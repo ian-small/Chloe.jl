@@ -8,6 +8,7 @@ export read_single_reference!, inverted_repeat, ChloeConfig
 import Base
 
 include("Utilities.jl")
+include("circularity.jl")
 include("rotate_genome.jl")
 include("hash.jl")
 include("AlignGenomes.jl")
@@ -42,7 +43,7 @@ end
 function Base.show(io::IO, r::SingleReference)
     total = datasize(r)
     bp = length(r.ref_seq)
-    print(io, "SingleReference[$(r.refsrc)]: $(human(bp))bp, total=$(human(total))")
+    print(io, "SingleReference[$(r.ref_id)]: $(human(bp))bp, total=$(human(total))")
 end
 
 function Base.show(io::IO, r::FwdRev{FwdRev{AlignedBlocks}})
@@ -53,8 +54,6 @@ function Base.show(io::IO, r::FwdRev{FwdRev{AlignedBlocks}})
     rr = length(r.reverse.reverse)
     print(io, "Chloë Alignment: [($ff,$fr),($rf,$rr)] total=$(human(total))")
 end
-
-
 
 MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,DFeatureStack}
@@ -93,29 +92,29 @@ function do_annotations(target_id::String, strand::Char, refs::Vector{SingleRefe
     annotations
 end
 
-function score_feature(sff::SFF_Feature, maxtemplatelength::Float32, stack::FeatureStack, reference_feature_counts::Dict{String,Int}, gmatch::Float32, seq::CircularSequence)
+function score_feature(sff::SFF_Feature, stack::FeatureStack, reference_feature_counts::Dict{String,Int}, gmatch::Float32, seq::CircularSequence)
     ref_count = reference_feature_counts[annotation_path(sff.feature)]
     slice = stack.stack[range(sff.feature.start, length = sff.feature.length)]
     sff.stackdepth = Float32((length(slice) > 0 ? sum(slice) : 0) / (ref_count * sff.feature.length))
     sff.relative_length = sff.feature.length / stack.template.median_length
     sff.gmatch = gmatch
-    sff.feature_prob = feature_xgb(maxtemplatelength, stack.template, sff.relative_length, sff.stackdepth, gmatch)
     if sff.feature.type == "CDS"
         codonfrequencies = countcodons(sff.feature, seq)
         sff.coding_prob = xgb_coding_classifier(codonfrequencies)
     end
+    sff.feature_prob = feature_xgb(sff.feature.type, stack.template, sff.feature.length, sff.stackdepth, gmatch, sff.coding_prob)
 end
 
 function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32}, reference_feature_counts::Dict{String,Int},
-    strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate}, maxtemplatelength::Float32)::Vector{Vector{SFF_Feature}}
+    strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate})::Vector{Vector{SFF_Feature}}
 
-    # println(strand, '\t', blocks_aligned_to_target)
+    #println(strand, '\t', blocks_aligned_to_target)
 
     t4 = time_ns()
     target_length = Int32(length(target_seq))
     annotations = do_annotations(target_id, strand, refs, blocks_aligned_to_target, target_length)
 
-    # println(strand, '\t', annotations)
+    #println(strand, '\t', annotations)
 
     # strand_feature_stacks is basically grouped by annotations.path
     strand_feature_stacks = fill_feature_stack(target_length, annotations, feature_templates)
@@ -139,7 +138,7 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
         path_to_stack[stack.path] = stack
     end
 
-    # println(strand, '\t', features)
+    #println(strand, '\t', features)
 
     gmatch = mean(values(coverages))
     sff_features = Vector{SFF_Feature}(undef, length(features))
@@ -147,10 +146,10 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
         refine_boundaries_by_offsets!(feature, annotations, target_length, coverages)
         sff_features[i] = SFF_Feature(feature, 0.0, 0.0, 0.0, 0.0, 0.0)
         stack = path_to_stack[annotation_path(feature)]
-        score_feature(sff_features[i], maxtemplatelength, stack, reference_feature_counts, gmatch, target_seq)
+        score_feature(sff_features[i], stack, reference_feature_counts, gmatch, target_seq)
     end
 
-    # println(strand, '\t', sff_features)
+    #println(strand, '\t', sff_features)
 
     # group by feature name on features ordered by mid-point
     target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features, by = x -> x.feature))
@@ -167,11 +166,12 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
         # update feature data
         f = sf.feature
         stack = path_to_stack[annotation_path(f)]
-        score_feature(sf, maxtemplatelength, stack, reference_feature_counts, gmatch, target_seq)
+        score_feature(sf, stack, reference_feature_counts, gmatch, target_seq)
     end
 
     # println(strand, '\t', target_strand_models)
 
+    #=
     # add any unassigned orfs
     for uorf in orfs
         uorf.length < MINIMUM_UNASSIGNED_ORF_LENGTH && continue
@@ -194,6 +194,7 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
             push!(target_strand_models, [SFF_Feature(uorf, 0.0, 0.0, gmatch, coding_prob / 2, coding_prob)])
         end
     end
+    =#
 
     @info "[$target_id]$strand built gene models: $(elapsed(t5))"
     return target_strand_models
@@ -203,16 +204,16 @@ end
 # Union{IO,String}: read fasta from IO buffer or a file (String)
 MayBeIO = Union{String,IO,Nothing}
 
-function align_to_reference(ref::SingleReference, tgt_id::String, tgt_seq::FwdRev{CircularSequence}, mask::Union{Nothing,FwdRev{CircularMask}} = nothing)::Tuple{FwdRev{FwdRev{BlockTree}},Float32}
+function align_to_reference(ref::SingleReference, tgt_id::String, tgt_seq::FwdRev{CircularSequence})::Tuple{FwdRev{FwdRev{BlockTree}},Float32}
     start = time_ns()
     ref_length = length(ref.ref_seq)
     tgt_length = length(tgt_seq.forward)
 
     # align2seqs returns linked list, convert to interval tree
-    fchain = align2seqs(ref.ref_seq, tgt_seq.forward, mask.forward)
+    fchain = align2seqs(ref.ref_seq, tgt_seq.forward, true)
     ff = chain2tree(fchain, ref_length)
     rr = chain2rctree(fchain, ref_length, tgt_length)
-    rchain = align2seqs(ref.ref_seq, tgt_seq.reverse, mask.reverse)
+    rchain = align2seqs(ref.ref_seq, tgt_seq.reverse, true)
     fr = chain2tree(rchain, ref_length)
     rf = chain2rctree(rchain, ref_length, tgt_length)
 
@@ -224,7 +225,7 @@ function align_to_reference(ref::SingleReference, tgt_id::String, tgt_seq::FwdRe
 end
 
 function inverted_repeat(target::CircularSequence, revtarget::CircularSequence)::AlignedBlock
-    fr::AlignedBlocks = ll2vector(align2seqs(target, revtarget;))
+    fr::AlignedBlocks = ll2vector(align2seqs(target, revtarget, false))
     # sort blocks by length
     fr = sort!(fr, by = b -> b.blocklength, rev = true)
     ir = length(fr) > 0 ? fr[1] : AlignedBlock(0, 0, 0)
@@ -244,37 +245,31 @@ function annotate_one_worker(db::ReferenceDb,
 )::ChloeAnnotation
 
     t1 = time_ns()
-    # sanity checks
     target_length = Int32(length(target.forward))
-    n = count(isambiguous, target.forward.sequence)
-    r = n / target_length
-    if r > 0.01
-        error("sequence [$(target_id)] contains too many ambiguous nucleotides: $(@sprintf "%.1f" r * 100)%")
-    end
-    n = count(isgap, target.forward.sequence)
-    if n > 0
-        @warn("sequence [$(target_id)] contains gaps which will be removed before analysis")
-        ungap!(target.forward.sequence)
-        ungap!(target.reverse.sequence)
-        target_length = Int32(length(target.forward))
-    end
 
+    target_length = length(target.forward)
     @info "[$target_id] seq length: $(target_length)bp"
 
-    # mask low entropy regions before finding closest references
-    emask = entropy_mask(CircularSequence(target.forward.sequence), Int32(KMERSIZE))
-    nmaskedtarget = copy(target.forward.sequence)
-    for (i, bit) in enumerate(emask)
-        if bit
-            nmaskedtarget[i] = DNA_N
+    # sanity checks
+    #=     n = count(isambiguous, target.forward.sequence)
+        r = n / target_length
+        if r > 0.01
+            error("sequence [$(target_id)] contains too many ambiguous nucleotides: $(@sprintf "%.1f" r * 100)%")
         end
-    end
+        n = count(isgap, target.forward.sequence)
+        if n > 0
+            @warn("sequence [$(target_id)] contains gaps which will be removed before analysis")
+            ungap!(target.forward.sequence)
+            ungap!(target.reverse.sequence)
+            target_length = Int32(length(target.forward))
+        end
+     =#
 
     refpicks = Vector{Tuple{String,Int}}(undef, 0)
     # find closest gs references
     refhashes = get_gsminhashes(db, config)
     if !isnothing(refhashes)
-        hash = minhash(nmaskedtarget, KMERSIZE, SKETCHSIZE)
+        hash = minhash(target.forward)
         numrefs = min(config.numgsrefs, length(refhashes))
         append!(refpicks, searchhashes(hash, refhashes)[1:numrefs])
     end
@@ -294,13 +289,12 @@ function annotate_one_worker(db::ReferenceDb,
     blocks_aligned_to_targetr = Vector{FwdRev{BlockTree}}(undef, numrefs)
     coverages = Dict{String,Float32}()
     refs = Vector{SingleReference}(undef, 0)
-    masks = FwdRev(emask, CircularMask(reverse(emask.m)))
     reference_feature_counts = Dict{String,Int}()
     # get_single_reference! throws if bad refpick
     refs = [get_single_reference!(db, r[1], reference_feature_counts) for r in refpicks]
 
     Threads.@threads for i in eachindex(refs)
-        a = align_to_reference(refs[i], target_id, target, masks)
+        a = align_to_reference(refs[i], target_id, target)
         blocks_aligned_to_targetf[i] = a[1].forward
         blocks_aligned_to_targetr[i] = a[1].reverse
         lock(REENTRANT_LOCK) do
@@ -313,11 +307,9 @@ function annotate_one_worker(db::ReferenceDb,
     t3 = time_ns()
     @info "[$target_id] aligned: ($(numrefs)) $(human(datasize(blocks_aligned_to_targetf) + datasize(blocks_aligned_to_targetr))) mean coverage: $(geomean(values(coverages))) $(ns(t3 - t2))"
 
-    maxtemplatelength = maximum([t.median_length for t in values(feature_templates)])
-
     function watson()
         models = do_strand(target_id, target.forward, refs, coverages, reference_feature_counts,
-            '+', blocks_aligned_to_targetf, feature_templates, maxtemplatelength)
+            '+', blocks_aligned_to_targetf, feature_templates)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
             sff = toSFFModel(feature_templates, model, '+', target.forward, config.sensitivity)
@@ -328,7 +320,7 @@ function annotate_one_worker(db::ReferenceDb,
 
     function crick()
         models = do_strand(target_id, target.reverse, refs, coverages, reference_feature_counts,
-            '-', blocks_aligned_to_targetr, feature_templates, maxtemplatelength)
+            '-', blocks_aligned_to_targetr, feature_templates)
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
             sff = toSFFModel(feature_templates, model, '-', target.reverse, config.sensitivity)
@@ -434,9 +426,9 @@ function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     elseif length(records) > 2
         @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
     end
-    fseq = CircularSequence(FASTA.sequence(records[1]))
+    fseq = CircularSequence(FASTA.sequence(LongSequence{DNAAlphabet{4}}, records[1]))
     if length(records) == 2
-        rseq = CircularSequence(FASTA.sequence(records[2]))
+        rseq = CircularSequence(FASTA.sequence(LongSequence{DNAAlphabet{4}}, records[2]))
     else
         rseq = reverse_complement(fseq)
     end

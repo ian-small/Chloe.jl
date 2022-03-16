@@ -11,12 +11,12 @@ function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, ex
     elseif length(records) > 1
         @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
     end
-    fseq = CircularSequence(FASTA.sequence(records[1]))
+    fseq = CircularSequence(FASTA.sequence(LongDNA{4}, records[1]))
     rseq = reverse_complement(fseq)
     ir = Annotator.inverted_repeat(fseq, rseq)
 
 
-    out = LongDNASeq(dna""d)
+    out = LongDNA(dna""d)
 
     if ir.blocklength >= 1000
         IR1 = (ir.src_index, ir.blocklength)

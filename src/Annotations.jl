@@ -140,7 +140,7 @@ function transfer_annotations(ref_features::FeatureArray, aligned_blocks::BlockT
     for fb in feature_blocks
         feature = fb[1]
         block = fb[2]
-        feature_overlaps = overlaps(range(block.src_index, length = block.blocklength), range(feature.start, length = feature.length), src_length)
+        feature_overlaps = overlaps(range(block.src_index, length=block.blocklength), range(feature.start, length=feature.length), src_length)
         for o in feature_overlaps
             offset5 = o.start - feature.start
             offset3 = o.stop - (feature.start + feature.length - 1)
@@ -390,7 +390,7 @@ function features2models(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_F
     return gene_models
 end
 
-function splice_model(target_seq::CircularSequence, model::Vector{SFF_Feature})::LongDNASeq
+function splice_model(target_seq::CircularSequence, model::Vector{SFF_Feature})::LongDNA{2}
     cds = dna""d    # dynamically allocated so thread-safe
     for sfeat in model
         feat = sfeat.feature
@@ -691,7 +691,8 @@ const LACKS_START_CODON = "lacks a start codon"
 const PREMATURE_STOP_CODON = "has a premature stop codon"
 const CDS_NOT_DIVISIBLE_BY_3 = "CDS is not divisible by 3"
 const LOW_ANNOTATION_DEPTH = "has low annotation depth, probably spurious"
-const BLACK_SHEEP = "probably pseudogene as better copy exists in the genome"
+const INFERIOR_COPY = "probable pseudogene as better copy exists in the genome"
+const PARTIAL_IR = "probable pseudogene as overlaps end of inverted repeat"
 const OVERLAPPING_FEATURE = "better-scoring feature overlaps with this one"
 
 function toSFFModel(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Real)::Union{Nothing,SFF_Model}
@@ -782,52 +783,43 @@ function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String
     maxlengths
 end
 
-xgb_model = Booster(model_file = joinpath(@__DIR__, "xgb.model"))
-function feature_xgb(maxtemplatelength::Float32, template::FeatureTemplate, flength::Float32, fdepth::Float32, gmatch::Float32)::Float32
-    flength ≤ 0 && return Float32(0.0)
+coding_xgb_model = Booster(model_file = joinpath(@__DIR__,"coding_xgb.model"))
+noncoding_xgb_model = Booster(model_file = joinpath(@__DIR__,"noncoding_xgb.model"))
+const MAXFEATURELENGTH = 7000
+function feature_xgb(ftype::String, template::FeatureTemplate, featurelength::Int32, fdepth::Float32, gmatch::Float32, codingprob::Float32)::Float32
+    featurelength ≤ 0 && return Float32(0.0)
     fdepth ≤ 0 && return Float32(0.0)
-    tlength = template.median_length / maxtemplatelength
-    length = log(flength)
-    depth = log(fdepth)
+    rtlength = template.median_length/MAXFEATURELENGTH
+    rflength = featurelength/MAXFEATURELENGTH
     match = gmatch / 100
-    pred = XGBoost.predict(xgb_model, [tlength length depth match])
-    odds = exp(pred[1])
-    return Float32(odds / (1.0 + odds))
+    local pred
+    lock(REENTRANT_LOCK) do
+        if ftype == "CDS"
+            pred = XGBoost.predict(coding_xgb_model, [rtlength rflength fdepth match codingprob])
+        else
+            pred = XGBoost.predict(noncoding_xgb_model, [rtlength rflength fdepth match])
+        end
+    end
+    return pred[1]
 end
 
 # only some gene_models are allowed to overlap
 function allowed_model_overlap(m1, m2)::Bool
-    if m1.gene == "trnK-UUU" && m2.gene == "matK"
-        return true
-    end
-    if m1.gene == "matK" && m2.gene == "trnK-UUU"
-        return true
-    end
-    if m1.gene == "ndhC" && m2.gene == "ndhK"
-        return true
-    end
-    if m1.gene == "ndhK" && m2.gene == "ndhC"
-        return true
-    end
-    if m1.gene == "psbC" && m2.gene == "psbD"
-        return true
-    end
-    if m1.gene == "psbD" && m2.gene == "psbC"
-        return true
-    end
-    if m1.gene == "atpB" && m2.gene == "atpE"
-        return true
-    end
-    if m1.gene == "atpE" && m2.gene == "atpB"
-        return true
-    end
-    if m1.gene == "rps3" && m2.gene == "rpl22"
-        return true
-    end
-    if m1.gene == "rpl22" && m2.gene == "rps3"
-        return true
-    end
+    if m1.gene == "trnK-UUU" && m2.gene == "matK"; return true; end
+    if m1.gene == "matK" && m2.gene == "trnK-UUU"; return true; end
+    if m1.gene == "ndhC" && m2.gene == "ndhK"; return true; end
+    if m1.gene == "ndhK" && m2.gene == "ndhC"; return true; end
+    if m1.gene == "psbC" && m2.gene == "psbD"; return true; end
+    if m1.gene == "psbD" && m2.gene == "psbC"; return true; end
+    if m1.gene == "atpB" && m2.gene == "atpE"; return true; end
+    if m1.gene == "atpE" && m2.gene == "atpB"; return true; end
+    if m1.gene == "rps3" && m2.gene == "rpl22"; return true; end
+    if m1.gene == "rpl22" && m2.gene == "rps3"; return true; end
     return false
+end
+
+function reverse_complement(r::UnitRange, glength::Int32)::UnitRange
+    return range(mod1(glength - r.stop + 1, glength), length = length(r))
 end
 
 function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model}, glength::Int32, ir1::Union{Nothing,SFF_Model}, ir2::Union{Nothing,SFF_Model})
@@ -853,7 +845,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
                 bmodel1 = get_model_boundaries(model1, glength)
                 bmodel2 = get_model_boundaries(model2, glength)
                 if model1.gene == model2.gene
-                    warning = BLACK_SHEEP
+                    warning = INFERIOR_COPY
                 elseif length(overlaps(bmodel1, bmodel2, glength)) > 0 && !allowed_model_overlap(model1, model2)
                     warning = OVERLAPPING_FEATURE
                 else
@@ -877,20 +869,47 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
     #deal with duplicated modes on opposite strands, e.g. in the IR
     for model1 in fwd_models, model2 in rev_models
         if model1.gene == model2.gene
+            model1_boundaries = get_model_boundaries(model1, glength)
+            model2_boundaries = get_model_boundaries(model2, glength)
             if !isnothing(ir1) && !isnothing(ir2)
                 #if both models are within the IRs, both can be kept, if not, one is flagged
                 ir1_boundaries = get_model_boundaries(ir1, glength)
                 ir2_boundaries = get_model_boundaries(ir2, glength)
-                model1_boundaries = get_model_boundaries(model1, glength)
-                model1_maxIRintersect = model1.strand == '+' ? length(intersect(model1_boundaries, ir1_boundaries)) : length(intersect(model1_boundaries, ir2_boundaries))
-                model2_boundaries = get_model_boundaries(model2, glength)
-                model2_maxIRintersect = model2.strand == '+' ? length(intersect(model2_boundaries, ir1_boundaries)) : length(intersect(model2_boundaries, ir2_boundaries))
-                length(model1_maxIRintersect) == length(model1_boundaries) && length(model2_maxIRintersect) == length(model2_boundaries) && continue
-            end
-            if model1.gene_prob > model2.gene_prob
-                push!(model2.warnings, BLACK_SHEEP)
-            elseif model2.gene_prob > model1.gene_prob
-                push!(model1.warnings, BLACK_SHEEP)
+                if model1.strand == '+'
+                    model1_maxIRintersect = max(length(intersect(model1_boundaries, ir1_boundaries)), length(intersect(model1_boundaries, reverse_complement(ir2_boundaries, glength))))
+                else
+                    model1_maxIRintersect = max(length(intersect(model1_boundaries, reverse_complement(ir1_boundaries, glength))), length(intersect(model1_boundaries, ir2_boundaries)))
+                end
+                if model2.strand == '+'
+                    model2_maxIRintersect = max(length(intersect(model2_boundaries, ir1_boundaries)), length(intersect(model2_boundaries, reverse_complement(ir2_boundaries, glength))))
+                else
+                    model2_maxIRintersect = max(length(intersect(model2_boundaries, reverse_complement(ir1_boundaries, glength))), length(intersect(model2_boundaries, ir2_boundaries)))
+                end
+                if (model1_maxIRintersect == 0 || model2_maxIRintersect == 0) # one or other model outside the IRs, deal with as INFERIOR_COPY
+                    if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
+                        push!(model2.warnings, INFERIOR_COPY)
+                    elseif model2.gene_prob > model1.gene_prob
+                        push!(model1.warnings, INFERIOR_COPY)
+                    elseif mean_stackdepth(model1) > mean_stackdepth(model2) # if probs are equal, decide on stackdepth
+                        push!(model2.warnings, INFERIOR_COPY)
+                    elseif mean_stackdepth(model2) > mean_stackdepth(model1)
+                        push!(model1.warnings, INFERIOR_COPY)
+                    end
+                elseif model1_maxIRintersect == length(model1_boundaries) && model2_maxIRintersect == length(model2_boundaries)  # both models inside the IRs, no warnings
+                    continue
+                elseif featuretype(model1.features) == "CDS"  # overlap IR, keep longest model
+                    if length(model1_boundaries) > length(model2_boundaries)
+                        push!(model2.warnings, PARTIAL_IR)
+                    elseif length(model2_boundaries) > length(model1_boundaries)
+                        push!(model1.warnings, PARTIAL_IR)
+                    end
+                else                                           # overlap IR, keep best model
+                    if model1.gene_prob > model2.gene_prob
+                        push!(model2.warnings, PARTIAL_IR)
+                    elseif model2.gene_prob > model1.gene_prob
+                        push!(model1.warnings, PARTIAL_IR)
+                    end
+                end
             end
         end
     end

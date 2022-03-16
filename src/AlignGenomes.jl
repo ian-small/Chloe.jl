@@ -10,21 +10,20 @@ function align(;query, target, output=Base.stdout)
         reader = FASTA.Reader(io)
         record = FASTA.Record()
         read!(reader, record)
-        seq1 = FASTA.sequence(record)
+        seq1 = FASTA.sequence(LongSequence{DNAAlphabet{4}}, record)
         for target_file in target
             open(target_file) do io2
                 reader = FASTA.Reader(io2)
                 record = FASTA.Record()
                 read!(reader, record)
-                seq2 = FASTA.sequence(record)
+                seq2 = FASTA.sequence(LongSequence{DNAAlphabet{4}}, record)
                 alignment = Alignment(seq1, seq2)
                 cseq1 = CircularSequence(seq1)
-                emask = entropy_mask(cseq1, Int32(KMERSIZE))
-                chain = align2seqs(cseq1, CircularSequence(seq2), emask)
+                chain = align2seqs(cseq1, CircularSequence(seq2))
                 for link in chain
                     block = link.data
-                    query_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in block.src_index:block.src_index + block.blocklength - 1))
-                    target_segment = LongDNASeq(collect(reinterpret(DNA, alignment[i]) for i in fulcrum(alignment) + block.tgt_index:fulcrum(alignment) + block.tgt_index + block.blocklength - 1))
+                    query_segment = LongDNA(collect(reinterpret(DNA, alignment[i]) for i in block.src_index:block.src_index + block.blocklength - 1))
+                    target_segment = LongDNA(collect(reinterpret(DNA, alignment[i]) for i in fulcrum(alignment) + block.tgt_index:fulcrum(alignment) + block.tgt_index + block.blocklength - 1))
                     println("$(block.src_index)\t$query_segment\t$(block.src_index + block.blocklength - 1)")
                     println("$(block.tgt_index)\t$target_segment\t$(block.tgt_index + block.blocklength - 1)\n")
                 end
@@ -41,18 +40,16 @@ end
     return index > fulcrum ? true : false
 end
 
-function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask=nothing)::BlockChain{AlignedBlock}
+function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask::Bool)::BlockChain{AlignedBlock}
     # extend and join strings; currently assumes both sequence are circular
     # TO DO: generalise for either or both of seq1, seq2 as linear sequences
-    alignment = Alignment(seq1.sequence, seq2.sequence)
+    alignment = Alignment(seq1, seq2)
     sa = sais(alignment, zeros(Int32, length(alignment)), 0, length(alignment), 16) .+= 1 # shift to 1-based julia indexes
     ra = invperm(sa)
     lcps = lcparray(alignment, sa, ra)
-    lenseq1 = Int32(length(seq1))
-    lenseq2 = Int32(length(seq2))
 
-    src2tgt = blockchain(alignment, sa, ra, lcps, one(Int32):lenseq1, one(Int32):lenseq2, matchLengthThreshold(lenseq1, lenseq2), mask)
-    src2tgt = circularise(src2tgt, lenseq1)
+    src2tgt = blockchain(alignment, sa, ra, lcps, one(Int32):alignment.lenseq1, one(Int32):alignment.lenseq2, matchLengthThreshold(alignment.lenseq1, alignment.lenseq2), mask ? seq2.mask : nothing)
+    src2tgt = circularise(src2tgt, alignment.lenseq1)
 
     #= println("links before gapfilling: $(src2tgt.links)")
     for link in src2tgt
@@ -60,13 +57,13 @@ function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask=nothing
     end =#
 
     Threads.@threads for gap in gaps(src2tgt)
-        (srcgap, tgtgap) = contiguousblockgaps(gap[1], gap[2], lenseq1, lenseq2)
+        (srcgap, tgtgap) = contiguousblockgaps(gap[1], gap[2], alignment.lenseq1, alignment.lenseq2)
         # println(srcgap, " ", length(srcgap), "\t", tgtgap, " ", length(tgtgap))
         lengthsrcgap::Int32 = srcgap.stop - srcgap.start + 1
         lengthtgtgap::Int32 = tgtgap.stop - tgtgap.start + 1
         (lengthsrcgap < MINIMUMFILLABLEGAP || lengthtgtgap < MINIMUMFILLABLEGAP) && continue # gap too short to attempt to fill
         lengthsrcgap == lengthtgtgap && lengthsrcgap ≤ MAXIMUMMERGEABLEGAP && continue # gap is going to be merged, don't bother trying to fill
-        gapfill!(src2tgt, gap[1], gap[2], alignment, sa, ra, lcps, matchLengthThreshold(lengthsrcgap, lengthtgtgap), mask)
+        gapfill!(src2tgt, gap[1], gap[2], alignment, sa, ra, lcps, matchLengthThreshold(lengthsrcgap, lengthtgtgap), mask ? seq2.mask : nothing)
     end
 
     #= println("links after gapfilling: $(src2tgt.links)")
@@ -79,7 +76,7 @@ function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask=nothing
     done = false
         while !done
         if link.next == src2tgt.firstlink; done = true; end
-        link = trymergelinks!(src2tgt, link, lenseq1, lenseq2)
+        link = trymergelinks!(src2tgt, link, alignment.lenseq1, alignment.lenseq2)
     end
 
     #= println("links after merging: $(src2tgt.links)")
@@ -104,10 +101,10 @@ function matchLengthThreshold(m::Int32, n::Int32)::Int32
     return 26
 end
 
-function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBlock}, tail::ChainLink{AlignedBlock}, alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, minblocksize::Int32, mask=nothing)
+function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBlock}, tail::ChainLink{AlignedBlock}, alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, minblocksize::Int32, mask)
     # println("gapfilling from $(head.data) to $(tail.data) minblocksize = $(minblocksize)")
-    src_length = length(alignment.seq1)
-    tgt_length = length(alignment.seq2)
+    src_length = alignment.lenseq1
+    tgt_length = alignment.lenseq2
     (srcgap, tgtgap) = contiguousblockgaps(head, tail, src_length, tgt_length)
     chain = blockchain(alignment, sa, ra, lcps, srcgap, tgtgap, minblocksize, mask)
     length(chain) == 0 && return mainchain
@@ -130,11 +127,11 @@ function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBl
     return mainchain
 end
     
-function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, srcgap, tgtgap, minblocksize, mask=nothing)::BlockChain{AlignedBlock}
+function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, srcgap, tgtgap, minblocksize, mask)::BlockChain{AlignedBlock}
     @debug "blockchain from $srcgap to $tgtgap minblocksize = $minblocksize"
     blocks = BlockChain{AlignedBlock}()
-    src_length = length(alignment.seq1)
-    tgt_length = length(alignment.seq2)
+    src_length = alignment.lenseq1
+    tgt_length = alignment.lenseq2
     f = fulcrum(alignment)
     tgt_start = 0
     @inbounds for nt in srcgap
@@ -170,7 +167,8 @@ function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, 
         toplcp < minblocksize && continue
         if toplcp > minlcp; tgt_start = toptgt_start; end
         new_block = AlignedBlock(mod1(nt, src_length), mod1(tgt_start, tgt_length), mod1(toplcp, min(src_length, tgt_length)))
-        if isnothing(mask) || sum(mask[new_block.tgt_index:new_block.tgt_index + new_block.blocklength - 1]) < new_block.blocklength ## add block if it is not included in low complexity region
+        #if isnothing(mask) || !all(mask[new_block.tgt_index:new_block.tgt_index + new_block.blocklength - 1]) ## add block if it is not included in low complexity region
+        if isnothing(mask) || (sum(mask[new_block.tgt_index:new_block.tgt_index + new_block.blocklength - 1]) < new_block.blocklength/2)
             append!(blocks, new_block)
         end
     end
@@ -195,60 +193,4 @@ function target_coverage(ff::BlockChain, rf::BlockChain, tgt_length::Integer)
         end
     end
     return sum(tgt_coverage) / tgt_length
-end
-
-function entropy_mask(cs::CircularSequence, window_length::Int32)::CircularMask
-
-    comp = zeros(Int32, 4)
-    mask = CircularMask(falses(length(cs)))
-    entropy = 0.0
-    for i::Int32 in 1:window_length
-        if cs[i] == DNA_A
-            comp[1] += 1
-        elseif cs[i] == DNA_C
-            comp[2] += 1
-        elseif cs[i] == DNA_G
-            comp[3] += 1
-        elseif cs[i] == DNA_T
-            comp[4] += 1
-        end
-    end
-    
-    for v in comp
-        prob = v / window_length
-        prob == 0 && continue
-        entropy -= prob * log2(prob)
-    end
-    entropy ≤ 0 && setindex!(mask, true, 1:window_length)
-    
-    for i::Int32 in 1:length(cs) - 1
-        if cs[i] == DNA_A
-            comp[1] -= 1
-        elseif cs[i] == DNA_C
-            comp[2] -= 1
-        elseif cs[i] == DNA_G
-            comp[3] -= 1
-        elseif cs[i] == DNA_T
-            comp[4] -= 1
-        end
-        if cs[i + window_length] == DNA_A
-            comp[1] += 1
-        elseif cs[i + window_length] == DNA_C
-            comp[2] += 1
-        elseif cs[i + window_length] == DNA_G
-            comp[3] += 1
-        elseif cs[i + window_length] == DNA_T
-            comp[4] += 1
-        end
-        entropy = 0.0
-        for v in comp
-            prob = v / window_length
-            prob == 0 && continue
-            entropy -= prob * log2(prob)
-        end
-        # entropy 0 = homopolymer run
-        entropy ≤ 0 && setindex!(mask, true, i:i + window_length - 1)
-    end
-    
-    return mask
 end
