@@ -140,7 +140,7 @@ function transfer_annotations(ref_features::FeatureArray, aligned_blocks::BlockT
     for fb in feature_blocks
         feature = fb[1]
         block = fb[2]
-        feature_overlaps = overlaps(range(block.src_index, length=block.blocklength), range(feature.start, length=feature.length), src_length)
+        feature_overlaps = overlaps(range(block.src_index, length = block.blocklength), range(feature.start, length = feature.length), src_length)
         for o in feature_overlaps
             offset5 = o.start - feature.start
             offset3 = o.stop - (feature.start + feature.length - 1)
@@ -783,14 +783,14 @@ function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String
     maxlengths
 end
 
-coding_xgb_model = Booster(model_file = joinpath(@__DIR__,"coding_xgb.model"))
-noncoding_xgb_model = Booster(model_file = joinpath(@__DIR__,"noncoding_xgb.model"))
+coding_xgb_model = Booster(model_file = joinpath(@__DIR__, "coding_xgb.model"))
+noncoding_xgb_model = Booster(model_file = joinpath(@__DIR__, "noncoding_xgb.model"))
 const MAXFEATURELENGTH = 7000
 function feature_xgb(ftype::String, template::FeatureTemplate, featurelength::Int32, fdepth::Float32, gmatch::Float32, codingprob::Float32)::Float32
     featurelength ≤ 0 && return Float32(0.0)
     fdepth ≤ 0 && return Float32(0.0)
-    rtlength = template.median_length/MAXFEATURELENGTH
-    rflength = featurelength/MAXFEATURELENGTH
+    rtlength = template.median_length / MAXFEATURELENGTH
+    rflength = featurelength / MAXFEATURELENGTH
     match = gmatch / 100
     local pred
     lock(REENTRANT_LOCK) do
@@ -805,16 +805,36 @@ end
 
 # only some gene_models are allowed to overlap
 function allowed_model_overlap(m1, m2)::Bool
-    if m1.gene == "trnK-UUU" && m2.gene == "matK"; return true; end
-    if m1.gene == "matK" && m2.gene == "trnK-UUU"; return true; end
-    if m1.gene == "ndhC" && m2.gene == "ndhK"; return true; end
-    if m1.gene == "ndhK" && m2.gene == "ndhC"; return true; end
-    if m1.gene == "psbC" && m2.gene == "psbD"; return true; end
-    if m1.gene == "psbD" && m2.gene == "psbC"; return true; end
-    if m1.gene == "atpB" && m2.gene == "atpE"; return true; end
-    if m1.gene == "atpE" && m2.gene == "atpB"; return true; end
-    if m1.gene == "rps3" && m2.gene == "rpl22"; return true; end
-    if m1.gene == "rpl22" && m2.gene == "rps3"; return true; end
+    if m1.gene == "trnK-UUU" && m2.gene == "matK"
+        return true
+    end
+    if m1.gene == "matK" && m2.gene == "trnK-UUU"
+        return true
+    end
+    if m1.gene == "ndhC" && m2.gene == "ndhK"
+        return true
+    end
+    if m1.gene == "ndhK" && m2.gene == "ndhC"
+        return true
+    end
+    if m1.gene == "psbC" && m2.gene == "psbD"
+        return true
+    end
+    if m1.gene == "psbD" && m2.gene == "psbC"
+        return true
+    end
+    if m1.gene == "atpB" && m2.gene == "atpE"
+        return true
+    end
+    if m1.gene == "atpE" && m2.gene == "atpB"
+        return true
+    end
+    if m1.gene == "rps3" && m2.gene == "rpl22"
+        return true
+    end
+    if m1.gene == "rpl22" && m2.gene == "rps3"
+        return true
+    end
     return false
 end
 
@@ -947,7 +967,7 @@ function update_genecount!(models::FwdRev{Vector{SFF_Model}})::FwdRev{Vector{SFF
         push!(rev, model)
 
     end
-    return FwdRev(fwd,rev)
+    return FwdRev(fwd, rev)
 end
 
 function writeSFF(outfile::Union{String,IO},
@@ -993,8 +1013,17 @@ function writeGFF3(outfile::Union{String,IO},
     genome_length::Int32,
     models::FwdRev{Vector{SFF_Model}})
 
-    function out(outfile::IO)
+    function header(outfile::IO)
         write(outfile, "##gff-version 3.2.1\n")
+        write(outfile, join([genome_id, "Chloe", "region", '1', string(genome_length), ".", "+", "0", "Is_circular=true"], "\t"))
+        write(outfile, "\n")
+        write(outfile, join([genome_id, "Chloe", "source", '1', string(genome_length), ".", "+", "1", "ID=source-null;gbkey=source"], "\t"))
+        write(outfile, "\n")
+        write(outfile, "###\n")
+    end
+
+    function out(outfile::IO)
+        header(outfile)
         allmodels = sort(vcat(models.forward, models.reverse), by = m -> sff2gffcoords(first(m.features).feature, m.strand, genome_length)[1])
         for model in allmodels
             write_model2GFF3(outfile, model, genome_id, genome_length)
