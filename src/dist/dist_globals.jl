@@ -6,4 +6,4 @@ const ZMQ_WORKER = "tcp://127.0.0.1:9457"
 const ZMQ_CLIENT = "ipc:///tmp/chloe2-client"
 const ZMQ_BACKEND = "ipc:///tmp/chloe2-backend"
 # change this if you change the API!
-const VERSION = "2.0"
+const VERSION = "4.0"
