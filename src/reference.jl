@@ -79,8 +79,9 @@ function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference
             @error msg
             throw(ArgumentError(msg))
         end
-        ref_features = read_features!(sffpath, reference_feature_counts)
+        ref_features = read_sff_features!(sffpath, reference_feature_counts)
         SingleReference(refID, CircularSequence(FASTA.sequence(LongDNA{4}, ref)), ref_features)
+
     end
 end
 
@@ -137,7 +138,8 @@ function read_single_reference!(refdir::String, refID::AbstractString, reference
         ref = FASTA.Record()
         reader = FASTA.Reader(io)
         read!(reader, ref)
-        ref_features = read_features!(normpath(joinpath(refdir, refID * ".sff")), reference_feature_counts)
+
+        ref_features = read_sff_features!(normpath(joinpath(refdir, refID * ".sff")), reference_feature_counts)
         SingleReference(refID, CircularSequence(FASTA.sequence(LongDNA{4}, ref)), ref_features)
     end
 end

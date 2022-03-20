@@ -1,9 +1,9 @@
 using BioSequences
 using FASTX
 
-function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0)
-    open(infile) do io
-        records = [record for record in FASTA.Reader(io)]
+function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, extend::Int = 0)
+    records = open(infile) do io
+        [record for record in FASTA.Reader(io)]
     end
     if isempty(records)
         error("unable to read sequence from $infile")
@@ -37,27 +37,27 @@ function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, ex
         n = LSC[2] + IR1[2] + SSC[2] + IR2[2]
         @assert n == length(fseq) "$(FASTA.identifier(records[1])) $n != $(length(fseq))"
         # @info "$LSC $IR1 $SSC $IR2"
-        lsc = LSC[1]:LSC[1] + LSC[2] - 1
-        ir1 = IR1[1]:IR1[1] + IR1[2] - 1
-        ssc = SSC[1]:SSC[1] + SSC[2] - 1
-        ir2 = IR2[1]:IR2[1] + IR2[2] - 1
+        lsc = LSC[1]:LSC[1]+LSC[2]-1
+        ir1 = IR1[1]:IR1[1]+IR1[2]-1
+        ssc = SSC[1]:SSC[1]+SSC[2]-1
+        ir2 = IR2[1]:IR2[1]+IR2[2]-1
         @info "LSC=$(lsc)[$(length(lsc))] IR1=$(ir1)[$(length(ir1))] SSC=$(ssc)[$(length(ssc))] IR2=$(ir2)[$(length(ir2))]"
         append!(out, flip_LSC ? reverse_complement(fseq[lsc]) : fseq[lsc])
         append!(out, fseq[ir1])
         append!(out, flip_SSC ? reverse_complement(fseq[ssc]) : fseq[ssc])
         append!(out, fseq[ir2])
     else
-        @warn "[$(target_id)] no inverted repeat found: $(IR_length) < 1000"
+        @warn "[$(infile)] no inverted repeat found: $(ir.blocklength) < 1000"
         append!(out, fseq)
     end
-    
+
     if extend != 0
         e = min(extend > 0 ? extend : length(fseq) - 1, length(fseq) - 1)
-        @debug "[$(target_id)] extending by $e"
+        @debug "[$(infile)] extending by $e"
         # extend transformed seq
         append!(out, out[1:e])
     end
-    
+
     writer = FASTA.Writer(io)
     id = FASTA.identifier(records[1]) * " rotated"
     rec = FASTA.Record(id, out)
@@ -65,8 +65,8 @@ function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, ex
     close(writer)
 end
 
-function rotategenomes(;fasta_files::Vector{String}, output::Union{String,Nothing}=nothing,
-    flip_LSC::Bool=false, flip_SSC::Bool=false, extend::Int=0)
+function rotategenomes(; fasta_files::Vector{String}, output::Union{String,Nothing} = nothing,
+    flip_LSC::Bool = false, flip_SSC::Bool = false, extend::Int = 0)
 
     for fasta in fasta_files
         d = splitpath(fasta)
