@@ -60,7 +60,7 @@ function start_broker(worker_url::String, client_url::String)
     try
         try
             @info "worker=$worker_url client=$client_url"
-            rc = ccall((:zmq_proxy, ZeroMQ_jll.libzmq), Cint,  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
+            rc = ccall((:zmq_proxy, ZeroMQ_jll.libzmq), Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), router, dealer, C_NULL)
             @info "done zmq_proxy $(rc)"
         catch
             @error "zmq_proxy exception!"
