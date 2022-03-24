@@ -24,3 +24,16 @@ function annotate_one_task(fasta::Union{String,IO}, task_id::MayBeString, config
         annotation_local_storage(TASK_KEY, nothing)
     end
 end
+
+function annotate_batch_task(directory::String, task_id::MayBeString, config::ChloeConfig)
+    annotation_local_storage(TASK_KEY, task_id)
+    try
+        for fasta in readdir(directory; join=true)
+            if endswith(fasta,r"\.(fa|fasta)")
+                annotate_one(Main.REFERENCE, fasta, config, nothing)
+            end
+        end
+    finally
+        annotation_local_storage(TASK_KEY, nothing)
+    end
+end
