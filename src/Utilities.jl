@@ -11,17 +11,17 @@ struct FwdRev{T}
     reverse::T
 end
 
-Base.:(==)(x::FwdRev{T}, y::FwdRev{T}) where T = x.forward == y.forward && x.reverse == y.reverse
+Base.:(==)(x::FwdRev{T}, y::FwdRev{T}) where {T} = x.forward == y.forward && x.reverse == y.reverse
 
-datasize(t::T) where T = sizeof(t)
-datasize(f::FwdRev{T}) where T = sizeof(FwdRev{T}) + datasize(f.forward) + datasize(f.reverse)
-datasize(v::Vector{T}) where T = length(v) == 0 ? 0 : sum(datasize(a) for a in v)
+datasize(t::T) where {T} = sizeof(t)
+datasize(f::FwdRev{T}) where {T} = sizeof(FwdRev{T}) + datasize(f.forward) + datasize(f.reverse)
+datasize(v::Vector{T}) where {T} = length(v) == 0 ? 0 : sum(datasize(a) for a in v)
 datasize(t::Dict{K,V}) where {K,V} = length(t) == 0 ? 0 : sum(datasize(e.first) + datasize(e.second) for e in t)
 
 @inline function getcodon(seq::LongDNA, index::Int32)
     index ≤ 0 && return nothing
     index + 2 > length(seq) && return nothing
-    return (seq[index], seq[index + 1], seq[index + 2])
+    return (seq[index], seq[index+1], seq[index+2])
 end
 
 function gbff2fasta(infile::String)
@@ -69,7 +69,7 @@ function human(num::Integer)::String
     if magnitude > 7
         return "$(sval)YB"
     end
-    p = ["", "k", "M", "G", "T", "P", "E", "Z"][magnitude + 1]
+    p = ["", "k", "M", "G", "T", "P", "E", "Z"][magnitude+1]
     return "$(sval)$(p)B"
 end
 
@@ -82,7 +82,7 @@ function maybe_gzread(f::Function, filename::String)
 end
 
 function maybe_gzwrite(f::Function, filename::String)
-    
+
     function gzcompress(func::Function, fp::IO)
         o = GzipCompressorStream(fp)
         try
@@ -136,11 +136,11 @@ end
 
 @inline function genome_wrap(genome_length::Integer, position::Integer)
     if 0 < position ≤ genome_length
-    return position
+        return position
     end
     while position > genome_length
         position -= genome_length
-    end 
+    end
     while position ≤ 0
         position += genome_length
     end
@@ -159,21 +159,23 @@ function overlaps(range1::UnitRange{Int32}, range2::UnitRange{Int32}, glength::I
     if range1.stop ≤ glength
         push!(ranges1, range1)
     else
-        push!(ranges1, range(range1.start, stop = glength))
-        push!(ranges1, range(1, stop = mod1(range1.stop, glength)))
+        push!(ranges1, range(range1.start, stop=glength))
+        push!(ranges1, range(1, stop=mod1(range1.stop, glength)))
     end
 
     if range2.stop ≤ glength
         push!(ranges2, range2)
     else
-        push!(ranges2, range(range2.start, stop = glength))
-        push!(ranges2, range(1, stop = mod1(range2.stop, glength)))
+        push!(ranges2, range(range2.start, stop=glength))
+        push!(ranges2, range(1, stop=mod1(range2.stop, glength)))
     end
 
     overlaps = UnitRange{Int32}[]
     for r1 in ranges1, r2 in ranges2
         overlap = intersect(r1, r2)
-        if length(overlap) > 0; push!(overlaps, overlap); end
+        if length(overlap) > 0
+            push!(overlaps, overlap)
+        end
     end
 
     #merge overlaps that can be merged
@@ -182,14 +184,14 @@ function overlaps(range1::UnitRange{Int32}, range2::UnitRange{Int32}, glength::I
     for o1 in overlaps, o2 in overlaps
         o1 === o2 && continue
         if o2.start == o1.stop + 1 || (o2.start == 1 && o1.stop == glength)
-            push!(overlaps_to_add, range(o1.start, length = o1.stop - o1.start + 1 + o2.stop - o2.start + 1))
+            push!(overlaps_to_add, range(o1.start, length=o1.stop - o1.start + 1 + o2.stop - o2.start + 1))
             push!(overlaps_to_remove, o1)
             push!(overlaps_to_remove, o2)
         end
     end
     setdiff!(overlaps, overlaps_to_remove)
     append!(overlaps, overlaps_to_add)
-    sort(overlaps, by = o -> o.stop - o.start, rev = true) #may return two discontiguous overlaps
+    sort(overlaps, by=o -> o.stop - o.start, rev=true) #may return two discontiguous overlaps
 end
 
 function findfastafile(dir::String, base::AbstractString)::Union{String,Nothing}

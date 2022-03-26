@@ -35,15 +35,19 @@ function Alignment(seq1::CircularSequence, seq2::CircularSequence)
     return Alignment(seq1.sequence, seq1.length, seq2.sequence, seq2.length)
 end
 
-Base.size(a::Alignment) = (length(a.seq1) + 1 + length(a.seq2), )
+Base.size(a::Alignment) = (length(a.seq1) + 1 + length(a.seq2),)
 
 @inline fulcrum(a::Alignment) = length(a.seq1) + 1
 
 @inline function Base.getindex(a::Alignment, i::Integer)
     f = fulcrum(a)
-    if i < f; return reinterpret(UInt8,a.seq1[i]); end
-    if i > f; return reinterpret(UInt8,a.seq2[i - f]); end
-    return reinterpret(UInt8,DNA_Gap)
+    if i < f
+        return reinterpret(UInt8, a.seq1[i])
+    end
+    if i > f
+        return reinterpret(UInt8, a.seq2[i-f])
+    end
+    return reinterpret(UInt8, DNA_Gap)
 end
 
 Base.setindex!(a::Alignment, v, i::Integer) = value #don't do anything
@@ -53,8 +57,8 @@ struct IntVector <: AbstractVector{Integer}
     vec::Array{Int,1}
     off::Int
 end
-Base.size(v::IntVector) = (length(v.vec)-v.off,)
-Base.getindex(v::IntVector, key) = v.vec[v.off + key]
+Base.size(v::IntVector) = (length(v.vec) - v.off,)
+Base.getindex(v::IntVector, key) = v.vec[v.off+key]
 function Base.setindex!(v::IntVector, value, key)
     v.vec[v.off+key] = value
     return value
@@ -95,7 +99,7 @@ function sais(T::AbstractVector{<:Integer}, SA::Vector{Int32}, fs::Int, n::Int, 
         B = IntVector(zeros(Int, k), 0)
         flags = 3
     end
-    
+
     # stage 1
     getcounts(T, C, n, k)
     getbuckets(C, B, k, true)
@@ -181,7 +185,7 @@ function sais(T::AbstractVector{<:Integer}, SA::Vector{Int32}, fs::Int, n::Int, 
             end
         end
         for i = 1:m
-            SA[i] = SA[m + SA[i] + 1]
+            SA[i] = SA[m+SA[i]+1]
         end
         if flags & 4 != 0
             C = B = IntVector(zeros(Int, k), 0)
@@ -307,7 +311,7 @@ function LMSpostproc(T::AbstractVector{<:Integer}, SA::Vector{Int32}, n::Int, m:
             c1 = c0
         end
         if 1 <= i
-            SA[m + (i >> 1) + 1] = j - i
+            SA[m+(i>>1)+1] = j - i
             j = i + 1
             c1 = c0
             while 1 <= (i -= 1) && ((c0 = T[i]) >= c1)
@@ -320,7 +324,7 @@ function LMSpostproc(T::AbstractVector{<:Integer}, SA::Vector{Int32}, n::Int, m:
     qlen = 0
     for i = 1:m
         p = SA[i]
-        plen = SA[m + (p >> 1) + 1]
+        plen = SA[m+(p>>1)+1]
         diff = true
         if plen == qlen && (q + plen < n)
             j = 0
@@ -334,7 +338,7 @@ function LMSpostproc(T::AbstractVector{<:Integer}, SA::Vector{Int32}, n::Int, m:
             q = p
             qlen = plen
         end
-        SA[m + (p >> 1) + 1] = name
+        SA[m+(p>>1)+1] = name
     end
     return name
 end
@@ -403,7 +407,7 @@ function lcparray(a::Alignment, sa::Vector{Int32}, ra::Vector{Int32})
             h += 1
         end
         lcparr[ra[i]] = h
-        h = max(h-1, 0)
+        h = max(h - 1, 0)
     end
     lcparr[1] = 0
     lcparr

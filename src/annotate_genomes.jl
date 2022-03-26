@@ -7,17 +7,14 @@ export read_single_reference!, inverted_repeat, ChloeConfig
 
 import Base
 
-include("Utilities.jl")
+include("utilities.jl")
 include("circularity.jl")
 include("rotate_genome.jl")
 include("hash.jl")
-include("AlignGenomes.jl")
-include("Annotations.jl")
+include("align.jl")
+include("annotations.jl")
 include("orfs.jl")
 include("reference.jl")
-
-
-# import Dates: Time, Nanosecond
 
 import Printf: @sprintf
 import JSON
@@ -59,7 +56,7 @@ MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,DFeatureStack}
 
 function flatten(vanno::Vector{Vector{Annotation}})::Vector{Annotation}
-    ret = Vector{Annotation}(undef, sum(length(v) for v in vanno; init = 0))
+    ret = Vector{Annotation}(undef, sum(length(v) for v in vanno; init=0))
     i = 1
     @inbounds for v in vanno
         for a in v
@@ -86,15 +83,14 @@ function do_annotations(target_id::String, strand::Char, refs::Vector{SingleRefe
         tgt[i] = do_one(refs[i].ref_seq, refs[i].ref_features, blocks)
     end
 
-    # annotations = collect(Iterators.flatten(tgt))
     annotations = flatten(tgt)
-    sort!(annotations, by = x -> x.path)
+    sort!(annotations, by=x -> x.path)
     annotations
 end
 
 function score_feature(sff::SFF_Feature, stack::FeatureStack, reference_feature_counts::Dict{String,Int}, gmatch::Float32, seq::CircularSequence)
     ref_count = reference_feature_counts[annotation_path(sff.feature)]
-    slice = stack.stack[range(sff.feature.start, length = sff.feature.length)]
+    slice = stack.stack[range(sff.feature.start, length=sff.feature.length)]
     sff.stackdepth = Float32((length(slice) > 0 ? sum(slice) : 0) / (ref_count * sff.feature.length))
     sff.relative_length = sff.feature.length / stack.template.median_length
     sff.gmatch = gmatch
@@ -108,13 +104,9 @@ end
 function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32}, reference_feature_counts::Dict{String,Int},
     strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate})::Vector{Vector{SFF_Feature}}
 
-    #println(strand, '\t', blocks_aligned_to_target)
-
     t4 = time_ns()
     target_length = Int32(length(target_seq))
     annotations = do_annotations(target_id, strand, refs, blocks_aligned_to_target, target_length)
-
-    #println(strand, '\t', annotations)
 
     # strand_feature_stacks is basically grouped by annotations.path
     strand_feature_stacks = fill_feature_stack(target_length, annotations, feature_templates)
@@ -122,7 +114,6 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
     t5 = time_ns()
     @info "[$target_id]$strand built feature stacks ($(length(strand_feature_stacks))) $(human(datasize(strand_feature_stacks))): $(ns(t5 - t4))"
 
-    # orfmap = threeframes(target_seq)
     features = Feature[]
     path_to_stack = Dict{String,FeatureStack}()
 
@@ -138,8 +129,6 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
         path_to_stack[stack.path] = stack
     end
 
-    #println(strand, '\t', features)
-
     gmatch = mean(values(coverages))
     sff_features = Vector{SFF_Feature}(undef, length(features))
     for (i, feature) in enumerate(features)
@@ -149,12 +138,8 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
         score_feature(sff_features[i], stack, reference_feature_counts, gmatch, target_seq)
     end
 
-    #println(strand, '\t', sff_features)
-
     # group by feature name on features ordered by mid-point
-    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features, by = x -> x.feature))
-
-    # println(strand, '\t', target_strand_models)
+    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features, by=x -> x.feature))
 
     orfs = getallorfs(target_seq, strand, Int32(0))
     # this toys with the feature start, phase etc....
@@ -168,8 +153,6 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
         stack = path_to_stack[annotation_path(f)]
         score_feature(sf, stack, reference_feature_counts, gmatch, target_seq)
     end
-
-    # println(strand, '\t', target_strand_models)
 
     #=
     # add any unassigned orfs
@@ -227,7 +210,7 @@ end
 function inverted_repeat(target::CircularSequence, revtarget::CircularSequence)::AlignedBlock
     fr::AlignedBlocks = ll2vector(align2seqs(target, revtarget, false))
     # sort blocks by length
-    fr = sort!(fr, by = b -> b.blocklength, rev = true)
+    fr = sort!(fr, by=b -> b.blocklength, rev=true)
     ir = length(fr) > 0 ? fr[1] : AlignedBlock(0, 0, 0)
     return ir
 end
@@ -250,22 +233,8 @@ function annotate_one_worker(db::ReferenceDb,
     target_length = length(target.forward)
     @info "[$target_id] seq length: $(target_length)bp"
 
-    # sanity checks
-    #=     n = count(isambiguous, target.forward.sequence)
-        r = n / target_length
-        if r > 0.01
-            error("sequence [$(target_id)] contains too many ambiguous nucleotides: $(@sprintf "%.1f" r * 100)%")
-        end
-        n = count(isgap, target.forward.sequence)
-        if n > 0
-            @warn("sequence [$(target_id)] contains gaps which will be removed before analysis")
-            ungap!(target.forward.sequence)
-            ungap!(target.reverse.sequence)
-            target_length = Int32(length(target.forward))
-        end
-     =#
-
     refpicks = Vector{Tuple{String,Int}}(undef, 0)
+
     # find closest gs references
     refhashes = get_gsminhashes(db, config)
     if !isnothing(refhashes)
@@ -356,7 +325,7 @@ function annotate_one_worker(db::ReferenceDb,
 
 end
 
-function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO = nothing)::Tuple{Union{String,IO},String}
+function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO=nothing)::Tuple{Union{String,IO},String}
     models = update_genecount!(result.annotation)
     ext = asgff3 ? "gff3" : "sff"
     fname = if output !== nothing
@@ -402,7 +371,7 @@ function annotate_one(db::ReferenceDb,
     target_id::String,
     target::FwdRev{CircularSequence},
     config::ChloeConfig,
-    output::MayBeIO = nothing
+    output::MayBeIO=nothing
 )::Tuple{Union{String,IO},String}
 
     result = annotate_one_worker(db, target_id, target, config)
@@ -412,7 +381,7 @@ end
 
 
 
-function annotate_one(db::ReferenceDb, infile::String, config::ChloeConfig, output::MayBeIO = nothing)
+function annotate_one(db::ReferenceDb, infile::String, config::ChloeConfig, output::MayBeIO=nothing)
     maybe_gzread(infile) do io
         annotate_one(db, io, config, output)
     end
@@ -442,12 +411,12 @@ function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     return target_id, FwdRev(fseq, rseq)
 end
 
-function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO = nothing)
+function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO=nothing)
     target_id, seqs = fasta_reader(infile)
     annotate_one(db, target_id, seqs, config, output)
 end
 
-function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing} = nothing)::String
+function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing}=nothing)::String
     ext = asgff3 ? "gff3" : "sff"
     d = if isnothing(directory)
         dirname(fafile)
@@ -455,7 +424,7 @@ function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing} 
         directory
     end
     f = basename(fafile)
-    base = rsplit(f, '.'; limit = 2)[1]
+    base = rsplit(f, '.'; limit=2)[1]
 
     joinpath(d, "$(base).$(ext)")
 end
@@ -466,7 +435,7 @@ end
 
 end =#
 
-function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String} = nothing)
+function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
     n = length(fa_files)
     for infile in fa_files
         maybe_gzread(infile) do io
