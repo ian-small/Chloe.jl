@@ -104,7 +104,6 @@ function readFasta(f::IO, name::String="<stream>")::Tuple{String,String}
     for res in iterFasta(f, name)
         return res
     end
-
     error("$(name): no FASTA data!")
 end
 
@@ -112,9 +111,7 @@ function readFasta(fasta::String)::Tuple{String,String}
     for res in iterFasta(fasta)
         return res
     end
-
     error("$(fasta): no FASTA data!")
-
 end
 
 

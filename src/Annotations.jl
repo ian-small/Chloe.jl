@@ -273,7 +273,6 @@ function align_template(feature_stack::FeatureStack)::Tuple{Vector{Tuple{Int32,I
     isempty(hits) && return hits, median_length
     # sort by descending score
     sort!(hits, by=x -> x[2], rev=true)
-    # println(feature_stack.path, '\t', hits)
     maxscore = hits[1][2]
     # retain all hits scoring over 90% of the the top score
     filter!(x -> (x[2] ≥ maxscore * 0.9 || x[2] ≥ median_length), hits)
@@ -398,8 +397,6 @@ function splice_model(target_seq::CircularSequence, model::Vector{SFF_Feature}):
     cds = cds[first(model).feature.phase+1:end]
     return cds
 end
-
-# define parameter weights
 
 function startScore(cds::Feature, codon::SubString)
     if codon == "ATG"
