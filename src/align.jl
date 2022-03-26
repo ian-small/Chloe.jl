@@ -157,7 +157,7 @@ function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, 
     end
     @debug "found $(length(blocks)) blocks"
     return blocks
-endß
+end
 
 function target_coverage(ff::BlockChain, rf::BlockChain, tgt_length::Integer)
     tgt_coverage = falses(tgt_length)
