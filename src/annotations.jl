@@ -781,10 +781,11 @@ function feature_xgb(ftype::String, template::FeatureTemplate, featurelength::In
     fdepth ≤ 0 && return Float32(0.0)
     rtlength = template.median_length / MAXFEATURELENGTH
     rflength = featurelength / MAXFEATURELENGTH
+    frtlength = featurelength / template.median_length
     match = gmatch / 100
     local pred
     if ftype == "CDS"
-        pred = XGBoost.predict(coding_xgb_model, [rtlength rflength fdepth match codingprob])
+        pred = XGBoost.predict(coding_xgb_model, [rtlength rflength frtlength fdepth match codingprob])
     else
         pred = XGBoost.predict(noncoding_xgb_model, [rtlength rflength fdepth match])
     end
