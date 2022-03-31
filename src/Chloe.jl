@@ -19,7 +19,7 @@ include("dist/tasks.jl")
 include("dist/chloe_distributed.jl")
 
 # import .ChloeDistributed: distributed_main, chloe_distributed, run_broker, get_distributed_args, maybe_launch_broker
-import .Annotator: annotate, annotate_one, MayBeIO, MayBeString, Feature, ReferenceDb
+import .Annotator: annotate, annotate_one, MayBeIO, MayBeString, Feature, ReferenceDb, AbstractReferenceDb
 import .CmdLine:cmd_main
 import .ZMQLogging:set_global_logger
 import .Annotator: read_single_reference!, inverted_repeat

@@ -2,7 +2,7 @@ module Annotator
 
 using Base: String
 using StatsBase: IntegerVector
-export annotate, annotate_one, MayBeIO, MayBeString, ReferenceDb
+export annotate, annotate_one, MayBeIO, MayBeString, AbstractReferenceDb
 export read_single_reference!, inverted_repeat, ChloeConfig
 
 import Base
@@ -59,7 +59,7 @@ MayBeString = Union{Nothing,String}
 Strand = Tuple{AAFeature,DFeatureStack}
 
 function flatten(vanno::Vector{Vector{Annotation}})::Vector{Annotation}
-    ret = Vector{Annotation}(undef, sum(length(v) for v in vanno; init = 0))
+    ret = Vector{Annotation}(undef, sum(length(v) for v in vanno; init=0))
     i = 1
     @inbounds for v in vanno
         for a in v
@@ -88,13 +88,13 @@ function do_annotations(target_id::String, strand::Char, refs::Vector{SingleRefe
 
     # annotations = collect(Iterators.flatten(tgt))
     annotations = flatten(tgt)
-    sort!(annotations, by = x -> x.path)
+    sort!(annotations, by=x -> x.path)
     annotations
 end
 
 function score_feature(sff::SFF_Feature, stack::FeatureStack, reference_feature_counts::Dict{String,Int}, gmatch::Float32, seq::CircularSequence)
     ref_count = reference_feature_counts[annotation_path(sff.feature)]
-    slice = stack.stack[range(sff.feature.start, length = sff.feature.length)]
+    slice = stack.stack[range(sff.feature.start, length=sff.feature.length)]
     sff.stackdepth = Float32((length(slice) > 0 ? sum(slice) : 0) / (ref_count * sff.feature.length))
     sff.relative_length = sff.feature.length / stack.template.median_length
     sff.gmatch = gmatch
@@ -152,7 +152,7 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
     #println(strand, '\t', sff_features)
 
     # group by feature name on features ordered by mid-point
-    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features, by = x -> x.feature))
+    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features, by=x -> x.feature))
 
     # println(strand, '\t', target_strand_models)
 
@@ -227,7 +227,7 @@ end
 function inverted_repeat(target::CircularSequence, revtarget::CircularSequence)::AlignedBlock
     fr::AlignedBlocks = ll2vector(align2seqs(target, revtarget, false))
     # sort blocks by length
-    fr = sort!(fr, by = b -> b.blocklength, rev = true)
+    fr = sort!(fr, by=b -> b.blocklength, rev=true)
     ir = length(fr) > 0 ? fr[1] : AlignedBlock(0, 0, 0)
     return ir
 end
@@ -238,7 +238,7 @@ struct ChloeAnnotation
     coverages::Dict{String,Float32}
     annotation::FwdRev{Vector{SFF_Model}}
 end
-function annotate_one_worker(db::ReferenceDb,
+function annotate_one_worker(db::AbstractReferenceDb,
     target_id::String,
     target::FwdRev{CircularSequence},
     config::ChloeConfig,
@@ -288,7 +288,7 @@ function annotate_one_worker(db::ReferenceDb,
     blocks_aligned_to_targetf = Vector{FwdRev{BlockTree}}(undef, numrefs)
     blocks_aligned_to_targetr = Vector{FwdRev{BlockTree}}(undef, numrefs)
     coverages = Dict{String,Float32}()
-    refs = Vector{SingleReference}(undef, 0)
+    # refs = Vector{SingleReference}(undef, 0)
     reference_feature_counts = Dict{String,Int}()
     # get_single_reference! throws if bad refpick
     refs = [get_single_reference!(db, r[1], reference_feature_counts) for r in refpicks]
@@ -356,7 +356,7 @@ function annotate_one_worker(db::ReferenceDb,
 
 end
 
-function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO = nothing)::Tuple{Union{String,IO},String}
+function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO=nothing)::Tuple{Union{String,IO},String}
     models = update_genecount!(result.annotation)
     ext = asgff3 ? "gff3" : "sff"
     fname = if output !== nothing
@@ -398,11 +398,11 @@ returns a 2-tuple: (ultimate sff output filename, sequence id)
 If `output_sff_file` is an IOBuffer then that buffer will be returned
 with the annotation within it.
 """
-function annotate_one(db::ReferenceDb,
+function annotate_one(db::AbstractReferenceDb,
     target_id::String,
     target::FwdRev{CircularSequence},
     config::ChloeConfig,
-    output::MayBeIO = nothing
+    output::MayBeIO=nothing
 )::Tuple{Union{String,IO},String}
 
     result = annotate_one_worker(db, target_id, target, config)
@@ -412,7 +412,7 @@ end
 
 
 
-function annotate_one(db::ReferenceDb, infile::String, config::ChloeConfig, output::MayBeIO = nothing)
+function annotate_one(db::AbstractReferenceDb, infile::String, config::ChloeConfig, output::MayBeIO=nothing)
     maybe_gzread(infile) do io
         annotate_one(db, io, config, output)
     end
@@ -442,12 +442,12 @@ function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     return target_id, FwdRev(fseq, rseq)
 end
 
-function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO = nothing)
+function annotate_one(db::AbstractReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO=nothing)
     target_id, seqs = fasta_reader(infile)
     annotate_one(db, target_id, seqs, config, output)
 end
 
-function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing} = nothing)::String
+function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing}=nothing)::String
     ext = asgff3 ? "gff3" : "sff"
     d = if isnothing(directory)
         dirname(fafile)
@@ -455,18 +455,18 @@ function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing} 
         directory
     end
     f = basename(fafile)
-    base = rsplit(f, '.'; limit = 2)[1]
+    base = rsplit(f, '.'; limit=2)[1]
 
     joinpath(d, "$(base).$(ext)")
 end
 
 #= function annotate_one(refsdir::String, infile::String, output::MayBeIO=nothing)
 
-    annotate_one(ReferenceDb(;refsdir=refsdir), infile, ChloeConfig(), output)
+    annotate_one(AbstractReferenceDb(;refsdir=refsdir), infile, ChloeConfig(), output)
 
 end =#
 
-function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String} = nothing)
+function annotate(db::AbstractReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
     n = length(fa_files)
     for infile in fa_files
         maybe_gzread(infile) do io

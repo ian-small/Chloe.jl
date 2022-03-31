@@ -364,6 +364,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
             create_responder([
                     chloe,
                     annotate,
+                    # batch_annotate,
                     ping,
                     nconn,
                     exit,

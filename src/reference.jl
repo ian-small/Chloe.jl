@@ -1,5 +1,7 @@
 include("globals.jl")
-mutable struct ReferenceDb
+abstract type AbstractReferenceDb end
+
+mutable struct ReferenceDb <: AbstractReferenceDb
     lock::ReentrantLock
     gsrefsdir::String
     chloerefsdir::String
@@ -17,7 +19,7 @@ struct ChloeConfig
     nofilter::Bool
 end
 
-function ReferenceDb(; gsrefsdir = "default", chloerefsdir = "default", template = "default")
+function ReferenceDb(; gsrefsdir="default", chloerefsdir="default", template="default")::ReferenceDb
     if gsrefsdir == "default"
         gsrefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_GSREFS))
     end
@@ -87,8 +89,8 @@ end
 
 const KWARGS = ["numgsrefs", "numchloerefs", "sensitivity", "to_gff3", "nofilter"]
 
-function ChloeConfig(; numgsrefs = DEFAULT_NUMGSREFS, numchloerefs = DEFAULT_NUMCHLOEREFS, sensitivity = DEFAULT_SENSITIVITY,
-    to_gff3::Bool = false, nofilter::Bool = false)
+function ChloeConfig(; numgsrefs=DEFAULT_NUMGSREFS, numchloerefs=DEFAULT_NUMCHLOEREFS, sensitivity=DEFAULT_SENSITIVITY,
+    to_gff3::Bool=false, nofilter::Bool=false)
     return ChloeConfig(numgsrefs, numchloerefs, sensitivity, to_gff3, nofilter)
 end
 
