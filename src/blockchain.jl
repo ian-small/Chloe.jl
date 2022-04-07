@@ -59,7 +59,7 @@ function Base.isempty(link::ChainLink{AlignedBlock})
 end
 
 function Base.string(link::ChainLink{AlignedBlock})
-    return join([string(link.data.src_index),string(link.data.tgt_index),string(link.data.blocklength)], " ")
+    return join([string(link.data.src_index), string(link.data.tgt_index), string(link.data.blocklength)], " ")
 end
 
 function Base.show(io::IO, link::ChainLink{AlignedBlock})
@@ -76,7 +76,9 @@ function Base.append!(chain::BlockChain{AlignedBlock}, b::AlignedBlock)
         if chain.lastlink.data.blocklength ≥ b.blocklength
             return chain # new block is worse than existing link, so don't append
         else
-            if isempty(chain); chain.links = 1; end
+            if isempty(chain)
+                chain.links = 1
+            end
             chain.lastlink.data = b # new block is better than existing link, so replace it
         end
     else # append new link
@@ -139,8 +141,7 @@ function trymergelinks!(chain::BlockChain{AlignedBlock}, link1::ChainLink{Aligne
     (srcgap, tgtgap) = contiguousblockgaps(link1, link2, lenseq1, lenseq2)
     lengthsrcgap::Int32 = srcgap.stop - srcgap.start + 1
     lengthtgtgap::Int32 = tgtgap.stop - tgtgap.start + 1
-    if lengthsrcgap ==  lengthtgtgap && 0 < lengthsrcgap ≤ MAXIMUMMERGEABLEGAP
-        #println("merging: ",link1,"\t",link2, "\t", srcgap, "\t", tgtgap)
+    if lengthsrcgap == lengthtgtgap && 0 < lengthsrcgap ≤ MAXIMUMMERGEABLEGAP
         # safe to not mod1() the indexes as they don't change
         link1.data = AlignedBlock(link1.data.src_index, link1.data.tgt_index, link1.data.blocklength + length(srcgap) + link2.data.blocklength)
         link1.next = link2.next
@@ -170,8 +171,11 @@ end
 
 function gaps(chain::BlockChain{AlignedBlock})::Vector{Tuple{ChainLink{AlignedBlock},ChainLink{AlignedBlock}}}
     circular = chain.lastlink.next == chain.firstlink ? true : false
-    if circular; gapslength = length(chain)
-    else; gapslength = length(chain) + 1; end
+    if circular
+        gapslength = length(chain)
+    else
+        gapslength = length(chain) + 1
+    end
     gaps = Vector{Tuple{ChainLink{AlignedBlock},ChainLink{AlignedBlock}}}(undef, gapslength)
     gapslength == 0 && return gaps
     # set internal gaps
@@ -183,10 +187,10 @@ function gaps(chain::BlockChain{AlignedBlock})::Vector{Tuple{ChainLink{AlignedBl
     end
     # set terminal gaps
     if circular
-        gaps[1] = (chain.lastlink, chain.firstlink);
+        gaps[1] = (chain.lastlink, chain.firstlink)
     else
-        gaps[1] = (ChainLink{AlignedBlock}(), chain.firstlink);
-        gaps[chain.links + 1] = (chain.lastlink, ChainLink{AlignedBlock}())
+        gaps[1] = (ChainLink{AlignedBlock}(), chain.firstlink)
+        gaps[chain.links+1] = (chain.lastlink, ChainLink{AlignedBlock}())
     end
     return gaps
 end
@@ -207,9 +211,9 @@ AlignedBlocks = Vector{AlignedBlock}
 datasize(a::AlignedBlocks) = length(a) * sizeof(AlignedBlock)
 
 function ll2vector(chain::BlockChain{AlignedBlock})::AlignedBlocks
-    v = AlignedBlocks(undef,chain.links)
+    v = AlignedBlocks(undef, chain.links)
     length(v) == 0 && return v
-    for (i,link) in enumerate(chain)
+    for (i, link) in enumerate(chain)
         v[i] = link.data
     end
     return v

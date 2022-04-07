@@ -12,12 +12,12 @@ end
 @inline Base.getindex(cv::CircularVector, i::Int32) = @inbounds getindex(cv.v, mod1(i, length(cv)))
 function Base.getindex(cv::CircularVector, r::UnitRange{<:Integer})
     len = length(cv)
-	start = mod1(r.start, len)
+    start = mod1(r.start, len)
     stop = mod1(r.stop, len)
-	if start < stop
-		return cv.v[start:stop]
+    if start < stop
+        return cv.v[start:stop]
     else
-        return vcat(cv.v[start:end],cv.v[1:stop])
+        return vcat(cv.v[start:end], cv.v[1:stop])
     end
 end
 @inline Base.setindex!(cv::CircularVector, value::Int32, i::Int32) = @inbounds setindex!(cv.v, value, mod1(i, length(cv)))
@@ -39,12 +39,12 @@ end
 @inline Base.getindex(cm::CircularMask, i::Int32) = @inbounds getindex(cm.m, mod1(i, length(cm)))
 function Base.getindex(cm::CircularMask, r::UnitRange{<:Integer})
     len = length(cm)
-	start = mod1(r.start, len)
+    start = mod1(r.start, len)
     stop = mod1(r.stop, len)
-	if start < stop
-		return cm.m[start:stop]
+    if start < stop
+        return cm.m[start:stop]
     else
-        return vcat(cm.m[start:end],cm.m[1:stop])
+        return vcat(cm.m[start:end], cm.m[1:stop])
     end
 end
 @inline Base.setindex!(cm::CircularMask, value::Bool, i::Int32) = @inbounds setindex!(cm.m, value, mod1(i, length(cm)))
@@ -55,10 +55,10 @@ function Base.setindex!(cm::CircularMask, value::Bool, r::UnitRange{<:Integer})
 end
 function Base.sum(cm::CircularMask, r::UnitRange{<:Integer})
     len = length(cm)
-	start = mod1(r.start, len)
+    start = mod1(r.start, len)
     stop = mod1(r.stop, len)
-	if start < stop
-		return sum(cm.m[start:stop])
+    if start < stop
+        return sum(cm.m[start:stop])
     else
         return sum(cm.m[start:end]) + sum(cm.m[1:stop])
     end
@@ -70,7 +70,7 @@ Base.reverse(cm::CircularMask) = CircularMask(reverse(cm.m))
 function entropy_mask!(seq::LongDNA{4}, mask::CircularMask)
     comp, entropy = sequence_entropy(seq[1:KMERSIZE])
     entropy ≤ 0 && setindex!(mask, true, 1:KMERSIZE)
-    for i::Int32 in 1:length(seq) - KMERSIZE
+    for i::Int32 in 1:length(seq)-KMERSIZE
         if seq[i] == DNA_A
             comp[1] -= 1
         elseif seq[i] == DNA_C
@@ -80,13 +80,13 @@ function entropy_mask!(seq::LongDNA{4}, mask::CircularMask)
         elseif seq[i] == DNA_T
             comp[4] -= 1
         end
-        if seq[i + KMERSIZE] == DNA_A
+        if seq[i+KMERSIZE] == DNA_A
             comp[1] += 1
-        elseif seq[i + KMERSIZE] == DNA_C
+        elseif seq[i+KMERSIZE] == DNA_C
             comp[2] += 1
-        elseif seq[i + KMERSIZE] == DNA_G
+        elseif seq[i+KMERSIZE] == DNA_G
             comp[3] += 1
-        elseif seq[i + KMERSIZE] == DNA_T
+        elseif seq[i+KMERSIZE] == DNA_T
             comp[4] += 1
         end
         entropy = 0.0
@@ -96,7 +96,7 @@ function entropy_mask!(seq::LongDNA{4}, mask::CircularMask)
             entropy -= prob * log2(prob)
         end
         # entropy 0 = homopolymer run
-        entropy ≤ 0 && setindex!(mask, true, i:i + KMERSIZE - 1)
+        entropy ≤ 0 && setindex!(mask, true, i:i+KMERSIZE-1)
     end
 end
 
@@ -106,7 +106,7 @@ struct CircularSequence
     mask::CircularMask  #used to mask low entropy regions, ambiguous bases, gaps
 
     function CircularSequence(seq::LongDNA{2}, mask::CircularMask)
-        new(length(seq), append!(seq, LongSubSeq(seq, 1:length(seq) - 1)), mask)
+        new(length(seq), append!(seq, LongSubSeq(seq, 1:length(seq)-1)), mask)
     end
 
     function CircularSequence(seq::LongDNA{4})
@@ -119,7 +119,7 @@ struct CircularSequence
             end
         end
         compressedseq = LongDNA{2}(seq)
-        new(length(compressedseq), append!(compressedseq, LongSubSeq(compressedseq, 1:length(compressedseq) - 1)), mask)
+        new(length(compressedseq), append!(compressedseq, LongSubSeq(compressedseq, 1:length(compressedseq)-1)), mask)
     end
 end
 
@@ -129,9 +129,9 @@ end
 function Base.getindex(cs::CircularSequence, r::UnitRange{<:Integer})
     @assert length(r) <= length(cs)
     if r.start > length(cs) || r.start < 1
-        r = range(mod1(r.start, cs.length); length = length(r))
+        r = range(mod1(r.start, cs.length); length=length(r))
     end
-	return LongSubSeq(cs.sequence, r)
+    return LongSubSeq(cs.sequence, r)
 end
 
 function reverse_complement(cs::CircularSequence)
@@ -140,5 +140,5 @@ function reverse_complement(cs::CircularSequence)
 end
 
 @inline function getcodon(cs::CircularSequence, index::Int32)
-    return (cs[index], cs[index + Int32(1)], cs[index + Int32(2)])
+    return (cs[index], cs[index+Int32(1)], cs[index+Int32(2)])
 end

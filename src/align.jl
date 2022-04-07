@@ -1,6 +1,6 @@
 using FASTX
 include("sais.jl")
-include("ChainedBlocks.jl")
+include("blockchain.jl")
 
 global const MINIMUMFILLABLEGAP = 20
 global const MAXIMUMMERGEABLEGAP = 400
@@ -51,11 +51,6 @@ function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask::Bool):
     src2tgt = blockchain(alignment, sa, ra, lcps, one(Int32):alignment.lenseq1, one(Int32):alignment.lenseq2, matchLengthThreshold(alignment.lenseq1, alignment.lenseq2), mask ? seq2.mask : nothing)
     src2tgt = circularise(src2tgt, alignment.lenseq1)
 
-    #= println("links before gapfilling: $(src2tgt.links)")
-    for link in src2tgt
-        println(link)
-    end =#
-
     Threads.@threads for gap in gaps(src2tgt)
         (srcgap, tgtgap) = contiguousblockgaps(gap[1], gap[2], alignment.lenseq1, alignment.lenseq2)
         # println(srcgap, " ", length(srcgap), "\t", tgtgap, " ", length(tgtgap))
@@ -66,11 +61,6 @@ function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask::Bool):
         gapfill!(src2tgt, gap[1], gap[2], alignment, sa, ra, lcps, matchLengthThreshold(lengthsrcgap, lengthtgtgap), mask ? seq2.mask : nothing)
     end
 
-    #= println("links after gapfilling: $(src2tgt.links)")
-    for link in src2tgt
-        println(link)
-    end =#
-
     # merge adjacent blocks
     link = src2tgt.firstlink
     done = false
@@ -78,11 +68,6 @@ function align2seqs(seq1::CircularSequence, seq2::CircularSequence, mask::Bool):
         if link.next == src2tgt.firstlink; done = true; end
         link = trymergelinks!(src2tgt, link, alignment.lenseq1, alignment.lenseq2)
     end
-
-    #= println("links after merging: $(src2tgt.links)")
-    for link in src2tgt
-        println(link)
-    end =#
 
 return src2tgt
 end
@@ -102,7 +87,6 @@ function matchLengthThreshold(m::Int32, n::Int32)::Int32
 end
 
 function gapfill!(mainchain::BlockChain{AlignedBlock}, head::ChainLink{AlignedBlock}, tail::ChainLink{AlignedBlock}, alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, lcps::Vector{Int32}, minblocksize::Int32, mask)
-    # println("gapfilling from $(head.data) to $(tail.data) minblocksize = $(minblocksize)")
     src_length = alignment.lenseq1
     tgt_length = alignment.lenseq2
     (srcgap, tgtgap) = contiguousblockgaps(head, tail, src_length, tgt_length)
@@ -167,7 +151,6 @@ function blockchain(alignment::Alignment, sa::Vector{Int32}, ra::Vector{Int32}, 
         toplcp < minblocksize && continue
         if toplcp > minlcp; tgt_start = toptgt_start; end
         new_block = AlignedBlock(mod1(nt, src_length), mod1(tgt_start, tgt_length), mod1(toplcp, min(src_length, tgt_length)))
-        #if isnothing(mask) || !all(mask[new_block.tgt_index:new_block.tgt_index + new_block.blocklength - 1]) ## add block if it is not included in low complexity region
         if isnothing(mask) || (sum(mask[new_block.tgt_index:new_block.tgt_index + new_block.blocklength - 1]) < new_block.blocklength/2)
             append!(blocks, new_block)
         end

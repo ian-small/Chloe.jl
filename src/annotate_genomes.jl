@@ -7,17 +7,14 @@ export read_single_reference!, inverted_repeat, ChloeConfig
 
 import Base
 
-include("Utilities.jl")
+include("utilities.jl")
 include("circularity.jl")
 include("rotate_genome.jl")
 include("hash.jl")
-include("AlignGenomes.jl")
-include("Annotations.jl")
+include("align.jl")
+include("annotations.jl")
 include("orfs.jl")
 include("reference.jl")
-
-
-# import Dates: Time, Nanosecond
 
 import Printf: @sprintf
 import JSON
@@ -86,7 +83,6 @@ function do_annotations(target_id::String, strand::Char, refs::Vector{SingleRefe
         tgt[i] = do_one(refs[i].ref_seq, refs[i].ref_features, blocks)
     end
 
-    # annotations = collect(Iterators.flatten(tgt))
     annotations = flatten(tgt)
     sort!(annotations, by=x -> x.path)
     annotations
@@ -108,13 +104,9 @@ end
 function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32}, reference_feature_counts::Dict{String,Int},
     strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate})::Vector{Vector{SFF_Feature}}
 
-    #println(strand, '\t', blocks_aligned_to_target)
-
     t4 = time_ns()
     target_length = Int32(length(target_seq))
     annotations = do_annotations(target_id, strand, refs, blocks_aligned_to_target, target_length)
-
-    #println(strand, '\t', annotations)
 
     # strand_feature_stacks is basically grouped by annotations.path
     strand_feature_stacks = fill_feature_stack(target_length, annotations, feature_templates)
@@ -122,7 +114,6 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
     t5 = time_ns()
     @info "[$target_id]$strand built feature stacks ($(length(strand_feature_stacks))) $(human(datasize(strand_feature_stacks))): $(ns(t5 - t4))"
 
-    # orfmap = threeframes(target_seq)
     features = Feature[]
     path_to_stack = Dict{String,FeatureStack}()
 
@@ -138,8 +129,6 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
         path_to_stack[stack.path] = stack
     end
 
-    #println(strand, '\t', features)
-
     gmatch = mean(values(coverages))
     sff_features = Vector{SFF_Feature}(undef, length(features))
     for (i, feature) in enumerate(features)
@@ -149,12 +138,8 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
         score_feature(sff_features[i], stack, reference_feature_counts, gmatch, target_seq)
     end
 
-    #println(strand, '\t', sff_features)
-
     # group by feature name on features ordered by mid-point
     target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features, by=x -> x.feature))
-
-    # println(strand, '\t', target_strand_models)
 
     orfs = getallorfs(target_seq, strand, Int32(0))
     # this toys with the feature start, phase etc....
@@ -168,8 +153,6 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
         stack = path_to_stack[annotation_path(f)]
         score_feature(sf, stack, reference_feature_counts, gmatch, target_seq)
     end
-
-    # println(strand, '\t', target_strand_models)
 
     #=
     # add any unassigned orfs
@@ -250,22 +233,8 @@ function annotate_one_worker(db::AbstractReferenceDb,
     target_length = length(target.forward)
     @info "[$target_id] seq length: $(target_length)bp"
 
-    # sanity checks
-    #=     n = count(isambiguous, target.forward.sequence)
-        r = n / target_length
-        if r > 0.01
-            error("sequence [$(target_id)] contains too many ambiguous nucleotides: $(@sprintf "%.1f" r * 100)%")
-        end
-        n = count(isgap, target.forward.sequence)
-        if n > 0
-            @warn("sequence [$(target_id)] contains gaps which will be removed before analysis")
-            ungap!(target.forward.sequence)
-            ungap!(target.reverse.sequence)
-            target_length = Int32(length(target.forward))
-        end
-     =#
-
     refpicks = Vector{Tuple{String,Int}}(undef, 0)
+
     # find closest gs references
     refhashes = get_gsminhashes(db, config)
     if !isnothing(refhashes)
