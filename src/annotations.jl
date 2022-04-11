@@ -880,14 +880,10 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
         if model1.gene == model2.gene
             model1_boundaries = get_model_boundaries(model1, glength)
             model2_boundaries = get_model_boundaries(model2, glength)
-            println(model1, ' ', model1_boundaries)
-            println(model2, ' ', model2_boundaries)
             if !isnothing(ir1) && !isnothing(ir2)
                 #if both models are within the IRs, both can be kept, if not, one is flagged
                 ir1_boundaries = get_model_boundaries(ir1, glength)
                 ir2_boundaries = get_model_boundaries(ir2, glength)
-                println(ir1, ' ', ir1_boundaries)
-                println(ir2, ' ', ir2_boundaries)
                 if model1.strand == '+'
                     model1_maxIRintersect = max(length(circularintersect(model1_boundaries, ir1_boundaries, glength)), length(circularintersect(model1_boundaries, reverse_complement(ir2_boundaries, glength), glength)))
                 else
@@ -898,8 +894,6 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
                 else
                     model2_maxIRintersect = max(length(circularintersect(model2_boundaries, reverse_complement(ir1_boundaries, glength), glength)), length(circularintersect(model2_boundaries, ir2_boundaries, glength)))
                 end
-                println(model1_maxIRintersect, ' ', length(model1_boundaries))
-                println(model2_maxIRintersect, ' ', length(model2_boundaries))
                 if (model1_maxIRintersect == 0 || model2_maxIRintersect == 0) # one or other model outside the IRs, deal with as INFERIOR_COPY
                     if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
                         push!(model2.warnings, INFERIOR_COPY)
