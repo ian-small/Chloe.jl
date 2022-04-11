@@ -31,6 +31,31 @@ function Base.sum(cv::CircularVector, r::UnitRange{<:Integer})
     return sum
 end
 
+function circularintersect(r1::UnitRange, r2::UnitRange, d::Int32)::UnitRange{Int32}
+    maxintersect = UnitRange{Int32}(0, -1)
+    maxintersectlength = 0
+    i1 = intersect(r1, r2)
+    if length(i1) > maxintersectlength
+        maxintersect = i1
+        maxintersectlength = length(i1)
+    end
+    if r2.stop > d
+        i2 = intersect(r1 .+ d, r2)
+        if length(i2) > maxintersectlength
+            maxintersect = i2
+            maxintersectlength = length(i2)
+        end
+    end
+    if r1.stop > d
+        i3 = intersect(r1, r2 .+ d)
+        if length(i3) > maxintersectlength
+            maxintersect = i3
+            maxintersectlength = length(i3)
+        end
+    end
+    return maxintersect
+end
+
 struct CircularMask
     m::BitVector
 end
