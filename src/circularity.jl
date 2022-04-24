@@ -10,6 +10,7 @@ end
 
 @inline Base.length(cv::CircularVector) = Int32(length(cv.v))
 @inline Base.getindex(cv::CircularVector, i::Int32) = @inbounds getindex(cv.v, mod1(i, length(cv)))
+@inline Base.getindex(cv::CircularVector, is::Vector{<:Integer}) = getindex(cv.v, mod1.(is,length(cv.v)))
 function Base.getindex(cv::CircularVector, r::UnitRange{<:Integer})
     len = length(cv)
     start = mod1(r.start, len)
@@ -52,6 +53,9 @@ function circularintersect(r1::UnitRange, r2::UnitRange, d::Int32)::UnitRange{In
             maxintersect = i3
             maxintersectlength = length(i3)
         end
+    end
+    if maxintersect.start > d
+        maxintersect = maxintersect .- d
     end
     return maxintersect
 end
