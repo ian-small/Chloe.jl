@@ -110,7 +110,7 @@ function getallorfs(seq::CircularSequence, strand::Char, minorflength::Int32)
         for stop in frame[2:length(frame)]
             distance_from_pstop = circulardistance(pstop, stop, length(seq))
             if distance_from_pstop ≥ minorflength
-                push!(orfs, Feature("unassigned_orf_" * strandprefix * string(orf_counter) * "/CDS/1", pstop + 3, distance_from_pstop - 3, 0))
+                push!(orfs, Feature("unassigned_orf_" * strandprefix * string(orf_counter) * "/CDS/1", Int32(pstop + 3), Int32(distance_from_pstop - 3), Int8(0)))
                 orf_counter += 1
             end
             pstop = stop
@@ -121,7 +121,7 @@ function getallorfs(seq::CircularSequence, strand::Char, minorflength::Int32)
         dist = circulardistance(last(f1.v), first(f2.v), length(seq))
         if dist % 3 == 0 #in frame
             if dist ≥ minorflength
-                push!(orfs, Feature("unassigned_orf_" * strandprefix * string(orf_counter) * "/CDS/1", last(f1.v) + 3, dist - 3, 0))
+                push!(orfs, Feature("unassigned_orf_" * strandprefix * string(orf_counter) * "/CDS/1", Int32(last(f1.v) + 3), Int32(dist - 3), Int8(0)))
             end
             continue
         end
