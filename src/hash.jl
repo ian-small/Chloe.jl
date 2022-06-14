@@ -104,7 +104,7 @@ function hashcount(hash1, hash2)::Int
         end
     end
     # hack to avoid picking a ref identical to the target
-    return count == length(hash1) ? 0 : count
+    return count > 0.80 * length(hash1) ? 0 : count
     #return count
 end
 

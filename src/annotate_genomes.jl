@@ -136,7 +136,7 @@ function score_feature(sff::SFF_Feature, reference_feature_counts::Dict{String,I
         codonfrequencies = countcodons(sff.feature, seq)
         sff.coding_prob = xgb_coding_classifier(codonfrequencies)
     end
-    sff.feature_prob = feature_xgb(sff.feature.type, sff.feature.median_length, sff.feature.length, sff.stackdepth, gmatch, sff.coding_prob)
+    sff.feature_prob = feature_xgb(sff.feature.type, sff.feature.median_length, sff.feature.length, sff.stackdepth, sff.coding_prob)
 end
 
 function fill_feature_stack(target_length::Int32, annotations::Vector{Annotation},
@@ -941,8 +941,8 @@ function toSFFModel(feature_templates::Dict{String,FeatureTemplate}, model::Vect
     exon_count = 0
     model_prob = 0.0
     for sff in model
+        model_prob += sff.feature_prob
         if sff.feature.type ≠ "intron"
-            model_prob += sff.feature_prob
             exon_count += 1
         end
     end
@@ -953,7 +953,7 @@ function toSFFModel(feature_templates::Dict{String,FeatureTemplate}, model::Vect
     if startswith(gene, "unassigned_orf")
         model_prob = first(model).feature_prob
     else
-        model_prob = model_prob / length(expected_exons)
+        model_prob = model_prob / length(model)
     end
     exceeds_sensitivity = false
     if model_prob ≥ sensitivity || isnan(model_prob)
@@ -1017,18 +1017,17 @@ end
 coding_xgb_model = Booster(model_file=joinpath(@__DIR__, "coding_xgb.model"))
 noncoding_xgb_model = Booster(model_file=joinpath(@__DIR__, "noncoding_xgb.model"))
 const MAXFEATURELENGTH = 7000
-function feature_xgb(ftype::String, median_length::Float32, featurelength::Int32, fdepth::Float32, gmatch::Float32, codingprob::Float32)::Float32
+function feature_xgb(ftype::String, median_length::Float32, featurelength::Int32, fdepth::Float32, codingprob::Float32)::Float32
     featurelength ≤ 0 && return Float32(0.0)
     fdepth ≤ 0 && return Float32(0.0)
     rtlength = median_length / MAXFEATURELENGTH
     rflength = featurelength / MAXFEATURELENGTH
     frtlength = featurelength / median_length
-    match = gmatch / 100
     local pred
     if ftype == "CDS"
-        pred = XGBoost.predict(coding_xgb_model, [rtlength rflength frtlength fdepth match codingprob])
+        pred = XGBoost.predict(coding_xgb_model, [rtlength rflength frtlength fdepth codingprob])
     else
-        pred = XGBoost.predict(noncoding_xgb_model, [rtlength rflength fdepth match])
+        pred = XGBoost.predict(noncoding_xgb_model, [rtlength rflength frtlength fdepth])
     end
     return pred[1]
 end
