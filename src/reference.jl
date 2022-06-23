@@ -108,7 +108,7 @@ function ChloeConfig(dict::Dict{String,V} where {V<:Any})
     return ChloeConfig(; Dict(Symbol(k) => cvt(k, v) for (k, v) in dict if k in KWARGS)...)
 end
 function Base.show(io::IO, c::ChloeConfig)
-    print(io, "ChloeConfig[numrefs=$(c.numrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), references=$(c.references)]")
+    print(io, "ChloeConfig[numgsrefs=$(c.numgsrefs), numchloerefs=$(c.numchloerefs) sensitivity=$(c.sensitivity), nofilter=$(c.nofilter)]")
 end
 
 function verify_refs(gsrefsdir, chloerefsdir, template)
