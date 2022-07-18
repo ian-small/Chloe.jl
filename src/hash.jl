@@ -50,7 +50,7 @@ function minhash_references(; fasta_files=Vector{String}, output="reference_minh
         close(reader)
     end
 
-    hashes = Dict{String,Vector{Int64}}()
+    hashes = Dict{String,Vector{UInt64}}()
     for seqrec in seqs
         seq = FASTA.sequence(LongDNA{4}, seqrec)
         hashes[FASTA.identifier(seqrec)] = minhash(CircularSequence(seq))
@@ -58,7 +58,7 @@ function minhash_references(; fasta_files=Vector{String}, output="reference_minh
     writeminhashes(output, hashes)
 end
 
-function writeminhashes(filename::String, hashes::Dict{String,Vector{Int64}})
+function writeminhashes(filename::String, hashes::Dict{String,Vector{UInt64}})
     outfile = open(filename, "w")
     for (id, hash) in hashes
         write(outfile, UInt8(length(id)), id, hash)
@@ -66,13 +66,13 @@ function writeminhashes(filename::String, hashes::Dict{String,Vector{Int64}})
     close(outfile)
 end
 
-function readminhashes(infile::String)::Dict{String,Vector{Int64}}
-    hashes = Dict{String,Vector{Int64}}()
+function readminhashes(infile::String)::Dict{String,Vector{UInt64}}
+    hashes = Dict{String,Vector{UInt64}}()
     open(infile, "r") do hashfile
         while !eof(hashfile)
             length_id = read(hashfile, UInt8)
             id = String(read(hashfile, length_id, all=true))
-            h = Vector{Int64}(undef, SKETCHSIZE)
+            h = Vector{UInt64}(undef, SKETCHSIZE)
             hashes[id] = read!(hashfile, h)
         end
     end
