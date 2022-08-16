@@ -33,7 +33,7 @@ function minhash(seq::CircularSequence)
         kmer = seq[i:i+KMERSIZE-1]
         push!(hashes, hash(canonical(kmer)))
     end
-    return sort!(hashes)[1:SKETCHSIZE]
+    return sort!(hashes)[1:min(length(hashes), SKETCHSIZE)]
 end
 
 function minhash_references(; fasta_files=Vector{String}, output="reference_minhashes.hash")
@@ -88,24 +88,7 @@ function searchhashes(hash, hashes)::Vector{Tuple{String,Int}}
 end
 
 function hashcount(hash1, hash2)::Int
-    l = length(hash1) + 1
-    i = 1
-    j = 1
-    count = 0
-    while l > i && l > j
-        if hash1[i] < hash2[j]
-            i += 1
-        elseif hash1[i] > hash2[j]
-            j += 1
-        else
-            count += 1
-            i += 1
-            j += 1
-        end
-    end
-    # hack to avoid picking a ref identical to the target
-    return count > 0.80 * length(hash1) ? 0 : count
-    #return count
+    return length(intersect(hash1, hash2))
 end
 
 function jacquard_index(hash1, hash2)
