@@ -1255,13 +1255,10 @@ function sff2gffcoords(f::Feature, strand::Char, genome_length::Integer)
     start = f.start
     finish = f.start + f.length - 1
     length = finish - start + 1
-    finish = mod1(finish, genome_length)
 
     if strand == '-'
         start = genome_length - finish + 1
         finish = start + length - 1
-        start = mod1(start, genome_length)
-        finish = mod1(finish, genome_length)
     end
     return (start, finish, length)
 end
@@ -1356,9 +1353,6 @@ function write_model2GFF3(outfile, model::SFF_Model, genome_id::String, genome_l
         end
         finish = start + length - 1
     end
-
-    start = mod1(start, genome_length)
-    finish = mod1(finish, genome_length)
 
     # gene
     if startswith(model.gene, "IR")
