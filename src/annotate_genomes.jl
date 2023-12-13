@@ -1,7 +1,6 @@
 module Annotator
 
 using Base: String
-using StatsBase: IntegerVector
 using XGBoost
 export annotate, annotate_one, MayBeIO, MayBeString, ReferenceDb
 export read_single_reference!, inverted_repeat, ChloeConfig
@@ -1111,7 +1110,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
     warningcheck!(fwd_models)
     warningcheck!(rev_models)
 
-    #deal with duplicated modes on opposite strands, e.g. in the IR
+    #deal with duplicated models on opposite strands, e.g. in the IR
     for model1 in fwd_models, model2 in rev_models
         if model1.gene == model2.gene
             model1_boundaries = get_model_boundaries(model1, glength)
