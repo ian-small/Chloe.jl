@@ -119,11 +119,11 @@ function verify_refs(gsrefsdir, chloerefsdir, template)
         @error msg
         throw(ArgumentError(msg))
     end
-    if !isdir(chloerefsdir)
-        msg = "Reference directory $(chloerefsdir) is not a directory!"
-        @error msg
-        throw(ArgumentError(msg))
-    end
+    # if !isdir(chloerefsdir)
+    #     msg = "Reference directory $(chloerefsdir) is not a directory!"
+    #     @error msg
+    #     throw(ArgumentError(msg))
+    # end
 end
 
 function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
