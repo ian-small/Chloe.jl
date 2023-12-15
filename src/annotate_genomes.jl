@@ -1,7 +1,6 @@
 module Annotator
 
 using Base: String
-using StatsBase: IntegerVector
 using XGBoost
 export annotate, annotate_one, MayBeIO, MayBeString, AbstractReferenceDb
 
@@ -1015,8 +1014,8 @@ function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String
     maxlengths
 end
 
-coding_xgb_model = Booster(model_file=joinpath(@__DIR__, "coding_xgb.model"))
-noncoding_xgb_model = Booster(model_file=joinpath(@__DIR__, "noncoding_xgb.model"))
+coding_xgb_model = Booster(DMatrix[], model_file=joinpath(@__DIR__, "coding_xgb.model"))
+noncoding_xgb_model = Booster(DMatrix[], model_file=joinpath(@__DIR__, "noncoding_xgb.model"))
 const MAXFEATURELENGTH = 7000
 function feature_xgb(ftype::String, median_length::Float32, featurelength::Int32, fdepth::Float32, codingprob::Float32)::Float32
     featurelength ≤ 0 && return Float32(0.0)
@@ -1112,7 +1111,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
     warningcheck!(fwd_models)
     warningcheck!(rev_models)
 
-    #deal with duplicated modes on opposite strands, e.g. in the IR
+    #deal with duplicated models on opposite strands, e.g. in the IR
     for model1 in fwd_models, model2 in rev_models
         if model1.gene == model2.gene
             model1_boundaries = get_model_boundaries(model1, glength)
