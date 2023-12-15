@@ -10,7 +10,7 @@ G='\e[1;32m'
 R='\e[1;31m'
 
 echo "start annotations..."
-time -p julia --project=. --threads=8 "$@" chloe.jl -l info annotate -o testo --numgsrefs 16 --numchloerefs 0  testfa/*.fa
+time -p julia --project=. --threads=8 "$@" chloe.jl -l info annotate -o testo --numgsrefs 16 testfa/*.fa
 for f in $(ls testo)
 do 
     echo "diffing $f"

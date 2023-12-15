@@ -75,7 +75,7 @@ function create_responder(apispecs::Vector{Function}, addr::String, ctx::ZMQ.Con
 end
 
 function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info";
-    gsrefsdir="default", chloerefsdir="default", template="default")
+    gsrefsdir="default", template="default")
 
     @everywhere procs begin
         include(joinpath($REPO_DIR, "annotate_genomes.jl"))
@@ -83,7 +83,7 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
         include(joinpath($REPO_DIR, "dist/tasks.jl"))
 
         set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = Annotator.ReferenceDb(; gsrefsdir=$gsrefsdir, chloerefsdir=$chloerefsdir, template=$template)
+        global REFERENCE = Annotator.ReferenceDb(; gsrefsdir=$gsrefsdir, template=$template)
     end
     # [ @spawnat p begin
     #     include(joinpath(REPO_DIR, "annotate_genomes.jl"))
@@ -96,13 +96,13 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
 
 end
 function arm_procs(procs, backend::MayBeString=nothing, level::String="info";
-    gsrefsdir="default", chloerefsdir="default", template="default")
+    gsrefsdir="default", template="default")
 
     # use when toplevel has already done
     # @everywhere using Chloe
     @everywhere procs begin
         set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = Annotator.ReferenceDb(; gsrefsdir=$gsrefsdir, chloerefsdir=$chloerefsdir, template=$template)
+        global REFERENCE = Annotator.ReferenceDb(; gsrefsdir=$gsrefsdir, template=$template)
     end
     # [ @spawnat p begin
     #     set_global_logger(level, backend; topic="annotator")
@@ -111,7 +111,7 @@ function arm_procs(procs, backend::MayBeString=nothing, level::String="info";
 end
 
 function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WORKER,
-    chloerefsdir="default", template="default", level="warn", workers=3,
+    template="default", level="warn", workers=3,
     backend::MayBeString=nothing, broker::MayBeString=nothing)
 
     if !isnothing(backend)
@@ -124,14 +124,11 @@ function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WOR
     if gsrefsdir == "default"
         gsrefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_GSREFS))
     end
-    if chloerefsdir == "default"
-        chloerefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_CHLOEREFS))
-    end
     if template == "default"
         template = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_TEMPLATE))
     end
     # don't wait for workers to find the wrong directory
-    verify_refs(gsrefsdir, chloerefsdir, template)
+    verify_refs(gsrefsdir, template)
 
     # user may have added run with 
     # julia command -p2 etc.
@@ -148,13 +145,13 @@ function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WOR
 
     # arm_procs(procs, reference, backend, level)
     if full
-        arm_procs_full(procs, backend, level; gsrefsdir=gsrefsdir, chloerefsdir=chloerefsdir, template=template)
+        arm_procs_full(procs, backend, level; gsrefsdir=gsrefsdir, template=template)
     else
-        arm_procs(procs, backend, level; gsrefsdir=gsrefsdir, chloerefsdir=chloerefsdir, template=template)
+        arm_procs(procs, backend, level; gsrefsdir=gsrefsdir, template=template)
     end
 
     function arm(new_procs)
-        arm_procs_full(new_procs, backend, level; gsrefsdir=gsrefsdir, chloerefsdir=chloerefsdir, template=template)
+        arm_procs_full(new_procs, backend, level; gsrefsdir=gsrefsdir, template=template)
     end
 
     # it seems impossible to add new workers after the fact
@@ -402,11 +399,6 @@ function get_distributed_args()
         dest_name = "gsrefsdir"
         metavar = "DIRECTORY"
         help = "reference directory [default: $(DEFAULT_GSREFS)]"
-        "--chloerefsdir", "-c"
-        arg_type = String
-        default = "default"
-        dest_name = "chloerefsdir"
-        help = "reference minhashes [default: $(DEFAULT_CHLOEREFS)]"
         "--template", "-t"
         arg_type = String
         default = "default"

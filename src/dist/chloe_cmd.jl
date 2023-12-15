@@ -16,11 +16,11 @@ function quiet_metafmt(level, _module, group, id, file, line)
     return color, prefix, ""
 end
 
-function chloe(; gsrefsdir="default", chloerefsdir="default", numgsrefs=DEFAULT_NUMGSREFS, numchloerefs=DEFAULT_NUMGSREFS, fasta_files=String[],
+function chloe(; gsrefsdir="default", numgsrefs=DEFAULT_NUMGSREFS, fasta_files=String[],
     template="default", sensitivity=DEFAULT_SENSITIVITY,
     output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
-    db = Annotator.ReferenceDb(; gsrefsdir=gsrefsdir, chloerefsdir=chloerefsdir, template=template)
-    config = Annotator.ChloeConfig(; numgsrefs=numgsrefs, numchloerefs=numchloerefs, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
+    db = Annotator.ReferenceDb(; gsrefsdir=gsrefsdir, template=template)
+    config = Annotator.ChloeConfig(; numgsrefs=numgsrefs, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
     Annotator.annotate(db, fasta_files, config, output)
 end
 
@@ -86,19 +86,14 @@ function getargs()
         "--reference", "-r"
         arg_type = String
         default = "default"
-        dest_name = "chloerefsdir"
+        dest_name = "gsrefsdir"
         metavar = "DIRECTORY"
-        help = "reference directory [default: $(DEFAULT_CHLOEREFS)]"
+        help = "reference directory [default: $(DEFAULT_GSREFS)]"
         "--numgsrefs"
         arg_type = Int
         default = DEFAULT_NUMGSREFS
         dest_name = "numgsrefs"
         help = "number of references to compare to [default: $(DEFAULT_NUMGSREFS)]"
-        "--numchloerefs"
-        arg_type = Int
-        default = DEFAULT_NUMCHLOEREFS
-        dest_name = "numchloerefs"
-        help = "number of references to compare to [default: $(DEFAULT_NUMCHLOEREFS)]"
         "--template", "-t"
         arg_type = String
         default = "default"

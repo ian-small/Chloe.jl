@@ -346,12 +346,7 @@ function annotate_one_worker(db::AbstractReferenceDb,
         append!(refpicks, searchhashes(hash, refhashes)[1:numrefs])
     end
 
-    # find closest chloe references
-    refhashes = get_chloeminhashes(db, config)
-    if !isnothing(refhashes)
-        numrefs = min(config.numchloerefs, length(refhashes))
-        append!(refpicks, searchhashes(hash, refhashes)[1:numrefs])
-    end
+
     numrefs = length(refpicks)
     t2 = time_ns()
 

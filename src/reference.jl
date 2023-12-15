@@ -4,32 +4,26 @@ abstract type AbstractReferenceDb end
 mutable struct ReferenceDb <: AbstractReferenceDb
     lock::ReentrantLock
     gsrefsdir::String
-    chloerefsdir::String
     template_file::String
     templates::Union{Nothing,Dict{String,FeatureTemplate}}
     gsrefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
-    chloerefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
 end
 
 struct ChloeConfig
     numgsrefs::Int
-    numchloerefs::Int
     sensitivity::Real
     to_gff3::Bool
     nofilter::Bool
 end
 
-function ReferenceDb(; gsrefsdir="default", chloerefsdir="default", template="default")::ReferenceDb
+function ReferenceDb(; gsrefsdir="default", template="default")::ReferenceDb
     if gsrefsdir == "default"
         gsrefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_GSREFS))
-    end
-    if chloerefsdir == "default"
-        chloerefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_CHLOEREFS))
     end
     if template == "default"
         template = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_TEMPLATE))
     end
-    return ReferenceDb(ReentrantLock(), gsrefsdir, chloerefsdir, template, nothing, nothing, nothing)
+    return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
 end
 
 function get_templates(db::ReferenceDb)
@@ -51,23 +45,11 @@ function get_gsminhashes(db::ReferenceDb, config::ChloeConfig)
     end
 end
 
-function get_chloeminhashes(db::ReferenceDb, config::ChloeConfig)
-    config.numchloerefs < 1 && return nothing
-    lock(db.lock) do
-        if isnothing(db.chloerefhashes)
-            db.chloerefhashes = readminhashes(normpath(joinpath(db.chloerefsdir, "reference_minhashes.hash")))
-        end
-        return db.chloerefhashes
-    end
-end
 
 function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
     path = findfastafile(db.gsrefsdir, refID)
-    if isnothing(path)
-        path = findfastafile(db.chloerefsdir, refID)
-    end
     if isnothing(path) || !isfile(path)
-        msg = "unable to find $(refID) fasta file in $(db.gsrefsdir) or in $(db.chloerefsdir)!"
+        msg = "unable to find $(refID) fasta file in $(db.gsrefsdir)!"
         @error msg
         throw(ArgumentError(msg))
     end
@@ -77,7 +59,7 @@ function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference
         read!(reader, ref)
         sffpath = path[1:findlast('.', path)] * "sff" #assumes fasta files and sff files differ only by the file name extension
         if !isfile(sffpath)
-            msg = "unable to find $(refID) sff file in $(db.gsrefsdir) or in $(db.chloerefsdir)!"
+            msg = "unable to find $(refID) sff file in $(db.gsrefsdir)!"
             @error msg
             throw(ArgumentError(msg))
         end
@@ -87,11 +69,11 @@ function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference
     end
 end
 
-const KWARGS = ["numgsrefs", "numchloerefs", "sensitivity", "to_gff3", "nofilter"]
+const KWARGS = ["numgsrefs", "sensitivity", "to_gff3", "nofilter"]
 
-function ChloeConfig(; numgsrefs=DEFAULT_NUMGSREFS, numchloerefs=DEFAULT_NUMCHLOEREFS, sensitivity=DEFAULT_SENSITIVITY,
+function ChloeConfig(; numgsrefs=DEFAULT_NUMGSREFS, sensitivity=DEFAULT_SENSITIVITY,
     to_gff3::Bool=false, nofilter::Bool=false)
-    return ChloeConfig(numgsrefs, numchloerefs, sensitivity, to_gff3, nofilter)
+    return ChloeConfig(numgsrefs, sensitivity, to_gff3, nofilter)
 end
 
 # needs to be V <: Any since this is comming from a JSON blob
@@ -108,10 +90,10 @@ function ChloeConfig(dict::Dict{String,V} where {V<:Any})
     return ChloeConfig(; Dict(Symbol(k) => cvt(k, v) for (k, v) in dict if k in KWARGS)...)
 end
 function Base.show(io::IO, c::ChloeConfig)
-    print(io, "ChloeConfig[numgsrefs=$(c.numgsrefs), numchloerefs=$(c.numchloerefs) sensitivity=$(c.sensitivity), nofilter=$(c.nofilter)]")
+    print(io, "ChloeConfig[numgsrefs=$(c.numgsrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter)]")
 end
 
-function verify_refs(gsrefsdir, chloerefsdir, template)
+function verify_refs(gsrefsdir, template)
     # used by master process to check reference directory
     # *before* starting worker processes...
     if !isdir(gsrefsdir)
@@ -119,11 +101,6 @@ function verify_refs(gsrefsdir, chloerefsdir, template)
         @error msg
         throw(ArgumentError(msg))
     end
-    # if !isdir(chloerefsdir)
-    #     msg = "Reference directory $(chloerefsdir) is not a directory!"
-    #     @error msg
-    #     throw(ArgumentError(msg))
-    # end
 end
 
 function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference

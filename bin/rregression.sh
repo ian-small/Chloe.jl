@@ -49,7 +49,7 @@ done
 echo -e "index: ${index[@]}: $TOTAL/${C}$n${O}"
 echo "start annotations with: ${todo[@]}"
 
-time -p julia --threads=8 --project=. "$@" chloe.jl -l warn annotate -o testo --numgsrefs 16 --numchloerefs 0 "${todo[@]}"
+time -p julia --threads=8 --project=. "$@" chloe.jl -l warn annotate -o testo --numgsrefs 16 "${todo[@]}"
 
 for idx in ${index[@]}
 do

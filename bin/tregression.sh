@@ -11,7 +11,7 @@ C='\e[1;36m' # bold cyan
 A='\e[1;30m' # grey
 
 echo -e "testing ${C}${#}${O} files"
-time -p julia --threads=8 --project=. chloe.jl -l warn annotate -o testo --numgsrefs 16 --numchloerefs 0 "$@"
+time -p julia --threads=8 --project=. chloe.jl -l warn annotate -o testo --numgsrefs 16 "$@"
 
 for f in "$@"
 do
