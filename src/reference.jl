@@ -66,7 +66,7 @@ function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference
     if isnothing(path)
         path = findfastafile(db.chloerefsdir, refID)
     end
-    if !isfile(path)
+    if isnothing(path) || !isfile(path)
         msg = "unable to find $(refID) fasta file in $(db.gsrefsdir) or in $(db.chloerefsdir)!"
         @error msg
         throw(ArgumentError(msg))
