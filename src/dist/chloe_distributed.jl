@@ -347,7 +347,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
         try
             rmprocs(procs, waitfor=20)
         catch e
-            @warn "background processes took to long to exit $e"
+            @warn "background processes took too long to exit $e"
         end
     end
 
