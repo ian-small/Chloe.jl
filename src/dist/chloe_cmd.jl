@@ -16,16 +16,16 @@ function quiet_metafmt(level, _module, group, id, file, line)
     return color, prefix, ""
 end
 
-function chloe(; gsrefsdir = "default", chloerefsdir = "default", numgsrefs = DEFAULT_NUMGSREFS, numchloerefs = DEFAULT_NUMGSREFS, fasta_files = String[],
-    template = "default", sensitivity = DEFAULT_SENSITIVITY,
-    output::Union{Nothing,String} = nothing, gff::Bool = false, nofilter::Bool = false)
-    db = Annotator.ReferenceDb(; gsrefsdir = gsrefsdir, chloerefsdir = chloerefsdir, template = template)
-    config = Annotator.ChloeConfig(; numgsrefs = numgsrefs, numchloerefs = numchloerefs, sensitivity = sensitivity, to_gff3 = gff, nofilter = nofilter)
+function chloe(; gsrefsdir="default", numgsrefs=DEFAULT_NUMGSREFS, fasta_files=String[],
+    template="default", sensitivity=DEFAULT_SENSITIVITY,
+    output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
+    db = Annotator.ReferenceDb(; gsrefsdir=gsrefsdir, template=template)
+    config = Annotator.ChloeConfig(; numgsrefs=numgsrefs, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
     Annotator.annotate(db, fasta_files, config, output)
 end
 
 function getargs()
-    cmd_args = ArgParseSettings(prog = "Chloë", autofix_names = true)  # turn "-" into "_" for arg names.
+    cmd_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
 
     @add_arg_table! cmd_args begin
         "minhash"
@@ -86,19 +86,14 @@ function getargs()
         "--reference", "-r"
         arg_type = String
         default = "default"
-        dest_name = "chloerefsdir"
+        dest_name = "gsrefsdir"
         metavar = "DIRECTORY"
-        help = "reference directory [default: $(DEFAULT_CHLOEREFS)]"
+        help = "reference directory [default: $(DEFAULT_GSREFS)]"
         "--numgsrefs"
         arg_type = Int
         default = DEFAULT_NUMGSREFS
         dest_name = "numgsrefs"
         help = "number of references to compare to [default: $(DEFAULT_NUMGSREFS)]"
-        "--numchloerefs"
-        arg_type = Int
-        default = DEFAULT_NUMCHLOEREFS
-        dest_name = "numchloerefs"
-        help = "number of references to compare to [default: $(DEFAULT_NUMCHLOEREFS)]"
         "--template", "-t"
         arg_type = String
         default = "default"
@@ -143,14 +138,14 @@ function getargs()
     #     examples:\n
     #     \ua0\ua0 # chloe.jl -t template.tsv -r reference_dir fasta1 fasta2 ...\n
     #     """
-    parse_args(ARGS, cmd_args; as_symbols = true)
+    parse_args(ARGS, cmd_args; as_symbols=true)
 end
 
 function cmd_main()
     parsed_args = getargs()
     level = lowercase(parsed_args[:level])
     Logging.with_logger(Logging.ConsoleLogger(stderr,
-        get(LOGLEVELS, level, Logging.Warn), meta_formatter = quiet_metafmt)) do
+        get(LOGLEVELS, level, Logging.Warn), meta_formatter=quiet_metafmt)) do
         cmd = parsed_args[:_COMMAND_]
         a = parsed_args[cmd]
         if cmd == :minhash

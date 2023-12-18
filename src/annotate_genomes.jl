@@ -2,7 +2,8 @@ module Annotator
 
 using Base: String
 using XGBoost
-export annotate, annotate_one, MayBeIO, MayBeString, ReferenceDb
+export annotate, annotate_one, MayBeIO, MayBeString, AbstractReferenceDb
+
 export read_single_reference!, inverted_repeat, ChloeConfig
 
 import Base
@@ -323,7 +324,7 @@ struct ChloeAnnotation
     coverages::Dict{String,Float32}
     annotation::FwdRev{Vector{SFF_Model}}
 end
-function annotate_one_worker(db::ReferenceDb,
+function annotate_one_worker(db::AbstractReferenceDb,
     target_id::String,
     target::FwdRev{CircularSequence},
     config::ChloeConfig,
@@ -345,12 +346,7 @@ function annotate_one_worker(db::ReferenceDb,
         append!(refpicks, searchhashes(hash, refhashes)[1:numrefs])
     end
 
-    # find closest chloe references
-    refhashes = get_chloeminhashes(db, config)
-    if !isnothing(refhashes)
-        numrefs = min(config.numchloerefs, length(refhashes))
-        append!(refpicks, searchhashes(hash, refhashes)[1:numrefs])
-    end
+
     numrefs = length(refpicks)
     t2 = time_ns()
 
@@ -359,7 +355,7 @@ function annotate_one_worker(db::ReferenceDb,
     blocks_aligned_to_targetf = Vector{FwdRev{BlockTree}}(undef, numrefs)
     blocks_aligned_to_targetr = Vector{FwdRev{BlockTree}}(undef, numrefs)
     coverages = Dict{String,Float32}()
-    refs = Vector{SingleReference}(undef, 0)
+    # refs = Vector{SingleReference}(undef, 0)
     reference_feature_counts = Dict{String,Int}()
     # get_single_reference! throws if bad refpick
     refs = [get_single_reference!(db, r[1], reference_feature_counts) for r in refpicks]
@@ -469,7 +465,7 @@ returns a 2-tuple: (ultimate sff output filename, sequence id)
 If `output_sff_file` is an IOBuffer then that buffer will be returned
 with the annotation within it.
 """
-function annotate_one(db::ReferenceDb,
+function annotate_one(db::AbstractReferenceDb,
     target_id::String,
     target::FwdRev{CircularSequence},
     config::ChloeConfig,
@@ -483,7 +479,7 @@ end
 
 
 
-function annotate_one(db::ReferenceDb, infile::String, config::ChloeConfig, output::MayBeIO=nothing)
+function annotate_one(db::AbstractReferenceDb, infile::String, config::ChloeConfig, output::MayBeIO=nothing)
     maybe_gzread(infile) do io
         annotate_one(db, io, config, output)
     end
@@ -513,7 +509,7 @@ function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     return target_id, FwdRev(fseq, rseq)
 end
 
-function annotate_one(db::ReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO=nothing)
+function annotate_one(db::AbstractReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO=nothing)
     target_id, seqs = fasta_reader(infile)
     annotate_one(db, target_id, seqs, config, output)
 end
@@ -533,11 +529,11 @@ end
 
 #= function annotate_one(refsdir::String, infile::String, output::MayBeIO=nothing)
 
-    annotate_one(ReferenceDb(;refsdir=refsdir), infile, ChloeConfig(), output)
+    annotate_one(AbstractReferenceDb(;refsdir=refsdir), infile, ChloeConfig(), output)
 
 end =#
 
-function annotate(db::ReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
+function annotate(db::AbstractReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
     n = length(fa_files)
     for infile in fa_files
         maybe_gzread(infile) do io
