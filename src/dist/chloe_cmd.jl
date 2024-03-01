@@ -24,7 +24,7 @@ function chloe(; gsrefsdir="default", numgsrefs=DEFAULT_NUMGSREFS, fasta_files=S
     Annotator.annotate(db, fasta_files, config, output)
 end
 
-function getargs()
+function getargs(args::Vector{String}=ARGS)
     cmd_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
 
     @add_arg_table! cmd_args begin
@@ -138,11 +138,11 @@ function getargs()
     #     examples:\n
     #     \ua0\ua0 # chloe.jl -t template.tsv -r reference_dir fasta1 fasta2 ...\n
     #     """
-    parse_args(ARGS, cmd_args; as_symbols=true)
+    parse_args(args, cmd_args; as_symbols=true)
 end
 
-function cmd_main()
-    parsed_args = getargs()
+function cmd_main(args::Vector{String} = ARGS)
+    parsed_args = getargs(args)
     level = lowercase(parsed_args[:level])
     Logging.with_logger(Logging.ConsoleLogger(stderr,
         get(LOGLEVELS, level, Logging.Warn), meta_formatter=quiet_metafmt)) do

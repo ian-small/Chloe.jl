@@ -140,9 +140,9 @@ function score_feature(sff::SFF_Feature, reference_feature_counts::Dict{String,I
 end
 
 function fill_feature_stack(target_length::Int32, annotations::Vector{Annotation},
-    feature_templates::Dict{String,FeatureTemplate})::Dict{String, CircularVector}
+    feature_templates::Dict{String,FeatureTemplate})::Dict{String,CircularVector}
     # assumes annotations are ordered by path
-    stacks = Dict{String, CircularVector}()
+    stacks = Dict{String,CircularVector}()
     for annotation in annotations
         template = get(feature_templates, annotation.path, nothing)
         if template === nothing
@@ -1009,8 +1009,8 @@ function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String
     maxlengths
 end
 
-coding_xgb_model = Booster(DMatrix[], model_file=joinpath(@__DIR__, "coding_xgb.model"))
-noncoding_xgb_model = Booster(DMatrix[], model_file=joinpath(@__DIR__, "noncoding_xgb.model"))
+const coding_xgb_model = Booster(DMatrix[], model_file=joinpath(@__DIR__, "coding_xgb.model"))
+const noncoding_xgb_model = Booster(DMatrix[], model_file=joinpath(@__DIR__, "noncoding_xgb.model"))
 const MAXFEATURELENGTH = 7000
 function feature_xgb(ftype::String, median_length::Float32, featurelength::Int32, fdepth::Float32, codingprob::Float32)::Float32
     featurelength ≤ 0 && return Float32(0.0)
@@ -1142,7 +1142,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
                     local f::Feature, frange::UnitRange{Int32}, intersect::UnitRange{Int32}
                     for sff in model1.features
                         f = sff.feature
-                        frange = range(f.start, length = f.length)
+                        frange = range(f.start, length=f.length)
                         if model1.strand == '+'
                             intersect = circularintersect(frange, ir1_boundaries, glength)
                             if length(intersect) == 0
@@ -1161,7 +1161,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
                     # find feature in model2 that overlaps end of IR
                     for sff in model2.features
                         f = sff.feature
-                        frange = range(f.start, length = f.length)
+                        frange = range(f.start, length=f.length)
                         if model2.strand == '+'
                             intersect = circularintersect(frange, ir1_boundaries, glength)
                             if length(intersect) == 0

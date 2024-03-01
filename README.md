@@ -48,7 +48,8 @@ package too.
 Start julia and type `]` to get the package manager prompt. Then type:
 
 ```julia
-]dev {path/to/chloe/repo/directory}
+using Pkg;
+Pkg.develop("{path/to/chloe/repo/directory}")
 ```
 
 This will make an entry for Chloë in the Manifest for julia.
@@ -57,7 +58,8 @@ Now get julia to compile it by typing `import Chloe` at the *julia* prompt.
 You can easily remove Chloë as a package with:
 
 ```julia
-]rm Chloe
+using Pkg;
+Pkg.rm("Chloe")
 ```
 
 Installing Chloë as a (local) package allows you to take

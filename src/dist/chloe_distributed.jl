@@ -125,7 +125,7 @@ function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WOR
         gsrefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_GSREFS))
     end
     if template == "default"
-        template = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_TEMPLATE))
+        template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
     end
     # don't wait for workers to find the wrong directory
     verify_refs(gsrefsdir, template)

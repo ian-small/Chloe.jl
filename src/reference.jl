@@ -21,7 +21,7 @@ function ReferenceDb(; gsrefsdir="default", template="default")::ReferenceDb
         gsrefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_GSREFS))
     end
     if template == "default"
-        template = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_TEMPLATE))
+        template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
     end
     return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
 end
