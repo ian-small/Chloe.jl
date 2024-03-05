@@ -53,8 +53,8 @@ function ReferenceDbFromDir(directory::AbstractString)::ReferenceDb
     return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
 end
 
-function ReferenceDb()::ReferenceDb
-    ReferenceDbFromDir(joinpath(@__DIR__,"..","..", CHLOE_REFERENCES))
+function ReferenceDbFromDir()::ReferenceDb
+    ReferenceDbFromDir(joinpath(@__DIR__, "..", "..", CHLOE_REFERENCES))
 end
 
 function get_templates(db::ReferenceDb)
