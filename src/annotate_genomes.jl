@@ -1,7 +1,7 @@
 module Annotator
 
 using Base: String
-using XGBoost
+import XGBoost
 export annotate, annotate_one, MayBeIO, MayBeString, AbstractReferenceDb
 
 export read_single_reference!, inverted_repeat, ChloeConfig
@@ -1009,8 +1009,8 @@ function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String
     maxlengths
 end
 
-const coding_xgb_model = Booster(DMatrix[], model_file=joinpath(@__DIR__, "coding_xgb.model"))
-const noncoding_xgb_model = Booster(DMatrix[], model_file=joinpath(@__DIR__, "noncoding_xgb.model"))
+const coding_xgb_model = XGBoost.Booster(DMatrix[], model_file=joinpath(@__DIR__, "coding_xgb.model"))
+const noncoding_xgb_model = XGBoost.Booster(DMatrix[], model_file=joinpath(@__DIR__, "noncoding_xgb.model"))
 const MAXFEATURELENGTH = 7000
 function feature_xgb(ftype::String, median_length::Float32, featurelength::Int32, fdepth::Float32, codingprob::Float32)::Float32
     featurelength ≤ 0 && return Float32(0.0)
@@ -1018,11 +1018,11 @@ function feature_xgb(ftype::String, median_length::Float32, featurelength::Int32
     rtlength = median_length / MAXFEATURELENGTH
     rflength = featurelength / MAXFEATURELENGTH
     frtlength = featurelength / median_length
-    local pred
-    if ftype == "CDS"
-        pred = XGBoost.predict(coding_xgb_model, [rtlength rflength frtlength fdepth codingprob])
+    @info "models:[$ftype] $(coding_xgb_model) and $(noncoding_xgb_model)"
+    pred = if ftype == "CDS"
+        XGBoost.predict(coding_xgb_model, [rtlength rflength frtlength fdepth codingprob])
     else
-        pred = XGBoost.predict(noncoding_xgb_model, [rtlength rflength frtlength fdepth])
+        XGBoost.predict(noncoding_xgb_model, [rtlength rflength frtlength fdepth])
     end
     return pred[1]
 end

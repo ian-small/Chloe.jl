@@ -172,7 +172,7 @@ function countcodons(orf::Feature, seq::CircularSequence)::Vector{Float64}
     return codonfrequencies
 end
 
-xgb_coding_model = Booster(DMatrix[], model_file=joinpath(@__DIR__, "xgb.coding.model"))
+const xgb_coding_model = XGBoost.Booster(DMatrix[], model_file=joinpath(@__DIR__, "xgb.coding.model"))
 function xgb_coding_classifier(codonfrequencies::Vector{Float64})::Float32
     #explicit test for stop codons
     codonfrequencies[49] > 0 && return Float32(0.0) #TAA
