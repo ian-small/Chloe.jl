@@ -15,6 +15,27 @@ struct ChloeConfig
     to_gff3::Bool
     nofilter::Bool
 end
+const KWARGS = ["numgsrefs", "sensitivity", "to_gff3", "nofilter"]
+
+function ChloeConfig(; numgsrefs=DEFAULT_NUMGSREFS, sensitivity=DEFAULT_SENSITIVITY,
+    to_gff3::Bool=false, nofilter::Bool=false)
+    return ChloeConfig(numgsrefs, sensitivity, to_gff3, nofilter)
+end
+
+# needs to be V <: Any since this is coming from a JSON blob
+function ChloeConfig(dict::Dict{String,V} where {V<:Any})
+    function cvt(name, v)
+        if name == "references"
+            # if we actually have references then v
+            # will be Any["str1","str2"]. convert to Vector{String}
+            return string.(v)
+        end
+        # integers and float are ok
+        v
+    end
+    return ChloeConfig(; Dict(Symbol(k) => cvt(k, v) for (k, v) in dict if k in KWARGS)...)
+end
+
 
 function ReferenceDb(; gsrefsdir="default", template="default")::ReferenceDb
     if gsrefsdir == "default"
@@ -24,6 +45,16 @@ function ReferenceDb(; gsrefsdir="default", template="default")::ReferenceDb
         template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
     end
     return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
+end
+
+function ReferenceDbFromDir(directory::AbstractString)::ReferenceDb
+    gsrefsdir = joinpath(directory, "gsrefs")
+    template = joinpath(directory, DEFAULT_TEMPLATE)
+    return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
+end
+
+function ReferenceDb()::ReferenceDb
+    ReferenceDbFromDir(joinpath(@__DIR__,"..","..", CHLOE_REFERENCES))
 end
 
 function get_templates(db::ReferenceDb)
@@ -69,26 +100,7 @@ function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference
     end
 end
 
-const KWARGS = ["numgsrefs", "sensitivity", "to_gff3", "nofilter"]
 
-function ChloeConfig(; numgsrefs=DEFAULT_NUMGSREFS, sensitivity=DEFAULT_SENSITIVITY,
-    to_gff3::Bool=false, nofilter::Bool=false)
-    return ChloeConfig(numgsrefs, sensitivity, to_gff3, nofilter)
-end
-
-# needs to be V <: Any since this is comming from a JSON blob
-function ChloeConfig(dict::Dict{String,V} where {V<:Any})
-    function cvt(name, v)
-        if name == "references"
-            # if we actually have references then v
-            # will be Any["str1","str2"]. convert to Vector{String}
-            return string.(v)
-        end
-        # integers and float are ok
-        v
-    end
-    return ChloeConfig(; Dict(Symbol(k) => cvt(k, v) for (k, v) in dict if k in KWARGS)...)
-end
 function Base.show(io::IO, c::ChloeConfig)
     print(io, "ChloeConfig[numgsrefs=$(c.numgsrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter)]")
 end
