@@ -4,7 +4,7 @@ using Base: String
 import XGBoost
 export annotate, annotate_one, MayBeIO, MayBeString, AbstractReferenceDb
 
-export read_single_reference!, inverted_repeat, ChloeConfig, coding_xgb_model
+export read_single_reference!, inverted_repeat, ChloeConfig
 
 import Base
 
@@ -1008,9 +1008,10 @@ function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String
     add_model(models.reverse)
     maxlengths
 end
-
-const coding_xgb_model = XGBoost.Booster(XGBoost.DMatrix[], model_file=joinpath(@__DIR__, "coding_xgb.model"))
-const noncoding_xgb_model = XGBoost.Booster(XGBoost.DMatrix[], model_file=joinpath(@__DIR__, "noncoding_xgb.model"))
+const coding_cache = XGBoost.DMatrix[]
+const noncoding_cache = XGBoost.DMatrix[]
+const coding_xgb_model = XGBoost.Booster(coding_cache, model_file=joinpath(@__DIR__, "coding_xgb.model"))
+const noncoding_xgb_model = XGBoost.Booster(noncoding_cache, model_file=joinpath(@__DIR__, "noncoding_xgb.model"))
 const MAXFEATURELENGTH = 7000
 function feature_xgb(ftype::String, median_length::Float32, featurelength::Int32, fdepth::Float32, codingprob::Float32)::Float32
     featurelength ≤ 0 && return Float32(0.0)
