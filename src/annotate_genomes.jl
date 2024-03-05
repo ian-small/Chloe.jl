@@ -4,7 +4,7 @@ using Base: String
 import XGBoost
 export annotate, annotate_one, MayBeIO, MayBeString, AbstractReferenceDb
 
-export read_single_reference!, inverted_repeat, ChloeConfig
+export read_single_reference!, inverted_repeat, ChloeConfig, coding_xgb_model
 
 import Base
 
