@@ -468,18 +468,18 @@ with the annotation within it.
 function annotate_one(db::AbstractReferenceDb,
     target_id::String,
     target::FwdRev{CircularSequence},
-    config::ChloeConfig,
+    config::Union{ChloeConfig,Nothing}=nothing,
     output::MayBeIO=nothing
 )::Tuple{Union{String,IO},String}
 
-    result = annotate_one_worker(db, target_id, target, config)
+    result = annotate_one_worker(db, target_id, target, isnothing(config) ? ChloeConfig() : config)
     write_result(result, config.to_gff3, output)
 
 end
 
 
 
-function annotate_one(db::AbstractReferenceDb, infile::String, config::ChloeConfig, output::MayBeIO=nothing)
+function annotate_one(db::AbstractReferenceDb, infile::String, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
     maybe_gzread(infile) do io
         annotate_one(db, io, config, output)
     end
@@ -509,7 +509,7 @@ function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     return target_id, FwdRev(fseq, rseq)
 end
 
-function annotate_one(db::AbstractReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO=nothing)
+function annotate_one(db::AbstractReferenceDb, infile::IO, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
     target_id, seqs = fasta_reader(infile)
     annotate_one(db, target_id, seqs, config, output)
 end

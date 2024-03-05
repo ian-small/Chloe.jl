@@ -36,10 +36,13 @@ function ChloeConfig(dict::Dict{String,V} where {V<:Any})
     return ChloeConfig(; Dict(Symbol(k) => cvt(k, v) for (k, v) in dict if k in KWARGS)...)
 end
 
+function default_gsrefsdir():: String
+    normpath(joinpath(pwd(), "..", DEFAULT_GSREFS))
+end
 
 function ReferenceDb(; gsrefsdir="default", template="default")::ReferenceDb
     if gsrefsdir == "default"
-        gsrefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_GSREFS))
+        gsrefsdir = default_gsrefsdir()
     end
     if template == "default"
         template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))

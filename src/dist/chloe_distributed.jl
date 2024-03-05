@@ -122,7 +122,7 @@ function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WOR
     set_global_logger(level, backend; topic="annotator")
 
     if gsrefsdir == "default"
-        gsrefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_GSREFS))
+        gsrefsdir = default_gsrefsdir()
     end
     if template == "default"
         template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
@@ -389,7 +389,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
 
 end
 
-function get_distributed_args()
+function get_distributed_args(args::Vector{String}=ARGS)
     distributed_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
 
     @add_arg_table! distributed_args begin
@@ -439,7 +439,7 @@ function get_distributed_args()
     You can also use julia arguments to specify workers with e.g.
     `julia -p4 ....` etc.
     """
-    parse_args(ARGS, distributed_args; as_symbols=true)
+    parse_args(args, distributed_args; as_symbols=true)
 
 end
 
@@ -499,9 +499,9 @@ function maybe_launch_broker(distributed_args)
     distributed_args
 end
 
-function distributed_main(full::Bool=false)
+function distributed_main(full::Bool=false, args::Vector{String}=ARGS)
     Sys.set_process_title("chloe-distributed")
-    distributed_args = get_distributed_args()
+    distributed_args = get_distributed_args(args)
     distributed_args = maybe_launch_broker(distributed_args)
 
     chloe_distributed(full; distributed_args...)
