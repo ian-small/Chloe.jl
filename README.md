@@ -1,58 +1,87 @@
 
 <img align="right" alt="Chloe" src="assets/logo-chloe-black.png">
 
-# Chloë: Organelle Annotator
+## Installing dependencies
 
-To run the annotator or write gff3 or create suffix array files type:
+The `Project.toml` file lists all the project
+dependencies. From within the `chloe` directory, type `julia --project=.`
+Then type `]instantiate` at the julia prompt to install all the required
+packages.
+
+## Chloë: Organelle Annotator
+
+To run the annotator type:
 
 ```bash
-julia --project=. chloe.jl --help
-# or for a specific command e.g.
 julia --project=. chloe.jl annotate --help
 ```
-
-(See installing dependencies below)
 
 For example:
 
 ```bash
-julia --project=. chloe.jl annotate testfa/*.fa
+julia --project=. chloe.jl annotate -g testfa/*.fa
 ```
 
-Will create `.sff` files in the current directory.
+will create `.gff` files in the current directory.
 
-This annotator is available online at: [https://chloe.plantenergy.edu.au](https://chloe.plantenergy.edu.au)
+This annotator is available online at: [https://chloe.plastid.org](https://chloe.plastid.org)
 
-## Installing dependencies
+To see what other commands are available:
 
-There is a `Project.toml` file that contains all the project
-dependencies. So you can (as of julia 1.6) use `julia --project=.`
-Then type `]instantiate` at the julia prompt to install all the required
-libraries. (See [Activating project environment
-in Julia REPL automatically](https://bkamins.github.io/julialang/2020/05/10/julia-project-environments.html) if you want this to happen automatically.)
+```bash
+julia --project=. chloe.jl --help
+```
+## Chloë: Output formats
 
-To actually add these dependencies to the *global* environment type
-`julia bin/deps.jl`.
+Internally, Chloe numbers each strand independently from its 5' end, and tracks features by (start, length)
+rather then by (start, stop). This avoids most of the issues with features crossing the arbitrary end of a circular genome.
+The default output of Chloe (`.sff` files) uses these conventions. For example, here's the start of a typical `.sff` output file:
+`NC_020431.1	151328	78.914`
+`accD/1/CDS/1	+	56703	1485	0	1.01	0.743	79.7	0.999	0.996`
+The header line gives the sequence name, the length in nucleotides, and the mean alignment coverage with the reference genomes.
+Subsequent lines give information on a single feature or sub-feature.
+The first column is a unique identifier, composed as follows:
+gene name/gene copy (so if 2 or higher is a duplicate of another gene)/feature type/feature order (can be used to sort exons and introns into the correct order, even for transpliced genes)
+Subsequent columns are: strand, start, length, phase;
+Then 5 columns of interest if you want to understand why Chloe has predicted this particular feature: length relative to feature template, proportion of references that match, mean coverage of aligned genomes (out of 100), feature probability (from XGBoost model), coding probability (from XGBoost model)
 
-*or* run
+Most users will probably want to use `chloe.jl annotate -g` to obtain the output in standard `.gff` format. 
 
-```julia
-import Pkg
-(open("Project.toml") |> Pkg.TOML.parse)["deps"] |> keys |> collect |> Pkg.add
+By default, Chloe filters out features which are detected to have one of a set of problematic issues, or which have a feature probability of < 0.5.
+You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate -s 0 --nofilter` will retain all the features that Chloe was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
+```[ Warning: rps16/1 lacks a start codon
+[ Warning: rps16/1 has a premature stop codon
+[ Warning: rps16/1 CDS is not divisible by 3
+```
+and in the `.sff` output. Currently `--nofilter` has no effect if the `-g` flag is also set.
+
+## Multithreading
+
+Chloe will take advantage of multiple threads if possible. To benefit from this substantial speedup, specify the number of threads to use when starting Julia.
+Using multiple threads is generally much faster than using multiple distributed processes (see the 'Distributed' section below).
+
+For example:
+
+```bash
+julia --threads 4 --project=. chloe.jl annotate -g testfa/*.fa
+```
+or
+
+```bash
+julia --threads auto --project=. chloe.jl annotate -g testfa/*.fa
 ```
 
-I really don't know why there isn't a command for this... :(
+## Chloe as a Julia package
 
-You can install Chloe as a julia
-package too.
-Start julia and type `]` to get the package manager prompt. Then type:
+You can install Chloe as a Julia package.
+Start Julia and type `]` to get the package manager prompt. Then type:
 
 ```julia
 ]dev {path/to/chloe/repo/directory}
 ```
 
-This will make an entry for Chloë in the Manifest for julia.
-Now get julia to compile it by typing `import Chloe` at the *julia* prompt.
+This will make an entry for Chloë in the Manifest for Julia.
+Now get Julia to compile it by typing `import Chloe` at the *julia* prompt.
 
 You can easily remove Chloë as a package with:
 
@@ -61,7 +90,7 @@ You can easily remove Chloë as a package with:
 ```
 
 Installing Chloë as a (local) package allows you to take
-advantage of julia's precompilation.
+advantage of Julia's precompilation.
 
 ## Distributed
 
@@ -218,48 +247,6 @@ apicall(i, "exit")
 ```
 
 ---
-
-### Developer Notes
-
-Nothing interesting beyond here....
-
-To stop julia vomiting unhelpful stacktraces when `^Ctrl-C`ing
-run julia with `--handle-signals=no`. Don't know what it does
-but `distributed.jl` will just exit on Ctrl-C.
-
-But don't send a `kill -INT` this will not clean up the background
-broker (if it's running)
-
-See:
-
-* [Multithreading in ZMQ](http://zguide.zeromq.org/py:all#Multithreading-with-ZeroMQ)
-
-Possibly useful REPL packages
-
-* add Revise: reload edited files within REPL
-* add OhMyREPL: pretty print code
-* `@code_warntype f()` check type system
-* add ProfileView: [ProfileView.jl](https://github.com/timholy/ProfileView.jl)
-
-from [stackoverflow](https://stackoverflow.com/questions/38825626/julia-transferring-methods-between-workers/39216340#39216340):
-
-There is no way to send a subset of the methods in a package to another machine.
-Very often methods refer to other types and functions in the same module, so the
-system would have to at least send all dependencies as well. That could work, but
-the bigger problem is deciding whose responsibility it is to distribute code,
-and when. For example, initially your library might decide to send itself
-(or parts of itself) to other nodes, but then the user might later want to do a
-parallel map of your library functions, such that the whole library is needed on
-every node. This gets very complex, so it is far simpler for everybody just to load
-all needed code on all nodes as early as possible.
-
----
-
-This only really is of interest with using the `add_worker` method that tries
-to add new workers to the running server. If the server was
-started by loading `Chloe` as a package then you can't add new workers by just sending
-the required code: The new worker seems to be expecting a Chloe module.
-Use `distributed.jl` if you want to expand workers dynamically.
 
 ### Authors
 
