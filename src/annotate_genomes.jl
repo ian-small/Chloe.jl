@@ -1,11 +1,11 @@
 module Annotator
 
-using Base: String
-import XGBoost
 export annotate, annotate_one, MayBeIO, MayBeString, AbstractReferenceDb
-
 export read_single_reference!, inverted_repeat, ChloeConfig
 
+using Base: String
+
+import XGBoost
 import Base
 
 include("utilities.jl")
@@ -17,6 +17,7 @@ include("annotations.jl")
 include("orfs.jl")
 include("rnas.jl")
 include("reference.jl")
+include("chloeboost.jl")
 
 import Printf: @sprintf
 import JSON
@@ -471,8 +472,9 @@ function annotate_one(db::AbstractReferenceDb,
     config::Union{ChloeConfig,Nothing}=nothing,
     output::MayBeIO=nothing
 )::Tuple{Union{String,IO},String}
+    config = isnothing(config) ? ChloeConfig() : config
 
-    result = annotate_one_worker(db, target_id, target, isnothing(config) ? ChloeConfig() : config)
+    result = annotate_one_worker(db, target_id, target, config)
     write_result(result, config.to_gff3, output)
 
 end
@@ -1008,22 +1010,20 @@ function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String
     add_model(models.reverse)
     maxlengths
 end
-const coding_cache = XGBoost.DMatrix[]
-const noncoding_cache = XGBoost.DMatrix[]
-const coding_xgb_model = XGBoost.Booster(coding_cache, model_file=joinpath(@__DIR__, "coding_xgb.model"))
-const noncoding_xgb_model = XGBoost.Booster(noncoding_cache, model_file=joinpath(@__DIR__, "noncoding_xgb.model"))
+
 const MAXFEATURELENGTH = 7000
+
 function feature_xgb(ftype::String, median_length::Float32, featurelength::Int32, fdepth::Float32, codingprob::Float32)::Float32
     featurelength ≤ 0 && return Float32(0.0)
     fdepth ≤ 0 && return Float32(0.0)
     rtlength = median_length / MAXFEATURELENGTH
     rflength = featurelength / MAXFEATURELENGTH
     frtlength = featurelength / median_length
-    @info "models:[$ftype] $(coding_xgb_model) and $(noncoding_xgb_model)"
+    boost = get_boost()
     pred = if ftype == "CDS"
-        XGBoost.predict(coding_xgb_model, [rtlength rflength frtlength fdepth codingprob])
+        XGBoost.predict(boost.coding_xgb_model, [rtlength rflength frtlength fdepth codingprob])
     else
-        XGBoost.predict(noncoding_xgb_model, [rtlength rflength frtlength fdepth])
+        XGBoost.predict(boost.noncoding_xgb_model, [rtlength rflength frtlength fdepth])
     end
     return pred[1]
 end

@@ -19,7 +19,7 @@ import StringEncodings: encode
 import ZMQ
 
 import .WebAPI: TerminatingJSONMsgFormat
-import .Annotator: MayBeString, verify_refs, ChloeConfig
+import .Annotator: MayBeString, verify_refs, ChloeConfig, default_gsrefsdir
 import .ZMQLogging: set_global_logger
 import .Broker: check_endpoints, remove_endpoints
 
@@ -112,7 +112,7 @@ end
 
 function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WORKER,
     template="default", level="warn", workers=3,
-    backend::MayBeString=nothing, broker::MayBeString=nothing)
+    backend::MayBeString=nothing, broker::MayBeString=nothing, reference_dir::MayBeString=nothing)
 
     if !isnothing(backend)
         if backend == "default"
@@ -120,13 +120,18 @@ function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WOR
         end
     end
     set_global_logger(level, backend; topic="annotator")
-
-    if gsrefsdir == "default"
-        gsrefsdir = default_gsrefsdir()
-    end
-    if template == "default"
+    if !isnothing(reference_dir)
+        gsrefsdir = normpath(joinpath(reference_dir, "gsrefs"))
         template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
+    else
+        if gsrefsdir == "default"
+            gsrefsdir = default_gsrefsdir()
+        end
+        if template == "default"
+            template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
+        end
     end
+
     # don't wait for workers to find the wrong directory
     verify_refs(gsrefsdir, template)
 
@@ -395,10 +400,15 @@ function get_distributed_args(args::Vector{String}=ARGS)
     @add_arg_table! distributed_args begin
         "--reference", "-r"
         arg_type = String
+        dest_name = "reference_dir"
+        metavar = "DIRECTORY"
+        help = "reference directory (takes precedence over --gsrefs and --template options)"
+        "--gsrefs", "-g"
+        arg_type = String
         default = "default"
         dest_name = "gsrefsdir"
         metavar = "DIRECTORY"
-        help = "reference directory [default: $(DEFAULT_GSREFS)]"
+        help = "gsrefs reference directory [default: $(DEFAULT_GSREFS)]"
         "--template", "-t"
         arg_type = String
         default = "default"
