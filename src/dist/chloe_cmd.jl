@@ -18,10 +18,14 @@ end
 
 function chloe(; gsrefsdir="default", numgsrefs=DEFAULT_NUMGSREFS, fasta_files=String[],
     template="default", sensitivity=DEFAULT_SENSITIVITY,
-    output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
-    db = Annotator.ReferenceDb(; gsrefsdir=gsrefsdir, template=template)
+    output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false, reference_dir::Union{Nothing,String}=nothing)
+    db = if isnothing(reference_dir)
+            Annotator.ReferenceDb(; gsrefsdir=gsrefsdir, template=template)
+    else
+        Annotator.ReferenceDbFromDir(reference_dir)
+    end
     config = Annotator.ChloeConfig(; numgsrefs=numgsrefs, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
-    Annotator.annotate(db, fasta_files, config, output)
+    Annotator.annotate_batch(db, fasta_files, config, output)
 end
 
 function getargs(args::Vector{String}=ARGS)
@@ -85,21 +89,26 @@ function getargs(args::Vector{String}=ARGS)
         help = "output filename (or directory if multiple fasta files)"
         "--reference", "-r"
         arg_type = String
+        dest_name = "reference_dir"
+        metavar = "DIRECTORY"
+        help = "reference directory (takes precedence over --gsrefs and --template options)"
+        "--gsrefs", "-g"
+        arg_type = String
         default = "default"
         dest_name = "gsrefsdir"
         metavar = "DIRECTORY"
         help = "reference directory [default: $(DEFAULT_GSREFS)]"
-        "--numgsrefs"
-        arg_type = Int
-        default = DEFAULT_NUMGSREFS
-        dest_name = "numgsrefs"
-        help = "number of references to compare to [default: $(DEFAULT_NUMGSREFS)]"
         "--template", "-t"
         arg_type = String
         default = "default"
         metavar = "TSV"
         dest_name = "template"
         help = "template tsv [default: $(DEFAULT_TEMPLATE)]"
+        "--numgsrefs"
+        arg_type = Int
+        default = DEFAULT_NUMGSREFS
+        dest_name = "numgsrefs"
+        help = "number of references to compare to [default: $(DEFAULT_NUMGSREFS)]"
         "--sensitivity", "-s"
         arg_type = Float64
         default = DEFAULT_SENSITIVITY
@@ -107,7 +116,7 @@ function getargs(args::Vector{String}=ARGS)
         "--nofilter"
         action = :store_true
         help = "don't filter output"
-        "--gff", "-g"
+        "--gff"
         action = :store_true
         help = "save output in gff3 format instead of sff"
     end

@@ -1,6 +1,6 @@
 module Annotator
 
-export annotate, annotate_one, MayBeIO, MayBeString, AbstractReferenceDb
+export annotate_batch, annotate_one, MayBeIO, MayBeString, AbstractReferenceDb
 export read_single_reference!, inverted_repeat, ChloeConfig
 
 using Base: String
@@ -449,6 +449,31 @@ function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO=not
     return fname, result.target_id
 end
 
+
+function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
+    reader = FASTA.Reader(infile)
+    records = [record for record in reader]
+    if isempty(records)
+        error("unable to read sequence from $infile")
+    elseif length(records) > 2
+        @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
+    end
+    fseq = CircularSequence(FASTA.sequence(LongSequence{DNAAlphabet{4}}, records[1]))
+    if length(records) == 2
+        rseq = CircularSequence(FASTA.sequence(LongSequence{DNAAlphabet{4}}, records[2]))
+    else
+        rseq = reverse_complement(fseq)
+    end
+    if length(fseq) != length(rseq)
+        @error "unequal lengths for forward and reverse strands"
+    end
+    target_id = FASTA.identifier(records[1])
+    if isnothing(target_id)
+        target_id = "unknown"
+    end
+    return target_id, FwdRev(fseq, rseq)
+end
+
 """
     annotate_one(refsdir::String, target_id::String, seq::String, [,output_sff_file])
 
@@ -487,33 +512,22 @@ function annotate_one(db::AbstractReferenceDb, infile::String, config::Union{Chl
     end
 end
 
-function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
-    reader = FASTA.Reader(infile)
-    records = [record for record in reader]
-    if isempty(records)
-        error("unable to read sequence from $infile")
-    elseif length(records) > 2
-        @error "$infile contains multiple sequences; Chloë expects a single sequence per file"
-    end
-    fseq = CircularSequence(FASTA.sequence(LongSequence{DNAAlphabet{4}}, records[1]))
-    if length(records) == 2
-        rseq = CircularSequence(FASTA.sequence(LongSequence{DNAAlphabet{4}}, records[2]))
-    else
-        rseq = reverse_complement(fseq)
-    end
-    if length(fseq) != length(rseq)
-        @error "unequal lengths for forward and reverse strands"
-    end
-    target_id = FASTA.identifier(records[1])
-    if isnothing(target_id)
-        target_id = "unknown"
-    end
-    return target_id, FwdRev(fseq, rseq)
-end
-
 function annotate_one(db::AbstractReferenceDb, infile::IO, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
     target_id, seqs = fasta_reader(infile)
     annotate_one(db, target_id, seqs, config, output)
+end
+
+function annotate_batch(db::AbstractReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
+    n = length(fa_files)
+    for infile in fa_files
+        maybe_gzread(infile) do io
+            annotate_one(db, io, config, if n > 1
+                sffname(infile, config.to_gff3, output)
+            else
+                output
+            end)
+        end
+    end
 end
 
 function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing}=nothing)::String
@@ -529,24 +543,6 @@ function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing}=
     joinpath(d, "$(base).$(ext)")
 end
 
-#= function annotate_one(refsdir::String, infile::String, output::MayBeIO=nothing)
-
-    annotate_one(AbstractReferenceDb(;refsdir=refsdir), infile, ChloeConfig(), output)
-
-end =#
-
-function annotate(db::AbstractReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
-    n = length(fa_files)
-    for infile in fa_files
-        maybe_gzread(infile) do io
-            annotate_one(db, io, config, if n > 1
-                sffname(infile, config.to_gff3, output)
-            else
-                output
-            end)
-        end
-    end
-end
 
 function weighted_mode(values::Vector{Int32}, weights::Vector{Float32})::Int32
     w, v = findmax(StatsBase.addcounts!(Dict{Int32,Float32}(), values, weights))
