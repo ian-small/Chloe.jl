@@ -423,7 +423,9 @@ function run_broker(worker::String=ZMQ_WORKER, client::String=ZMQ_CLIENT)
         @error "$(msg). Only need one broker running"
         Base.exit(1) # can we throw....
     end
-    cmd = `$julia --project=$(pwd()) -q --startup-file=no "$src/broker.jl" --worker=$worker --client=$client`
+    # cmd = `$julia --project=$(pwd()) -q --startup-file=no "$src/broker.jl" --worker=$worker --client=$client`
+    cmd = `$julia --project=$(pwd()) -q --startup-file=no -e "import Chloe; Chloe.broker_main()"  -- --worker=$worker --client=$client`
+    @info "running broker as: \"$cmd\""
     # wait = false means stdout,stderr are connected to /dev/null
     task = run(cmd; wait=false)
     atexit(() -> kill(task))

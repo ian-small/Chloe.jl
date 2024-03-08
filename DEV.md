@@ -98,66 +98,26 @@ advantage of Julia's precompilation.
 
 * [Distributed](https://docs.julialang.org/en/v1/stdlib/Distributed/index.html)
 
-You can of course use julia's Distributed package.
-
-Start julia (1.6) with 3 workers and load code:
-
-`julia --project=. -t 8  -p 3 -L src/dist/remote.jl`
-
-Now you can type:
-
-```julia
-using Distributed
-# just read reference Data on remote workers
-
-# note that REFS is not defined locally in the REPL!
-reference_directory = "/some/directory"
-r = @spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa")
-io, uid = fetch(r)
-sff = String(take!(io))
-# this works too.., just tell Chloe the filename
-r = @spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa", "write_to_this_file.sff")
-```
-
-This also works:
-
-```julia
-using Distrbuted
-addprocs(3)
-
-fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
-io, uid = fetch(@spawnat :any annotate_one(reference_directory, fasta))
-# get chloe sff as a string
-sff = String(take!(io))
-# *OR*
-sff_filename, uid = fetch(@spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa", nothing))
-# sff_filename is where chloe wrote the data:
-# in this case NC_020019.1.sff in the local directory
-# instead of `nothing` specify an actual filename.
-```
-
-If you have installed Chloe as a (local) package the you can use:
-
 ```julia
 using Distributed
 import Chloe
 addprocs(4)
-@everywhere using Chloe
-db = Chloe.ReferenceDbFromDir("{references}")
-r = @spawnat :any annotate(db, "testfa/NC_020019.1.fa")
+@everywhere begin 
+    using Chloe
+    db = ReferenceDbFromDir("{references}")
+end
+r = fetch(@spawnat :any annotate(db, "testfa/NC_020019.1.fa"))
 # etc...
 ```
-
-This takes advantage of the precompilation of julia packages.
-Also you don't need to be in the repo directory!
 
 ## Chloë Server
 
 Running the chloe server. In a terminal type:
 
 ```bash
-julia -t 8 --project=. distributed.jl --level=info --workers=4 \
-     --broker="default"
+julia -t 8 --project=. distributed.jl --level=info --workers=4 --broker=default
+# *OR*
+julia -t 8 --project=. -e 'using Chloe; distributed_main()' -- --level=info --workers=4 --broker=default
 ```
 
 (Julia as of 1.4 refuses to use more threads that the number of CPUs on your machine:
@@ -175,6 +135,7 @@ apicall(i, "ping") # ping the server to see if is listening.
 # fasta and output should be relative to the server'
 # working directory, or specify absolute path names! yes "chloe"
 # should be "annotate" but...
+fastafile = "testfa/NC_020019.1.fa"
 ret = apicall(i, "chloe", fastafile, outputfile)
 code, data = ret["code"], ret["data"]
 @assert code === 200
