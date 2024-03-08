@@ -1,11 +1,3 @@
-# can't seem to turn this into a module
-# without worker processes complaining that they
-# can't find module ChloeDistributed
-
-# module ChloeDistributed
-
-# export distributed_main, chloe_distributed, run_broker, get_distributed_args, maybe_launch_broker
-
 import Distributed
 import Distributed: addprocs, rmprocs, @spawnat, @everywhere, nworkers
 
@@ -78,39 +70,16 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
     gsrefsdir="default", template="default")
 
     @everywhere procs begin
-        include(joinpath($REPO_DIR, "annotate_genomes.jl"))
-        include(joinpath($REPO_DIR, "dist/ZMQLogger.jl"))
-        include(joinpath($REPO_DIR, "dist/tasks.jl"))
-
-        set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = Annotator.ReferenceDb(; gsrefsdir=$gsrefsdir, template=$template)
+        eval(quote
+            import Chloe
+        end)
+        Chloe.set_global_logger($level, $backend; topic="annotator")
+        global REFERENCE = Chloe.ReferenceDb(; gsrefsdir=$gsrefsdir, template=$template)
     end
-    # [ @spawnat p begin
-    #     include(joinpath(REPO_DIR, "annotate_genomes.jl"))
-    #     include(joinpath(REPO_DIR, "dist/ZMQLogger.jl"))
-    #     include(joinpath(REPO_DIR, "dist/chloe_distributed.jl"))
-    #     include(joinpath(REPO_DIR, "dist/tasks.jl"))        
-    #     set_global_logger(level, backend; topic="annotator")
-    #     nothing
-    # end for p in procs] .|> wait
 
 end
-function arm_procs(procs, backend::MayBeString=nothing, level::String="info";
-    gsrefsdir="default", template="default")
 
-    # use when toplevel has already done
-    # @everywhere using Chloe
-    @everywhere procs begin
-        set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = Annotator.ReferenceDb(; gsrefsdir=$gsrefsdir, template=$template)
-    end
-    # [ @spawnat p begin
-    #     set_global_logger(level, backend; topic="annotator")
-    #     nothing
-    # end for p in procs] .|> wait
-end
-
-function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WORKER,
+function chloe_distributed(; gsrefsdir="default", address=ZMQ_WORKER,
     template="default", level="warn", workers=3,
     backend::MayBeString=nothing, broker::MayBeString=nothing, reference_dir::MayBeString=nothing)
 
@@ -121,7 +90,7 @@ function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WOR
     end
     set_global_logger(level, backend; topic="annotator")
     if !isnothing(reference_dir)
-        gsrefsdir = normpath(joinpath(reference_dir, "gsrefs"))
+        gsrefsdir = normpath(joinpath(expanduser(reference_dir), "gsrefs"))
         template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
     else
         if gsrefsdir == "default"
@@ -148,12 +117,8 @@ function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WOR
     # with MMAPped files we prefer to
     # allow the workers to read the data
 
-    # arm_procs(procs, reference, backend, level)
-    if full
-        arm_procs_full(procs, backend, level; gsrefsdir=gsrefsdir, template=template)
-    else
-        arm_procs(procs, backend, level; gsrefsdir=gsrefsdir, template=template)
-    end
+    arm_procs_full(procs, backend, level; gsrefsdir=gsrefsdir, template=template)
+
 
     function arm(new_procs)
         arm_procs_full(new_procs, backend, level; gsrefsdir=gsrefsdir, template=template)
@@ -162,11 +127,10 @@ function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WOR
     # it seems impossible to add new workers after the fact
     # if we have use the Chloe module....
     # see 
-    chloe_listen(address, broker, full ? arm : nothing)
+    chloe_listen(address, broker, arm)
 end
 
-function chloe_listen(address::String, broker::MayBeString=nothing,
-    arm_new_procs::Union{Function,Nothing}=nothing)
+function chloe_listen(address::String, broker::MayBeString, arm_procs::Function)
     success = crayon"bold green"
     procs = Distributed.workers()
 
@@ -194,7 +158,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
         else
             ChloeConfig(config)
         end
-        filename, target_id = fetch(@spawnat :any annotate_one_task(fasta, outputsff, task_id, cfg))
+        filename, target_id = fetch(@spawnat :any Chloe.annotate_one_task(fasta, outputsff, task_id, cfg))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
         nannotations += 1
@@ -234,7 +198,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
             ChloeConfig(config)
         end
         input = IOBuffer(fasta)
-        io, target_id = fetch(@spawnat :any annotate_one_task(input, task_id, cfg))
+        io, target_id = fetch(@spawnat :any Chloe.annotate_one_task(input, task_id, cfg))
         sff = String(take!(io))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
@@ -319,9 +283,6 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
 
         elseif n > 0
             # add workers
-            if arm_new_procs === nothing
-                error("can't create new workers!")
-            end
             @async begin
                 # ensure topology is the same
                 added = addprocs(n, topology=:master_worker, exeflags="--project=$(pwd())")
@@ -509,11 +470,11 @@ function maybe_launch_broker(distributed_args)
     distributed_args
 end
 
-function distributed_main(full::Bool=false, args::Vector{String}=ARGS)
+function distributed_main(args::Vector{String}=ARGS)
     Sys.set_process_title("chloe-distributed")
     distributed_args = get_distributed_args(args)
     distributed_args = maybe_launch_broker(distributed_args)
 
-    chloe_distributed(full; distributed_args...)
+    chloe_distributed(; distributed_args...)
 end
-# end # module
+

@@ -1,6 +1,6 @@
 module Annotator
 
-export annotate_batch, annotate_one, MayBeIO, MayBeString, AbstractReferenceDb
+export annotate_batch, annotate, MayBeIO, MayBeString, AbstractReferenceDb
 export read_single_reference!, inverted_repeat, ChloeConfig
 
 using Base: String
@@ -475,7 +475,7 @@ function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
 end
 
 """
-    annotate_one(refsdir::String, target_id::String, seq::String, [,output_sff_file])
+    annotate(refsdir::String, target_id::String, seq::String, [,output_sff_file])
 
 Annotate a single sequence containting a *single* circular
 DNA entry
@@ -491,7 +491,7 @@ returns a 2-tuple: (ultimate sff output filename, sequence id)
 If `output_sff_file` is an IOBuffer then that buffer will be returned
 with the annotation within it.
 """
-function annotate_one(db::AbstractReferenceDb,
+function annotate(db::AbstractReferenceDb,
     target_id::String,
     target::FwdRev{CircularSequence},
     config::Union{ChloeConfig,Nothing}=nothing,
@@ -506,22 +506,22 @@ end
 
 
 
-function annotate_one(db::AbstractReferenceDb, infile::String, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
+function annotate(db::AbstractReferenceDb, infile::String, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
     maybe_gzread(infile) do io
-        annotate_one(db, io, config, output)
+        annotate(db, io, config, output)
     end
 end
 
-function annotate_one(db::AbstractReferenceDb, infile::IO, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
+function annotate(db::AbstractReferenceDb, infile::IO, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
     target_id, seqs = fasta_reader(infile)
-    annotate_one(db, target_id, seqs, config, output)
+    annotate(db, target_id, seqs, config, output)
 end
 
 function annotate_batch(db::AbstractReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
     n = length(fa_files)
     for infile in fa_files
         maybe_gzread(infile) do io
-            annotate_one(db, io, config, if n > 1
+            annotate(db, io, config, if n > 1
                 sffname(infile, config.to_gff3, output)
             else
                 output

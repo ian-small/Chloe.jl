@@ -6,7 +6,7 @@ else
 fi
 tfiles="testfa/NC_020019.1.fa testfa/NC_020318.1.fa testfa/NC_020152.1.fa testfa/NC_020320.1.fa"
 # exec python bin/chloe.py annotate -o testo --workers=4  $tfiles
-JULIA_NUM_THREADS=8 time -p julia chloe.jl -l info annotate -o testo $tfiles
+JULIA_NUM_THREADS=8 time -p julia --project=. chloe.jl -l info annotate -o testo $tfiles
 for f in $(ls testo)
 do 
     echo "diffing $f"
