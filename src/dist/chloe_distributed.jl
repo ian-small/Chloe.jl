@@ -413,7 +413,7 @@ end
 
 function run_broker(worker::String=ZMQ_WORKER, client::String=ZMQ_CLIENT)
     #  see https://discourse.julialang.org/t/how-to-run-a-process-in-background-but-still-close-it-on-exit/27231
-    src = dirname(@__FILE__)
+    # src = dirname(@__FILE__)
     julia = joinpath(Sys.BINDIR, "julia")
     if !Sys.isexecutable(julia)
         error("Can't find julia executable to run broker, best guess: $julia")
@@ -424,8 +424,8 @@ function run_broker(worker::String=ZMQ_WORKER, client::String=ZMQ_CLIENT)
         Base.exit(1) # can we throw....
     end
     # cmd = `$julia --project=$(pwd()) -q --startup-file=no "$src/broker.jl" --worker=$worker --client=$client`
-    cmd = `$julia --project=$(pwd()) -q --startup-file=no -e "import Chloe; Chloe.broker_main()"  -- --worker=$worker --client=$client`
-    # @info "running broker as: \"$cmd\""
+    cmd = `$julia --project=$(Base.active_project()) -q --startup-file=no -e "import Chloe; Chloe.broker_main()"  -- --worker=$worker --client=$client`
+    # @info "running broker as: $cmd"
     # wait = false means stdout,stderr are connected to /dev/null
     task = run(cmd; wait=false)
     atexit(() -> kill(task))

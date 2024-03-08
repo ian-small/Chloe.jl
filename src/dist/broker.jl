@@ -6,6 +6,8 @@ import ZMQ
 import ZeroMQ_jll
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 
+include("dist_globals.jl")
+
 function remove_endpoints(endpoints::String...)
 
     function cleanup(fname)
@@ -80,13 +82,13 @@ function broker_args(args::Vector{String}=ARGS)
         "--worker"
         arg_type = String
         metavar = "URL"
-        default = "tcp://127.0.0.1:9467"
+        default = ZMQ_WORKER
         help = "ZMQ DEALER address to connect to"
 
         "--client"
         arg_type = String
         metavar = "URL"
-        default = "ipc:///tmp/chloe-client"
+        default = ZMQ_CLIENT
         help = "ZMQ ROUTER address to connect to"
     end
 
