@@ -7,7 +7,7 @@
 
 Chloë is optimised for annotating flowering plant (angiosperm) genomes. If you would like to use Chloë to annotate chloroplast genomes from other plants (e.g. gymnosperms, ferns, lycophytes or bryophytes), please contact Ian Small (ian.small@uwa.edu.au) for access to future versions of Chloë.
 
-To use the web service please visit This annotator is available online at: [https://chloe.plastid.org](https://chloe.plastid.org)
+This annotator is available online at: [https://chloe.plastid.org](https://chloe.plastid.org)
 
 --- 
 
@@ -22,7 +22,7 @@ To use the web service please visit This annotator is available online at: [http
     - [Distributed](#distributed)
     - [Chloë server](#chloe-server)
     - [Running Remotely](#running-remotely)
-- [Authors] (#authors)
+- [Authors](#authors)
 
 
 ## Installing dependencies
@@ -35,19 +35,22 @@ git clone https://github.com/ian-small/chloe_references
 ```
 
 #### Chloë References
-Chloë references can be cloned from the repository to a folder in the same location as the Chloë folder if downloaded:
+Chloë references are required and can be cloned from the git repository into the same location as the `chloe` folder:
 ```bash
 git clone https://github.com/ian-small/chloe_references
 ```
 
 The `Project.toml` file lists all the project
-dependencies. From within the `chloe` directory, type `julia --project=.`
-Then type `]instantiate` at the julia prompt to install all the required
+dependencies. To instantiate go into the `chloe` directory and type: 
+```bash
+julia --project=.
+```
+Then type `]` and `instantiate` at the julia prompt to install all the required
 packages.
 
 
-### As A Julia Package Installation
-You can install Chloe as a Julia package from within the Julia REPL as either a environment package or a local package. If you just want to use the Chloe package as it is from its GitHub repository, you would use `add https://github.com/ian-small/chloe.git`. If you want to actively develop or modify the Chloe package, you might use `]dev path/to/chloe/` and work directly with the local source code (forked from the git repo).
+### As A Julia Package Installation -- in dev
+You can install Chloë as a Julia package from within the Julia REPL as either a environment package or a local package. If you just want to use the Chloë package as it is from its GitHub repository, you would use `add https://github.com/ian-small/chloe.git`. If you want to actively develop or modify the Chloë package, you might use `]dev path/to/chloe/` and work directly with the local source code (forked from the git repo).
 
 How to: 
 Start Julia and type `]` to get the package manager prompt.
@@ -76,19 +79,24 @@ advantage of Julia's precompilation.
 
 ## Usage
 
-To run the annotator type:
+To access the annotator help manual use:
 
 ```bash
 julia --project=. chloe.jl annotate --help
 ```
 
-For example:
+For annotating single sequences with defauly output in `.sff` format:
+```bash
+julia --project=. chloe.jl annotate testfa/NC_020019.1.fa
+```
+
+For annotating all fasta file in a directory ending with `.fa` specifying `.gff` output format: 
 
 ```bash
 julia --project=. chloe.jl annotate -g testfa/*.fa
 ```
 
-will create `.gff` files in the current directory.
+This will create `.gff` files for each fasta file and write them back into the directory where the fasta files.
 
 To see what other commands are available:
 
@@ -97,22 +105,26 @@ julia --project=. chloe.jl --help
 ```
 ## Output formats
 
-Internally, Chloe numbers each strand independently from its 5' end, and tracks features by (start, length)
+Internally, Chloë numbers each strand independently from its 5' end, and tracks features by (start, length)
 rather then by (start, stop). This avoids most of the issues with features crossing the arbitrary end of a circular genome.
-The default output of Chloe (`.sff` files) uses these conventions. For example, here's the start of a typical `.sff` output file:
+The default output of Chloë (`.sff` files) uses these conventions. For example, here's the start of a typical `.sff` output file:
 `NC_020431.1	151328	78.914`
 `accD/1/CDS/1	+	56703	1485	0	1.01	0.743	79.7	0.999	0.996`
+
+![Screenshot](assets/sff.png)
+
 The header line gives the sequence name, the length in nucleotides, and the mean alignment coverage with the reference genomes.
 Subsequent lines give information on a single feature or sub-feature.
 The first column is a unique identifier, composed as follows:
 gene name/gene copy (so if 2 or higher is a duplicate of another gene)/feature type/feature order (can be used to sort exons and introns into the correct order, even for transpliced genes)
 Subsequent columns are: strand, start, length, phase;
-Then 5 columns of interest if you want to understand why Chloe has predicted this particular feature: length relative to feature template, proportion of references that match, mean coverage of aligned genomes (out of 100), feature probability (from XGBoost model), coding probability (from XGBoost model)
+Then 5 columns of interest if you want to understand why Chloë has predicted this particular feature: length relative to feature template, proportion of references that match, mean coverage of aligned genomes (out of 100), feature probability (from XGBoost model), coding probability (from XGBoost model)
 
 Most users will probably want to use `chloe.jl annotate -g` to obtain the output in standard `.gff` format. 
+![Screenshot](assets/gff.png)
 
-By default, Chloe filters out features which are detected to have one of a set of problematic issues, or which have a feature probability of < 0.5.
-You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate -s 0 --nofilter` will retain all the features that Chloe was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
+By default, Chloë filters out features which are detected to have one of a set of problematic issues, or which have a feature probability of < 0.5.
+You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate -s 0 --nofilter` will retain all the features that Chloë was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
 ```[ Warning: rps16/1 lacks a start codon
 [ Warning: rps16/1 has a premature stop codon
 [ Warning: rps16/1 CDS is not divisible by 3
@@ -123,7 +135,7 @@ and in the `.sff` output. Currently `--nofilter` has no effect if the `-g` flag 
 ## Developer Recipes
 ### Multithreading
 
-Chloe will take advantage of multiple threads if possible. To benefit from this substantial speedup, specify the number of threads to use when starting Julia.
+Chloë will take advantage of multiple threads if possible. To benefit from this substantial speedup, specify the number of threads to use when starting Julia.
 Using multiple threads is generally much faster than using multiple distributed processes (see the 'Distributed' section below).
 
 For example:
@@ -139,7 +151,7 @@ julia --threads auto --project=. chloe.jl annotate -g testfa/*.fa
 
 ### Distributed
 
-Chloe has *[Distributed](https://docs.julialang.org/en/v1/stdlib/Distributed/index.html) capabilities meaning it can launch worker processes via the specified cluster manager. To use use julia's Distributed package, start julia (1.6) with 3 workers and load code:
+Chloë has *[Distributed](https://docs.julialang.org/en/v1/stdlib/Distributed/index.html) capabilities meaning it can launch worker processes via the specified cluster manager. To use use julia's Distributed package, start julia (1.6) with 3 workers and load code:
 
 ```bash
 julia --project=. -t 8  -p 3 -L src/dist/remote.jl
@@ -176,7 +188,7 @@ sff_filename, uid = fetch(@spawnat :any annotate_one(reference_directory, "testf
 # instead of `nothing` specify an actual filename.
 ```
 
-If you have installed Chloe as a (local) package the you can use:
+If you have installed Chloë as a (local) package the you can use:
 
 ```julia
 using Distributed
