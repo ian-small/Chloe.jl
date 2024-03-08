@@ -76,7 +76,7 @@ end
 function broker_args(args::Vector{String}=ARGS)
     broker_args = ArgParseSettings(prog="broker", autofix_names=true)  # turn "-" into "_" for arg names.
 
-    @add_arg_table! cmd_args begin
+    @add_arg_table! broker_args begin
         "--worker"
         arg_type = String
         metavar = "URL"
