@@ -43,21 +43,19 @@ function ReferenceDb(; gsrefsdir="default", template="default")::ReferenceDb
     if template == "default"
         template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
     end
+    verify_refs(gsrefsdir, template)
     return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
 end
 
 function ReferenceDbFromDir(directory::AbstractString)::ReferenceDb
     directory = expanduser(directory)
-    if !isdir(directory)
-        throw(ArgumentError("\"$(directory)\" is not a directory!"))
-    end
     gsrefsdir = joinpath(directory, "gsrefs")
     template = joinpath(directory, DEFAULT_TEMPLATE)
-    return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
+    return ReferenceDb(; gsrefsdir=gsrefsdir, template=template)
 end
 
 function ReferenceDbFromDir()::ReferenceDb
-    ReferenceDbFromDir(joinpath(@__DIR__, "..", "..", CHLOE_REFERENCES))
+    ReferenceDb()
 end
 
 function get_templates(db::ReferenceDb)
@@ -109,7 +107,12 @@ function verify_refs(gsrefsdir, template)
     # used by master process to check reference directory
     # *before* starting worker processes...
     if !isdir(gsrefsdir)
-        msg = "Reference directory $(gsrefsdir) is not a directory!"
+        msg = "Reference directory \"$(gsrefsdir)\" is not a directory!"
+        @error msg
+        throw(ArgumentError(msg))
+    end
+    if !isfile(template)
+        msg = "template file \"$(template)\" does not exsit!"
         @error msg
         throw(ArgumentError(msg))
     end

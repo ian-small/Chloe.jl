@@ -70,6 +70,9 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
     gsrefsdir="default", template="default")
 
     @everywhere procs begin
+        # If we have a raw 'import Chloe' here then
+        # precompilation (of the Chloe package) tries to recurse and compile Chloe *again* (I think) and fails.
+        # "hiding" the import inside a quote seems to work.
         eval(quote
             import Chloe
         end)
@@ -114,19 +117,13 @@ function chloe_distributed(; gsrefsdir="default", address=ZMQ_WORKER,
     end
 
     procs = filter(w -> w != 1, Distributed.workers())
-    # with MMAPped files we prefer to
-    # allow the workers to read the data
-
-    arm_procs_full(procs, backend, level; gsrefsdir=gsrefsdir, template=template)
-
 
     function arm(new_procs)
         arm_procs_full(new_procs, backend, level; gsrefsdir=gsrefsdir, template=template)
     end
 
-    # it seems impossible to add new workers after the fact
-    # if we have use the Chloe module....
-    # see 
+    arm(procs)
+
     chloe_listen(address, broker, arm)
 end
 

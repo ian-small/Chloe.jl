@@ -1,13 +1,12 @@
 module Chloe
 
-export annotate, annotate_batch, Feature, ReferenceDbFromDir, ReferenceDb, ChloeConfig
-export MayBeIO, MayBeString
-export writeallGFF3
+export annotate, annotate_batch, ReferenceDbFromDir, ReferenceDb, ChloeConfig, AbstractReferenceDb
+# export MayBeIO, MayBeString
 export cmd_main
 export distributed_main, chloe_distributed, run_broker, get_distributed_args, maybe_launch_broker
 export set_global_logger
 export annotate_one_task
-export read_single_reference!, inverted_repeat
+export ZMQ_CLIENT
 
 include("annotate_genomes.jl")
 
@@ -19,8 +18,7 @@ include("dist/tasks.jl")
 include("dist/chloe_distributed.jl")
 
 # import .ChloeDistributed: distributed_main, chloe_distributed, run_broker, get_distributed_args, maybe_launch_broker
-import .Annotator: annotate_batch, annotate, MayBeIO, MayBeString, Feature, ReferenceDb, ReferenceDbFromDir, AbstractReferenceDb, ChloeConfig
+import .Annotator: annotate_batch, annotate, ReferenceDb, ReferenceDbFromDir, AbstractReferenceDb, ChloeConfig
 import .CmdLine: cmd_main
 import .ZMQLogging: set_global_logger
-import .Annotator: read_single_reference!, inverted_repeat
 end

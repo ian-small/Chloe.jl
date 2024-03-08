@@ -4,7 +4,7 @@ authors = [
     "Ian Small <ian.small@uwa.edu.au>",
     "Ian Castleden <ian.castleden@uwa.edu.au>",
 ]
-version = "0.1.9"
+version = "0.1.10"
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
