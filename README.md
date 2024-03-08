@@ -1,14 +1,70 @@
 
 <img align="right" alt="Chloe" src="assets/logo-chloe-black.png">
 
+# Chloë: Organelle Annotator
+
+## Description
+
+Chloë is optimised for annotating flowering plant (angiosperm) genomes. If you would like to use Chloë to annotate chloroplast genomes from other plants (e.g. gymnosperms, ferns, lycophytes or bryophytes), please contact Ian Small (ian.small@uwa.edu.au) for access to future versions of Chloë.
+
+## Table of Contents
+- [Installing dependencies](#installing-dependencies)
+    -[Git Clone Installation](#git-clone-installation)
+    -[As Julia Package Installation](#as-julia-package-installation)  
+-[Usage](#usage)
+- [Developer recipes](#developer-recipes)
+
+
 ## Installing dependencies
+
+### Git Clone installation
+
+To install the Chloë code as a local folder:
+```bash
+git clone https://github.com/ian-small/chloe_references
+```
+
+#### Chloë References
+Chloë references can be cloned from the repository to a folder in the same location as the Chloë folder if downloaded:
+```bash
+git clone https://github.com/ian-small/chloe_references
+```
 
 The `Project.toml` file lists all the project
 dependencies. From within the `chloe` directory, type `julia --project=.`
 Then type `]instantiate` at the julia prompt to install all the required
 packages.
 
-## Chloë: Organelle Annotator
+
+## As A Julia Package Installation
+You can install Chloe as a Julia package from within the Julia REPL as either a environment package or a local package. If you just want to use the Chloe package as it is from its GitHub repository, you would use `add https://github.com/ian-small/chloe.git`. If you want to actively develop or modify the Chloe package, you might use `]dev path/to/chloe/` and work directly with the local source code (forked from the git repo).
+
+How to: 
+Start Julia and type `]` to get the package manager prompt.
+
+Julia managed package:
+```julia
+add https://github.com/ian-small/chloe.git
+```
+Local package:
+If you install it as a local package you need to git clone the repository to a location on your computer and then point Julia to this path using:
+```julia
+]dev {path/to/chloe/repo/directory}
+```
+This will make an entry for Chloë in the Manifest for Julia. Now get Julia to compile it by typing `import Chloe` at the *julia* prompt. 
+
+---
+You can easily remove Chloë as a package with:
+
+```julia
+]rm Chloe
+```
+
+Installing Chloë as a (local) package allows you to take
+advantage of Julia's precompilation.
+
+
+## Usage
 
 To run the annotator type:
 
@@ -31,7 +87,7 @@ To see what other commands are available:
 ```bash
 julia --project=. chloe.jl --help
 ```
-## Chloë: Output formats
+## Output formats
 
 Internally, Chloe numbers each strand independently from its 5' end, and tracks features by (start, length)
 rather then by (start, stop). This avoids most of the issues with features crossing the arbitrary end of a circular genome.
@@ -55,7 +111,9 @@ You can retain these putative features by lowering the sensitivity threshold and
 ```
 and in the `.sff` output. Currently `--nofilter` has no effect if the `-g` flag is also set.
 
-## Multithreading
+
+## Developer Recipes
+### Multithreading
 
 Chloe will take advantage of multiple threads if possible. To benefit from this substantial speedup, specify the number of threads to use when starting Julia.
 Using multiple threads is generally much faster than using multiple distributed processes (see the 'Distributed' section below).
@@ -70,27 +128,6 @@ or
 ```bash
 julia --threads auto --project=. chloe.jl annotate -g testfa/*.fa
 ```
-
-## Chloe as a Julia package
-
-You can install Chloe as a Julia package.
-Start Julia and type `]` to get the package manager prompt. Then type:
-
-```julia
-]dev {path/to/chloe/repo/directory}
-```
-
-This will make an entry for Chloë in the Manifest for Julia.
-Now get Julia to compile it by typing `import Chloe` at the *julia* prompt.
-
-You can easily remove Chloë as a package with:
-
-```julia
-]rm Chloe
-```
-
-Installing Chloë as a (local) package allows you to take
-advantage of Julia's precompilation.
 
 ## Distributed
 
