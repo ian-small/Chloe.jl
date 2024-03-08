@@ -7,12 +7,22 @@
 
 Chloë is optimised for annotating flowering plant (angiosperm) genomes. If you would like to use Chloë to annotate chloroplast genomes from other plants (e.g. gymnosperms, ferns, lycophytes or bryophytes), please contact Ian Small (ian.small@uwa.edu.au) for access to future versions of Chloë.
 
+To use the web service please visit This annotator is available online at: [https://chloe.plastid.org](https://chloe.plastid.org)
+
+--- 
+
 ## Table of Contents
 - [Installing dependencies](#installing-dependencies)
-    -[Git Clone Installation](#git-clone-installation)
-    -[As Julia Package Installation](#as-julia-package-installation)  
--[Usage](#usage)
+    - [Git Clone Installation](#git-clone-installation)
+    - [As Julia Package Installation](#as-julia-package-installation)  
+- [Usage](#usage)
+- [Output Formats](#output-formats)
 - [Developer recipes](#developer-recipes)
+    - [Multithreading](#multithreading)
+    - [Distributed](#distributed)
+    - [Chloë server](#chloe-server)
+    - [Running Remotely](#running-remotely)
+- [Authors] (#authors)
 
 
 ## Installing dependencies
@@ -36,7 +46,7 @@ Then type `]instantiate` at the julia prompt to install all the required
 packages.
 
 
-## As A Julia Package Installation
+### As A Julia Package Installation
 You can install Chloe as a Julia package from within the Julia REPL as either a environment package or a local package. If you just want to use the Chloe package as it is from its GitHub repository, you would use `add https://github.com/ian-small/chloe.git`. If you want to actively develop or modify the Chloe package, you might use `]dev path/to/chloe/` and work directly with the local source code (forked from the git repo).
 
 How to: 
@@ -79,8 +89,6 @@ julia --project=. chloe.jl annotate -g testfa/*.fa
 ```
 
 will create `.gff` files in the current directory.
-
-This annotator is available online at: [https://chloe.plastid.org](https://chloe.plastid.org)
 
 To see what other commands are available:
 
@@ -129,16 +137,13 @@ or
 julia --threads auto --project=. chloe.jl annotate -g testfa/*.fa
 ```
 
-## Distributed
+### Distributed
 
-* [Distributed](https://docs.julialang.org/en/v1/stdlib/Distributed/index.html)
+Chloe has *[Distributed](https://docs.julialang.org/en/v1/stdlib/Distributed/index.html) capabilities meaning it can launch worker processes via the specified cluster manager. To use use julia's Distributed package, start julia (1.6) with 3 workers and load code:
 
-You can of course use julia's Distributed package.
-
-Start julia (1.6) with 3 workers and load code:
-
-`julia --project=. -t 8  -p 3 -L src/dist/remote.jl`
-
+```bash
+julia --project=. -t 8  -p 3 -L src/dist/remote.jl
+```
 Now you can type:
 
 ```julia
@@ -188,7 +193,7 @@ r = @spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa")
 This takes advantage of the precompilation of julia packages.
 Also you don't need to be in the repo directory!
 
-## Chloë Server
+### Chloë Server
 
 Running the chloe server. In a terminal type:
 
@@ -244,7 +249,7 @@ You can create these by running:
 julia chloe.jl mmap reference_1116/*.fa
 ```
 
-## Running Remotely
+### Running Remotely
 
 The Chloë server can be run remotely through a ssh tunnel.
 
@@ -289,3 +294,4 @@ apicall(i, "exit")
 
 * Ian Small: ian.small@uwa.edu.au
 * Ian Castleden: ian.castleden@uwa.edu.au
+* Conny Hooper: cornelia.hooper@uwa.edu.au
