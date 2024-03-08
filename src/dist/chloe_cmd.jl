@@ -1,6 +1,6 @@
 
 module CmdLine
-export cmd_main
+export chloe_main
 
 import ArgParse: ArgParseSettings, @add_arg_table!, parse_args
 import Logging
@@ -150,7 +150,7 @@ function getargs(args::Vector{String}=ARGS)
     parse_args(args, cmd_args; as_symbols=true)
 end
 
-function cmd_main(args::Vector{String} = ARGS)
+function chloe_main(args::Vector{String} = ARGS)
     parsed_args = getargs(args)
     level = lowercase(parsed_args[:level])
     Logging.with_logger(Logging.ConsoleLogger(stderr,

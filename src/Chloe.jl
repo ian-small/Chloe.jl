@@ -2,7 +2,7 @@ module Chloe
 
 export annotate, annotate_batch, ReferenceDbFromDir, ReferenceDb, ChloeConfig, AbstractReferenceDb
 # export MayBeIO, MayBeString
-export cmd_main
+export chloe_main
 export distributed_main, chloe_distributed, run_broker, broker_main, get_distributed_args, maybe_launch_broker
 export set_global_logger
 export annotate_one_task
@@ -19,7 +19,7 @@ include("dist/chloe_distributed.jl")
 
 # import .ChloeDistributed: distributed_main, chloe_distributed, run_broker, get_distributed_args, maybe_launch_broker
 import .Annotator: annotate_batch, annotate, ReferenceDb, ReferenceDbFromDir, AbstractReferenceDb, ChloeConfig
-import .CmdLine: cmd_main
+import .CmdLine: chloe_main
 import .Broker: broker_main
 import .ZMQLogging: set_global_logger
 end
