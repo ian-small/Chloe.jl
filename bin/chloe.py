@@ -8,7 +8,7 @@ from io import BytesIO, StringIO
 import click
 import zmq
 
-# from chloe.config import ZMQ_ADDRESS, ZMQ_WORKER
+# from chloe.config import ZMQ_ENDPOINT, ZMQ_WORKER
 
 PORT = re.compile("^[0-9]+$")
 
@@ -16,8 +16,8 @@ JEXC = re.compile(r'ErrorException\("(.+)"\)')
 
 context = zmq.Context.instance()
 
-ZMQ_ADDRESS = "ipc:///tmp/chloe-client"
-ZMQ_WORKER = "tcp://127.0.0.1:9467"
+ZMQ_ENDPOINT = "ipc:///tmp/chloe5-client"
+ZMQ_WORKER = "tcp://127.0.0.1:9458"
 
 WORKER_PORT = int(ZMQ_WORKER.split(":")[-1])
 
@@ -139,7 +139,7 @@ def cli():
 @click.option(
     "--broker",
     metavar="URL",
-    help=f"run a broker endpoint too (use 'default' for {ZMQ_ADDRESS})",
+    help=f"run a broker endpoint too (use 'default' for {ZMQ_ENDPOINT})",
 )
 @click.option("-w", "--workers", default=8, help="number of processes to use")
 @click.option("--sleep", default=0.0, help="sleep seconds before trying to connect")
@@ -192,7 +192,7 @@ def remote_ssh(
     if broker:
         address = f"tcp://127.0.0.1:{local}"
         if broker == "default":
-            broker = ZMQ_ADDRESS
+            broker = ZMQ_ENDPOINT
         t = Thread(target=proxy, args=[address, broker], daemon=True)
         t.start()
         Sleep(sleep or 1.0)  # wait for it to start
@@ -247,7 +247,7 @@ def addresses(f):
     f = click.option(
         "-a",
         "--address",
-        default=ZMQ_ADDRESS,
+        default=ZMQ_ENDPOINT,
         help="network address to connect to julia server",
         show_default=True,
         callback=callback,

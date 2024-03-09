@@ -28,7 +28,7 @@ Annotate fasta files from the command line.
 ```sh
 # note the '--'
 julia --project=. -e 'using Chloe; chloe_main()' -- \
-    annotate --reference=/path/to/chloe_references NC_011032.1.fa NC_011713.2.fa
+    annotate --reference=/path/to/chloe_references *.fa
 ```
 This will annotate files one-by-one.
 
@@ -109,4 +109,32 @@ addprocs(4)
 end
 r = fetch(@spawnat :any annotate(references, "NC_011032.1.fa"))
 println(r)
+```
+
+## Server
+
+Run
+
+```sh
+julia -t8 --project=. -e 'using Chloe; distributed_main()' -- --level=info --workers=4 --broker=default --reference=/path/to/chloe_references
+```
+
+You can interact with this server using [JuliaWebAPI](https://github.com/JuliaWeb/JuliaWebAPI.jl)
+
+
+```julia
+using JuliaWebAPI
+import Chloe
+i = APIInvoker(Chloe.ZMQ_ENDPOINT)
+apicall(i, "ping") # ping the server to see if is listening.
+# annotate a file
+ret = apicall(i, "annotate", read("NC_011032.1.fa",String))
+code, data = ret["code"], ret["data"]
+@assert code == 200
+# actual filename written and total elapsed
+# time in ms to annotate
+sff_fname, elapsed_ms = data["filename"], data["elapsed"]
+
+#stop the server....
+apicall(i, "exit")
 ```
