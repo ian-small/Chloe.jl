@@ -1,3 +1,6 @@
+module ChloeDistributed
+export distributed_main, annotate_one_task
+
 import Distributed
 import Distributed: addprocs, rmprocs, @spawnat, @everywhere, nworkers
 
@@ -10,19 +13,20 @@ import Crayons: @crayon_str
 import StringEncodings: encode
 import ZMQ
 
-import .WebAPI: TerminatingJSONMsgFormat
-import .Annotator: MayBeString, verify_refs, ChloeConfig, default_gsrefsdir
-import .ZMQLogging: set_global_logger
-import .Broker: check_endpoints, remove_endpoints
+import ..WebAPI: TerminatingJSONMsgFormat
+import ..Annotator: MayBeString, verify_refs, ChloeConfig, default_gsrefsdir
+import ..ZMQLogging: set_global_logger
+import ..Broker: check_endpoints, remove_endpoints
 
 include("../globals.jl")
 include("dist_globals.jl")
-
+include("tasks.jl")
 function git_version()
+    repo_dir = dirname(@__FILE__)
     try
         # older version of git don't have -C
-        # strip(read(pipeline(`git -C "$REPO_DIR" rev-parse HEAD`, stderr=devnull), String))
-        strip(read(pipeline(`sh -c 'cd "$REPO_DIR" && git rev-parse HEAD'`, stderr=devnull), String))
+        # strip(read(pipeline(`git -C "$repo_dir" rev-parse HEAD`, stderr=devnull), String))
+        strip(read(pipeline(`sh -c 'cd "$repo_dir" && git rev-parse HEAD'`, stderr=devnull), String))
     catch e
         "unknown"
     end
@@ -113,7 +117,7 @@ function chloe_distributed(; gsrefsdir="default", address=ZMQ_WORKER,
     procs = filter(w -> w != 1, Distributed.workers())
     toadd = workers - length(procs)
     if toadd > 0
-        addprocs(toadd; topology=:master_worker, exeflags="--project=$(pwd())")
+        addprocs(toadd; topology=:master_worker, exeflags="--project=$(Base.active_project())")
     end
 
     procs = filter(w -> w != 1, Distributed.workers())
@@ -148,21 +152,21 @@ function chloe_listen(address::String, broker::MayBeString, arm_procs::Function)
     # GC.gc()
     nannotations = 0
 
-    function chloe(fasta::String, outputsff::MayBeString, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing)
+    function chloe(fasta::String, outputsff::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing, task_id::MayBeString=nothing)
         start = now()
         cfg = if isnothing(config)
             ChloeConfig()
         else
             ChloeConfig(config)
         end
-        filename, target_id = fetch(@spawnat :any Chloe.annotate_one_task(fasta, outputsff, task_id, cfg))
+        filename, target_id = fetch(@spawnat :any Main.Chloe.annotate_one_task(fasta, outputsff, task_id, cfg))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
         nannotations += 1
         return Dict("elapsed" => toms(elapsed), "filename" => filename, "ncid" => string(target_id), "config" => cfg)
     end
 
-    function batch_annotate(directory::String, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing)
+    function batch_annotate(directory::String, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing, task_id::MayBeString=nothing)
         start = now()
         cfg = if isnothing(config)
             ChloeConfig()
@@ -181,7 +185,7 @@ function chloe_listen(address::String, broker::MayBeString, arm_procs::Function)
         read(encode(fasta, "latin1") |> IOBuffer |> GzipDecompressorStream, String)
     end
 
-    function annotate(fasta::String, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing)
+    function annotate(fasta::String, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing, task_id::MayBeString=nothing)
         start = now()
         if startswith(fasta, "\u1f\u8b")
             # assume latin1 encoded binary gzip file
@@ -195,7 +199,7 @@ function chloe_listen(address::String, broker::MayBeString, arm_procs::Function)
             ChloeConfig(config)
         end
         input = IOBuffer(fasta)
-        io, target_id = fetch(@spawnat :any Chloe.annotate_one_task(input, task_id, cfg))
+        io, target_id = fetch(@spawnat :any Main.Chloe.annotate_one_task(input, task_id, cfg))
         sff = String(take!(io))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
@@ -282,7 +286,7 @@ function chloe_listen(address::String, broker::MayBeString, arm_procs::Function)
             # add workers
             @async begin
                 # ensure topology is the same
-                added = addprocs(n, topology=:master_worker, exeflags="--project=$(pwd())")
+                added = addprocs(n, topology=:master_worker, exeflags="--project=$(Base.active_project())")
                 arm_procs(added)
                 @info "added $(added) processes"
                 # update globals
@@ -411,7 +415,7 @@ function get_distributed_args(args::Vector{String}=ARGS)
 
 end
 
-function run_broker(worker::String=ZMQ_WORKER, client::String=ZMQ_CLIENT)
+function run_broker(worker::String=ZMQ_WORKER, client::String=ZMQ_ENDPOINT)
     #  see https://discourse.julialang.org/t/how-to-run-a-process-in-background-but-still-close-it-on-exit/27231
     # src = dirname(@__FILE__)
     julia = joinpath(Sys.BINDIR, "julia")
@@ -424,7 +428,7 @@ function run_broker(worker::String=ZMQ_WORKER, client::String=ZMQ_CLIENT)
         Base.exit(1) # can we throw....
     end
     # cmd = `$julia --project=$(pwd()) -q --startup-file=no "$src/broker.jl" --worker=$worker --client=$client`
-    cmd = `$julia --project=$(Base.active_project()) -q --startup-file=no -e "import Chloe; Chloe.broker_main()"  -- --worker=$worker --client=$client`
+    cmd = `$julia --project="$(Base.active_project())" -q --startup-file=no -e "import Chloe; Chloe.broker_main()"  -- --worker=$worker --client=$client`
     # @info "running broker as: $cmd"
     # wait = false means stdout,stderr are connected to /dev/null
     task = run(cmd; wait=false)
@@ -449,7 +453,7 @@ function maybe_launch_broker(distributed_args)
 
     if client_url !== nothing
         if client_url == "default"
-            client_url = ZMQ_CLIENT
+            client_url = ZMQ_ENDPOINT
             distributed_args[:broker] = client_url
         end
         if startswith(client_url, "@")
@@ -477,3 +481,4 @@ function distributed_main(args::Vector{String}=ARGS)
     chloe_distributed(; distributed_args...)
 end
 
+end # module

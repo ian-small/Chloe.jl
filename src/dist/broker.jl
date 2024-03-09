@@ -88,7 +88,7 @@ function broker_args(args::Vector{String}=ARGS)
         "--client"
         arg_type = String
         metavar = "URL"
-        default = ZMQ_CLIENT
+        default = ZMQ_ENDPOINT
         help = "ZMQ ROUTER address to connect to"
     end
 

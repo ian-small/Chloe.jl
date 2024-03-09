@@ -115,9 +115,9 @@ r = fetch(@spawnat :any annotate(db, "testfa/NC_020019.1.fa"))
 Running the chloe server. In a terminal type:
 
 ```bash
-julia -t 8 --project=. distributed.jl --level=info --workers=4 --broker=default
+julia -t8 --project=. distributed.jl --level=info --workers=4 --broker=default --reference=/path/to/chloe_references
 # *OR*
-julia -t 8 --project=. -e 'using Chloe; distributed_main()' -- --level=info --workers=4 --broker=default
+julia -t8 --project=. -e 'using Chloe; distributed_main()' -- --level=info --workers=4 --broker=default --reference=/path/to/chloe_references
 ```
 
 (Julia as of 1.4 refuses to use more threads that the number of CPUs on your machine:
@@ -129,16 +129,16 @@ In another terminal start julia:
 using JuliaWebAPI
 import Chloe
 
-i = APIInvoker(Chloe.ZMQ_CLIENT);
+i = APIInvoker(Chloe.ZMQ_ENDPOINT);
 apicall(i, "ping") # ping the server to see if is listening.
 
 # fasta and output should be relative to the server'
 # working directory, or specify absolute path names! yes "chloe"
 # should be "annotate" but...
 fastafile = "testfa/NC_020019.1.fa"
-ret = apicall(i, "chloe", fastafile, outputfile)
+ret = apicall(i, "chloe", fastafile)
 code, data = ret["code"], ret["data"]
-@assert code === 200
+@assert code == 200
 # actual filename written and total elapsed
 # time in ms to annotate
 sff_fname, elapsed_ms = data["filename"], data["elapsed"]
@@ -151,8 +151,8 @@ The *actual* production configuration uses `distributed.jl`
 the server as a client of a DEALER/ROUTER server
 (see `bin/broker.py` or `src/dist/broker.jl` and the `Makefile`). It *connects* to the
 DEALER end on `tcp://127.0.0.1:9467`. The
-[chloe website](https://chloe.plantenergy.edu.au)
-connects to `ipc:///tmp/chloe4-client` which
+[chloe website](https://chloe.plastid.org)
+connects to `ipc:///tmp/chloe5-client` which
 is the ROUTER end of broker. In this setup
 you can run multiple chloe servers connecting
 to the same DEALER.
@@ -160,7 +160,7 @@ to the same DEALER.
 **Update**: you can now run a broker with julia as `julia --project=. src/dist/broker.jl`
 *or* specify `--broker=URL` to `distrbuted.jl`. No
 python required. (best to use `--broker=default` to select
-this projects default endpoint (`Chloe.ZMQ_CLIENT`))
+this projects default endpoint (`Chloe.ZMQ_ENDPOINT`))
 
 
 ## Running Remotely
@@ -196,7 +196,7 @@ i = APIInvoker("tcp://127.0.0.1:9467")
 fasta = read("testfa/NC_020019.1.fa", String)
 ret = apicall(i, "annotate", fasta)
 code, data = ret["code"], ret["data"]
-@assert code === 200
+@assert code == 200
 sff = data["sff"] # sff file as a string
 # terminate the server
 apicall(i, "exit")
