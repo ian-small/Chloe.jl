@@ -116,7 +116,8 @@ println(r)
 Run
 
 ```sh
-julia -t8 --project=. -e 'using Chloe; distributed_main()' -- --level=info --workers=4 --broker=default --reference=/path/to/chloe_references
+julia -t8 --project=. -e 'using Chloe; distributed_main()' -- \
+    --level=info --workers=4 --broker=default --reference=/path/to/chloe_references
 ```
 
 You can interact with this server using [JuliaWebAPI](https://github.com/JuliaWeb/JuliaWebAPI.jl)
