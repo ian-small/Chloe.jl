@@ -200,12 +200,12 @@ function chloe_listen(address::String, broker::MayBeString, arm_procs::Function)
         end
         input = IOBuffer(fasta)
         io, target_id = fetch(@spawnat :any Main.Chloe.annotate_one_task(input, task_id, cfg))
-        sff = String(take!(io))
+        result = String(take!(io))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
         nannotations += 1
 
-        return Dict("elapsed" => toms(elapsed), "sff" => sff, "ncid" => string(target_id), "config" => cfg)
+        return Dict("elapsed" => toms(elapsed), "result" => result, "ncid" => string(target_id), "config" => cfg)
     end
 
     function ping()

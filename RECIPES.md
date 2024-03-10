@@ -132,9 +132,9 @@ apicall(i, "ping") # ping the server to see if is listening.
 ret = apicall(i, "annotate", read("NC_011032.1.fa",String))
 code, data = ret["code"], ret["data"]
 @assert code == 200
-# actual filename written and total elapsed
+# sff/gff file as a string and total elapsed
 # time in ms to annotate
-sff_fname, elapsed_ms = data["filename"], data["elapsed"]
+result, elapsed_ms = data["result"], data["elapsed"]
 
 #stop the server....
 apicall(i, "exit")
