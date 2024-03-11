@@ -1,11 +1,11 @@
 module Annotator
 
-using Base: String
-using XGBoost
-export annotate, annotate_one, MayBeIO, MayBeString, AbstractReferenceDb
-
+export annotate_batch, annotate, MayBeIO, MayBeString, AbstractReferenceDb
 export read_single_reference!, inverted_repeat, ChloeConfig
 
+using Base: String
+
+import XGBoost
 import Base
 
 include("utilities.jl")
@@ -17,6 +17,7 @@ include("annotations.jl")
 include("orfs.jl")
 include("rnas.jl")
 include("reference.jl")
+include("chloeboost.jl")
 
 import Printf: @sprintf
 import JSON
@@ -140,9 +141,9 @@ function score_feature(sff::SFF_Feature, reference_feature_counts::Dict{String,I
 end
 
 function fill_feature_stack(target_length::Int32, annotations::Vector{Annotation},
-    feature_templates::Dict{String,FeatureTemplate})::Dict{String, CircularVector}
+    feature_templates::Dict{String,FeatureTemplate})::Dict{String,CircularVector}
     # assumes annotations are ordered by path
-    stacks = Dict{String, CircularVector}()
+    stacks = Dict{String,CircularVector}()
     for annotation in annotations
         template = get(feature_templates, annotation.path, nothing)
         if template === nothing
@@ -448,42 +449,6 @@ function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO=not
     return fname, result.target_id
 end
 
-"""
-    annotate_one(refsdir::String, target_id::String, seq::String, [,output_sff_file])
-
-Annotate a single sequence containting a *single* circular
-DNA entry
-
-writes an .sff file to `output_sff_file` or uses the sequence id in the
-fasta file to write `{seq_id}.sff` in the current directory.
-
-If `output_sff_file` is a *directory* write `{seq_id}.sff` into that
-directory.
-
-returns a 2-tuple: (ultimate sff output filename, sequence id)
-
-If `output_sff_file` is an IOBuffer then that buffer will be returned
-with the annotation within it.
-"""
-function annotate_one(db::AbstractReferenceDb,
-    target_id::String,
-    target::FwdRev{CircularSequence},
-    config::ChloeConfig,
-    output::MayBeIO=nothing
-)::Tuple{Union{String,IO},String}
-
-    result = annotate_one_worker(db, target_id, target, config)
-    write_result(result, config.to_gff3, output)
-
-end
-
-
-
-function annotate_one(db::AbstractReferenceDb, infile::String, config::ChloeConfig, output::MayBeIO=nothing)
-    maybe_gzread(infile) do io
-        annotate_one(db, io, config, output)
-    end
-end
 
 function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     reader = FASTA.Reader(infile)
@@ -509,9 +474,60 @@ function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     return target_id, FwdRev(fseq, rseq)
 end
 
-function annotate_one(db::AbstractReferenceDb, infile::IO, config::ChloeConfig, output::MayBeIO=nothing)
+"""
+    annotate(refsdir::String, target_id::String, seq::String, [,output_sff_file])
+
+Annotate a single sequence containting a *single* circular
+DNA entry
+
+writes an .sff file to `output_sff_file` or uses the sequence id in the
+fasta file to write `{seq_id}.sff` in the current directory.
+
+If `output_sff_file` is a *directory* write `{seq_id}.sff` into that
+directory.
+
+returns a 2-tuple: (ultimate sff output filename, sequence id)
+
+If `output_sff_file` is an IOBuffer then that buffer will be returned
+with the annotation within it.
+"""
+function annotate(db::AbstractReferenceDb,
+    target_id::String,
+    target::FwdRev{CircularSequence},
+    config::Union{ChloeConfig,Nothing}=nothing,
+    output::MayBeIO=nothing
+)::Tuple{Union{String,IO},String}
+    config = isnothing(config) ? ChloeConfig() : config
+
+    result = annotate_one_worker(db, target_id, target, config)
+    write_result(result, config.to_gff3, output)
+
+end
+
+
+
+function annotate(db::AbstractReferenceDb, infile::String, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
+    maybe_gzread(infile) do io
+        annotate(db, io, config, output)
+    end
+end
+
+function annotate(db::AbstractReferenceDb, infile::IO, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
     target_id, seqs = fasta_reader(infile)
-    annotate_one(db, target_id, seqs, config, output)
+    annotate(db, target_id, seqs, config, output)
+end
+
+function annotate_batch(db::AbstractReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
+    n = length(fa_files)
+    for infile in fa_files
+        maybe_gzread(infile) do io
+            annotate(db, io, config, if n > 1
+                sffname(infile, config.to_gff3, output)
+            else
+                output
+            end)
+        end
+    end
 end
 
 function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing}=nothing)::String
@@ -527,24 +543,6 @@ function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing}=
     joinpath(d, "$(base).$(ext)")
 end
 
-#= function annotate_one(refsdir::String, infile::String, output::MayBeIO=nothing)
-
-    annotate_one(AbstractReferenceDb(;refsdir=refsdir), infile, ChloeConfig(), output)
-
-end =#
-
-function annotate(db::AbstractReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
-    n = length(fa_files)
-    for infile in fa_files
-        maybe_gzread(infile) do io
-            annotate_one(db, io, config, if n > 1
-                sffname(infile, config.to_gff3, output)
-            else
-                output
-            end)
-        end
-    end
-end
 
 function weighted_mode(values::Vector{Int32}, weights::Vector{Float32})::Int32
     w, v = findmax(StatsBase.addcounts!(Dict{Int32,Float32}(), values, weights))
@@ -1009,20 +1007,19 @@ function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String
     maxlengths
 end
 
-coding_xgb_model = Booster(DMatrix[], model_file=joinpath(@__DIR__, "coding_xgb.model"))
-noncoding_xgb_model = Booster(DMatrix[], model_file=joinpath(@__DIR__, "noncoding_xgb.model"))
 const MAXFEATURELENGTH = 7000
+
 function feature_xgb(ftype::String, median_length::Float32, featurelength::Int32, fdepth::Float32, codingprob::Float32)::Float32
     featurelength ≤ 0 && return Float32(0.0)
     fdepth ≤ 0 && return Float32(0.0)
     rtlength = median_length / MAXFEATURELENGTH
     rflength = featurelength / MAXFEATURELENGTH
     frtlength = featurelength / median_length
-    local pred
-    if ftype == "CDS"
-        pred = XGBoost.predict(coding_xgb_model, [rtlength rflength frtlength fdepth codingprob])
+    boost = get_boost()
+    pred = if ftype == "CDS"
+        XGBoost.predict(boost.coding_xgb_model, [rtlength rflength frtlength fdepth codingprob])
     else
-        pred = XGBoost.predict(noncoding_xgb_model, [rtlength rflength frtlength fdepth])
+        XGBoost.predict(boost.noncoding_xgb_model, [rtlength rflength frtlength fdepth])
     end
     return pred[1]
 end
@@ -1142,7 +1139,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
                     local f::Feature, frange::UnitRange{Int32}, intersect::UnitRange{Int32}
                     for sff in model1.features
                         f = sff.feature
-                        frange = range(f.start, length = f.length)
+                        frange = range(f.start, length=f.length)
                         if model1.strand == '+'
                             intersect = circularintersect(frange, ir1_boundaries, glength)
                             if length(intersect) == 0
@@ -1161,7 +1158,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
                     # find feature in model2 that overlaps end of IR
                     for sff in model2.features
                         f = sff.feature
-                        frange = range(f.start, length = f.length)
+                        frange = range(f.start, length=f.length)
                         if model2.strand == '+'
                             intersect = circularintersect(frange, ir1_boundaries, glength)
                             if length(intersect) == 0

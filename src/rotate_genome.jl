@@ -16,7 +16,7 @@ function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, ex
     ir = Annotator.inverted_repeat(fseq, rseq)
 
 
-    out = LongDNA(dna""d)
+    out = LongDNA{4}("")
 
     if ir.blocklength >= 1000
         IR1 = (ir.src_index, ir.blocklength)

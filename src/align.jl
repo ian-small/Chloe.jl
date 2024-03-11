@@ -19,7 +19,7 @@ function align(;query, target, output=Base.stdout)
                 seq2 = FASTA.sequence(LongSequence{DNAAlphabet{4}}, record)
                 alignment = Alignment(seq1, seq2)
                 cseq1 = CircularSequence(seq1)
-                chain = align2seqs(cseq1, CircularSequence(seq2))
+                chain = align2seqs(cseq1, CircularSequence(seq2), false)
                 for link in chain
                     block = link.data
                     query_segment = LongDNA(collect(reinterpret(DNA, alignment[i]) for i in block.src_index:block.src_index + block.blocklength - 1))
