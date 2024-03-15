@@ -1,6 +1,6 @@
-
 <img align="right" alt="Chloe" src="assets/logo-chloe-black.png">
 
+<<<<<<< HEAD
 # Chloë: Organelle Annotator
 
 Chloë is optimised for annotating flowering plant (angiosperm) chloroplast genomes. If you would like to use Chloë to annotate chloroplast genomes from other plants (e.g. gymnosperms, ferns, lycophytes or bryophytes), please contact Ian Small (ian.small@uwa.edu.au) for access to future versions of Chloë.
@@ -309,3 +309,6 @@ apicall(i, "exit")
 * Ian Small: ian.small@uwa.edu.au
 * Ian Castleden: ian.castleden@uwa.edu.au
 * Conny Hooper: cornelia.hooper@uwa.edu.au
+=======
+# Chloë
+>>>>>>> 929103a8149e5af8805f26803b0de787e711b003

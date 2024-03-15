@@ -1,4 +1,31 @@
 include("globals.jl")
+
+const KWARGS = ["numgsrefs", "sensitivity", "to_gff3", "nofilter"]
+
+struct ChloeConfig
+    numgsrefs::Int
+    sensitivity::Real
+    to_gff3::Bool
+    nofilter::Bool
+    function ChloeConfig(; numgsrefs=DEFAULT_NUMGSREFS, sensitivity=DEFAULT_SENSITIVITY,
+        to_gff3::Bool=false, nofilter::Bool=false)
+        return new(numgsrefs, sensitivity, to_gff3, nofilter)
+    end
+
+    # needs to be V <: Any since this is coming from a JSON blob
+    function ChloeConfig(dict::Dict{String,V} where {V<:Any})
+        return ChloeConfig(; Dict(Symbol(k) => v for (k, v) in dict if k in KWARGS)...)
+    end
+end
+
+function Base.show(io::IO, c::ChloeConfig)
+    print(io, "ChloeConfig[numgsrefs=$(c.numgsrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), gff=$(c.to_gff3)]")
+end
+
+function default_gsrefsdir()::String
+    normpath(joinpath(pwd(), "..", DEFAULT_GSREFS))
+end
+
 abstract type AbstractReferenceDb end
 
 mutable struct ReferenceDb <: AbstractReferenceDb
@@ -9,21 +36,26 @@ mutable struct ReferenceDb <: AbstractReferenceDb
     gsrefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
 end
 
-struct ChloeConfig
-    numgsrefs::Int
-    sensitivity::Real
-    to_gff3::Bool
-    nofilter::Bool
-end
-
 function ReferenceDb(; gsrefsdir="default", template="default")::ReferenceDb
     if gsrefsdir == "default"
-        gsrefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_GSREFS))
+        gsrefsdir = default_gsrefsdir()
     end
     if template == "default"
-        template = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_TEMPLATE))
+        template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
     end
+    verify_refs(gsrefsdir, template)
     return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
+end
+
+function ReferenceDbFromDir(directory::AbstractString)::ReferenceDb
+    directory = expanduser(directory)
+    gsrefsdir = joinpath(directory, "gsrefs")
+    template = joinpath(directory, DEFAULT_TEMPLATE)
+    return ReferenceDb(; gsrefsdir=gsrefsdir, template=template)
+end
+
+function ReferenceDbFromDir()::ReferenceDb
+    ReferenceDb()
 end
 
 function get_templates(db::ReferenceDb)
@@ -69,40 +101,24 @@ function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference
     end
 end
 
-const KWARGS = ["numgsrefs", "sensitivity", "to_gff3", "nofilter"]
 
-function ChloeConfig(; numgsrefs=DEFAULT_NUMGSREFS, sensitivity=DEFAULT_SENSITIVITY,
-    to_gff3::Bool=false, nofilter::Bool=false)
-    return ChloeConfig(numgsrefs, sensitivity, to_gff3, nofilter)
-end
-
-# needs to be V <: Any since this is comming from a JSON blob
-function ChloeConfig(dict::Dict{String,V} where {V<:Any})
-    function cvt(name, v)
-        if name == "references"
-            # if we actually have references then v
-            # will be Any["str1","str2"]. convert to Vector{String}
-            return string.(v)
-        end
-        # integers and float are ok
-        v
-    end
-    return ChloeConfig(; Dict(Symbol(k) => cvt(k, v) for (k, v) in dict if k in KWARGS)...)
-end
-function Base.show(io::IO, c::ChloeConfig)
-    print(io, "ChloeConfig[numgsrefs=$(c.numgsrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter)]")
-end
 
 function verify_refs(gsrefsdir, template)
     # used by master process to check reference directory
     # *before* starting worker processes...
     if !isdir(gsrefsdir)
-        msg = "Reference directory $(gsrefsdir) is not a directory!"
+        msg = "Reference directory \"$(gsrefsdir)\" is not a directory!"
+        @error msg
+        throw(ArgumentError(msg))
+    end
+    if !isfile(template)
+        msg = "template file \"$(template)\" does not exsit!"
         @error msg
         throw(ArgumentError(msg))
     end
 end
 
+# alters reference_feature_count Dictionary
 function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
     if !isdir(refdir)
         refdir = dirname(refdir)

@@ -1,10 +1,5 @@
-# can't seem to turn this into a module
-# without worker processes complaining that they
-# can't find module ChloeDistributed
-
-# module ChloeDistributed
-
-# export distributed_main, chloe_distributed, run_broker, get_distributed_args, maybe_launch_broker
+module ChloeDistributed
+export distributed_main, annotate_one_task
 
 import Distributed
 import Distributed: addprocs, rmprocs, @spawnat, @everywhere, nworkers
@@ -18,19 +13,20 @@ import Crayons: @crayon_str
 import StringEncodings: encode
 import ZMQ
 
-import .WebAPI: TerminatingJSONMsgFormat
-import .Annotator: MayBeString, verify_refs, ChloeConfig
-import .ZMQLogging: set_global_logger
-import .Broker: check_endpoints, remove_endpoints
+import ..WebAPI: TerminatingJSONMsgFormat
+import ..Annotator: MayBeString, verify_refs, ChloeConfig, default_gsrefsdir
+import ..ZMQLogging: set_global_logger
+import ..Broker: check_endpoints, remove_endpoints
 
 include("../globals.jl")
 include("dist_globals.jl")
-
+include("tasks.jl")
 function git_version()
+    repo_dir = dirname(@__FILE__)
     try
         # older version of git don't have -C
-        # strip(read(pipeline(`git -C "$REPO_DIR" rev-parse HEAD`, stderr=devnull), String))
-        strip(read(pipeline(`sh -c 'cd "$REPO_DIR" && git rev-parse HEAD'`, stderr=devnull), String))
+        # strip(read(pipeline(`git -C "$repo_dir" rev-parse HEAD`, stderr=devnull), String))
+        strip(read(pipeline(`sh -c 'cd "$repo_dir" && git rev-parse HEAD'`, stderr=devnull), String))
     catch e
         "unknown"
     end
@@ -78,41 +74,21 @@ function arm_procs_full(procs, backend::MayBeString=nothing, level::String="info
     gsrefsdir="default", template="default")
 
     @everywhere procs begin
-        include(joinpath($REPO_DIR, "annotate_genomes.jl"))
-        include(joinpath($REPO_DIR, "dist/ZMQLogger.jl"))
-        include(joinpath($REPO_DIR, "dist/tasks.jl"))
-
-        set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = Annotator.ReferenceDb(; gsrefsdir=$gsrefsdir, template=$template)
+        # If we have a raw 'import Chloe' here then
+        # precompilation (of the Chloe package) tries to recurse and compile Chloe *again* (I think) and fails.
+        # "hiding" the import inside a quote seems to work.
+        eval(quote
+            import Chloe
+        end)
+        Chloe.set_global_logger($level, $backend; topic="annotator")
+        global REFERENCE = Chloe.ReferenceDb(; gsrefsdir=$gsrefsdir, template=$template)
     end
-    # [ @spawnat p begin
-    #     include(joinpath(REPO_DIR, "annotate_genomes.jl"))
-    #     include(joinpath(REPO_DIR, "dist/ZMQLogger.jl"))
-    #     include(joinpath(REPO_DIR, "dist/chloe_distributed.jl"))
-    #     include(joinpath(REPO_DIR, "dist/tasks.jl"))        
-    #     set_global_logger(level, backend; topic="annotator")
-    #     nothing
-    # end for p in procs] .|> wait
 
 end
-function arm_procs(procs, backend::MayBeString=nothing, level::String="info";
-    gsrefsdir="default", template="default")
 
-    # use when toplevel has already done
-    # @everywhere using Chloe
-    @everywhere procs begin
-        set_global_logger($level, $backend; topic="annotator")
-        global REFERENCE = Annotator.ReferenceDb(; gsrefsdir=$gsrefsdir, template=$template)
-    end
-    # [ @spawnat p begin
-    #     set_global_logger(level, backend; topic="annotator")
-    #     nothing
-    # end for p in procs] .|> wait
-end
-
-function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WORKER,
+function chloe_distributed(; gsrefsdir="default", address=ZMQ_WORKER,
     template="default", level="warn", workers=3,
-    backend::MayBeString=nothing, broker::MayBeString=nothing)
+    backend::MayBeString=nothing, broker::MayBeString=nothing, reference_dir::MayBeString=nothing)
 
     if !isnothing(backend)
         if backend == "default"
@@ -120,13 +96,18 @@ function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WOR
         end
     end
     set_global_logger(level, backend; topic="annotator")
+    if !isnothing(reference_dir)
+        gsrefsdir = normpath(joinpath(expanduser(reference_dir), "gsrefs"))
+        template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
+    else
+        if gsrefsdir == "default"
+            gsrefsdir = default_gsrefsdir()
+        end
+        if template == "default"
+            template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
+        end
+    end
 
-    if gsrefsdir == "default"
-        gsrefsdir = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_GSREFS))
-    end
-    if template == "default"
-        template = normpath(joinpath(REPO_DIR, "..", "..", DEFAULT_TEMPLATE))
-    end
     # don't wait for workers to find the wrong directory
     verify_refs(gsrefsdir, template)
 
@@ -136,32 +117,21 @@ function chloe_distributed(full::Bool=true; gsrefsdir="default", address=ZMQ_WOR
     procs = filter(w -> w != 1, Distributed.workers())
     toadd = workers - length(procs)
     if toadd > 0
-        addprocs(toadd; topology=:master_worker, exeflags="--project=$(pwd())")
+        addprocs(toadd; topology=:master_worker, exeflags="--project=$(Base.active_project())")
     end
 
     procs = filter(w -> w != 1, Distributed.workers())
-    # with MMAPped files we prefer to
-    # allow the workers to read the data
-
-    # arm_procs(procs, reference, backend, level)
-    if full
-        arm_procs_full(procs, backend, level; gsrefsdir=gsrefsdir, template=template)
-    else
-        arm_procs(procs, backend, level; gsrefsdir=gsrefsdir, template=template)
-    end
 
     function arm(new_procs)
         arm_procs_full(new_procs, backend, level; gsrefsdir=gsrefsdir, template=template)
     end
 
-    # it seems impossible to add new workers after the fact
-    # if we have use the Chloe module....
-    # see 
-    chloe_listen(address, broker, full ? arm : nothing)
+    arm(procs)
+
+    chloe_listen(address, broker, arm)
 end
 
-function chloe_listen(address::String, broker::MayBeString=nothing,
-    arm_new_procs::Union{Function,Nothing}=nothing)
+function chloe_listen(address::String, broker::MayBeString, arm_procs::Function)
     success = crayon"bold green"
     procs = Distributed.workers()
 
@@ -182,21 +152,21 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
     # GC.gc()
     nannotations = 0
 
-    function chloe(fasta::String, outputsff::MayBeString, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing)
+    function chloe(fasta::String, outputsff::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing, task_id::MayBeString=nothing)
         start = now()
         cfg = if isnothing(config)
             ChloeConfig()
         else
             ChloeConfig(config)
         end
-        filename, target_id = fetch(@spawnat :any annotate_one_task(fasta, outputsff, task_id, cfg))
+        filename, target_id = fetch(@spawnat :any Main.Chloe.annotate_one_task(fasta, outputsff, task_id, cfg))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
         nannotations += 1
         return Dict("elapsed" => toms(elapsed), "filename" => filename, "ncid" => string(target_id), "config" => cfg)
     end
 
-    function batch_annotate(directory::String, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing)
+    function batch_annotate(directory::String, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing, task_id::MayBeString=nothing)
         start = now()
         cfg = if isnothing(config)
             ChloeConfig()
@@ -215,7 +185,7 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
         read(encode(fasta, "latin1") |> IOBuffer |> GzipDecompressorStream, String)
     end
 
-    function annotate(fasta::String, task_id::MayBeString=nothing, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing)
+    function annotate(fasta::String, config::Union{Nothing,Dict{String,V} where V<:Any}=nothing, task_id::MayBeString=nothing)
         start = now()
         if startswith(fasta, "\u1f\u8b")
             # assume latin1 encoded binary gzip file
@@ -229,13 +199,13 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
             ChloeConfig(config)
         end
         input = IOBuffer(fasta)
-        io, target_id = fetch(@spawnat :any annotate_one_task(input, task_id, cfg))
-        sff = String(take!(io))
+        io, target_id = fetch(@spawnat :any Main.Chloe.annotate_one_task(input, task_id, cfg))
+        result = String(take!(io))
         elapsed = now() - start
         @info success("finished $target_id after $elapsed")
         nannotations += 1
 
-        return Dict("elapsed" => toms(elapsed), "sff" => sff, "ncid" => string(target_id), "config" => cfg)
+        return Dict("elapsed" => toms(elapsed), "result" => result, "ncid" => string(target_id), "config" => cfg)
     end
 
     function ping()
@@ -314,12 +284,9 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
 
         elseif n > 0
             # add workers
-            if arm_new_procs === nothing
-                error("can't create new workers!")
-            end
             @async begin
                 # ensure topology is the same
-                added = addprocs(n, topology=:master_worker, exeflags="--project=$(pwd())")
+                added = addprocs(n, topology=:master_worker, exeflags="--project=$(Base.active_project())")
                 arm_procs(added)
                 @info "added $(added) processes"
                 # update globals
@@ -389,16 +356,21 @@ function chloe_listen(address::String, broker::MayBeString=nothing,
 
 end
 
-function get_distributed_args()
+function get_distributed_args(args::Vector{String}=ARGS)
     distributed_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
 
     @add_arg_table! distributed_args begin
         "--reference", "-r"
         arg_type = String
+        dest_name = "reference_dir"
+        metavar = "DIRECTORY"
+        help = "reference directory (takes precedence over --gsrefs and --template options)"
+        "--gsrefs", "-g"
+        arg_type = String
         default = "default"
         dest_name = "gsrefsdir"
         metavar = "DIRECTORY"
-        help = "reference directory [default: $(DEFAULT_GSREFS)]"
+        help = "gsrefs reference directory [default: $(DEFAULT_GSREFS)]"
         "--template", "-t"
         arg_type = String
         default = "default"
@@ -439,13 +411,13 @@ function get_distributed_args()
     You can also use julia arguments to specify workers with e.g.
     `julia -p4 ....` etc.
     """
-    parse_args(ARGS, distributed_args; as_symbols=true)
+    parse_args(args, distributed_args; as_symbols=true)
 
 end
 
-function run_broker(worker::String=ZMQ_WORKER, client::String=ZMQ_CLIENT)
+function run_broker(worker::String=ZMQ_WORKER, client::String=ZMQ_ENDPOINT)
     #  see https://discourse.julialang.org/t/how-to-run-a-process-in-background-but-still-close-it-on-exit/27231
-    src = dirname(@__FILE__)
+    # src = dirname(@__FILE__)
     julia = joinpath(Sys.BINDIR, "julia")
     if !Sys.isexecutable(julia)
         error("Can't find julia executable to run broker, best guess: $julia")
@@ -455,7 +427,9 @@ function run_broker(worker::String=ZMQ_WORKER, client::String=ZMQ_CLIENT)
         @error "$(msg). Only need one broker running"
         Base.exit(1) # can we throw....
     end
-    cmd = `$julia --project=$(pwd()) -q --startup-file=no "$src/broker.jl" --worker=$worker --client=$client`
+    # cmd = `$julia --project=$(pwd()) -q --startup-file=no "$src/broker.jl" --worker=$worker --client=$client`
+    cmd = `$julia --project="$(Base.active_project())" -q --startup-file=no -e "import Chloe; Chloe.broker_main()"  -- --worker=$worker --client=$client`
+    # @info "running broker as: $cmd"
     # wait = false means stdout,stderr are connected to /dev/null
     task = run(cmd; wait=false)
     atexit(() -> kill(task))
@@ -479,7 +453,7 @@ function maybe_launch_broker(distributed_args)
 
     if client_url !== nothing
         if client_url == "default"
-            client_url = ZMQ_CLIENT
+            client_url = ZMQ_ENDPOINT
             distributed_args[:broker] = client_url
         end
         if startswith(client_url, "@")
@@ -499,11 +473,12 @@ function maybe_launch_broker(distributed_args)
     distributed_args
 end
 
-function distributed_main(full::Bool=false)
+function distributed_main(args::Vector{String}=ARGS)
     Sys.set_process_title("chloe-distributed")
-    distributed_args = get_distributed_args()
+    distributed_args = get_distributed_args(args)
     distributed_args = maybe_launch_broker(distributed_args)
 
-    chloe_distributed(full; distributed_args...)
+    chloe_distributed(; distributed_args...)
 end
-# end # module
+
+end # module

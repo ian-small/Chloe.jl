@@ -92,6 +92,7 @@ mutable struct SFF_Feature
     coding_prob::Float32
 end
 
+# alters reference_feature_count Dictionary
 function read_sff_features!(file::String, reference_feature_counts::Dict{String,Int})::FwdRev{FeatureArray}
     open(file) do f
         header = split(readline(f), '\t')
