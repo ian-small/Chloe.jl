@@ -3,18 +3,14 @@
 
 # Chloë: Organelle Annotator
 
-## Description
-
-Chloë is optimised for annotating flowering plant (angiosperm) genomes. If you would like to use Chloë to annotate chloroplast genomes from other plants (e.g. gymnosperms, ferns, lycophytes or bryophytes), please contact Ian Small (ian.small@uwa.edu.au) for access to future versions of Chloë.
+Chloë is optimised for annotating flowering plant (angiosperm) chloroplast genomes. If you would like to use Chloë to annotate chloroplast genomes from other plants (e.g. gymnosperms, ferns, lycophytes or bryophytes), please contact Ian Small (ian.small@uwa.edu.au) for access to future versions of Chloë.
 
 This annotator is available online at: [https://chloe.plastid.org](https://chloe.plastid.org)
 
 --- 
 
 ## Table of Contents
-- [Installing dependencies](#installing-dependencies)
-    - [Git Clone Installation](#git-clone-installation)
-    - [As Julia Package Installation](#as-julia-package-installation)  
+- [Installation](#installation)
 - [Usage](#usage)
 - [Output Formats](#output-formats)
 - [Developer recipes](#developer-recipes)
@@ -25,17 +21,18 @@ This annotator is available online at: [https://chloe.plastid.org](https://chloe
 - [Authors](#authors)
 
 
-## Installing dependencies
+## Installation
 
-### Git Clone installation
+For installing Julia please follow link to [`juliaup`](https://julialang.org/downloads/).
 
-To install the Chloë code as a local folder:
+To install the Chloë code as a local folder on your computer: 
 ```bash
 git clone https://github.com/ian-small/chloe_references
 ```
 
 #### Chloë References
-Chloë references are required and can be cloned from the git repository into the same location as the `chloe` folder:
+Chloë references are required and can be cloned from the git repository into the same location as the `chloe` folder. If you want to save them somewhere else you need to specify the path to them.
+
 ```bash
 git clone https://github.com/ian-small/chloe_references
 ```
@@ -45,37 +42,8 @@ dependencies. To instantiate go into the `chloe` directory and type:
 ```bash
 julia --project=.
 ```
-Then type `]` and `instantiate` at the julia prompt to install all the required
-packages.
-
-
-### As A Julia Package Installation -- in dev
-You can install Chloë as a Julia package from within the Julia REPL as either a environment package or a local package. If you just want to use the Chloë package as it is from its GitHub repository, you would use `add https://github.com/ian-small/chloe.git`. If you want to actively develop or modify the Chloë package, you might use `]dev path/to/chloe/` and work directly with the local source code (forked from the git repo).
-
-How to: 
-Start Julia and type `]` to get the package manager prompt.
-
-Julia managed package:
-```julia
-add https://github.com/ian-small/chloe.git
-```
-Local package:
-If you install it as a local package you need to git clone the repository to a location on your computer and then point Julia to this path using:
-```julia
-]dev {path/to/chloe/repo/directory}
-```
-This will make an entry for Chloë in the Manifest for Julia. Now get Julia to compile it by typing `import Chloe` at the *julia* prompt. 
-
----
-You can easily remove Chloë as a package with:
-
-```julia
-]rm Chloe
-```
-
-Installing Chloë as a (local) package allows you to take
-advantage of Julia's precompilation.
-
+In the Julia REPL type `]` and `instantiate` at the julia prompt to install all the required
+packages. 
 
 ## Usage
 
@@ -85,33 +53,64 @@ To access the annotator help manual use:
 julia --project=. chloe.jl annotate --help
 ```
 
-For annotating single sequences with defauly output in `.sff` format:
+For annotating single sequences (e.g. the test genome `NC_020019.1.fa` available in the folder `testfa` with the default output in `.sff` format:
 ```bash
 julia --project=. chloe.jl annotate testfa/NC_020019.1.fa
 ```
 
-For annotating all fasta file in a directory ending with `.fa` specifying `.gff` output format: 
+For annotating all fasta file in a directory ending with `.fa` specifying the `.gff` output format: 
 
 ```bash
 julia --project=. chloe.jl annotate -g testfa/*.fa
 ```
 
-This will create `.gff` files for each fasta file and write them back into the directory where the fasta files.
+This will create `.gff` files for each fasta file and write them back into the directory where the annotated fasta files are located.
 
 To see what other commands are available:
 
 ```bash
 julia --project=. chloe.jl --help
 ```
+
+Annotate fasta files from command line specifying the location of your Chloë references
+```bash
+julia --project=. -e 'using Chloe; chloe_main()' -- \
+    annotate --reference=/path/to/chloe_references *.fa
+```
+
+## Julia Projects
+You can install Chloë as a Julia package and environment from within the Julia REPL. To create a project in your directory `myproject` initiate a Julia project and add Chloë as a package:
+
+```bash
+# create a Julia project in directory myproject
+julia -e 'using Pkg; Pkg.generate("myproject")'
+cd myproject
+# add Chloe to the project
+julia --project=. -e 'using Pkg; Pkg.add("https://github.com/ian-small/chloe.git")'
+```
+To install the [`Chloe References`](https://github.com/ian-small/chloe_references) database in the Julia REPL use:
+```bash
+julia -e 'import Pkg; Pkg.GitTools.clone(stdout, "https://github.com/ian-small/chloe_references", "chloe_references")'
+```
+### Using the Julia REPL
+As an example of how to annotate a single FASTA file:
+```julia
+import Chloe
+references = Chloe.ReferenceDbFromDir("/path/to/chloe_references")
+outfile, uid = Chloe.annotate(references,  "NC_011032.1.fa")
+println(outfile)
+```
+
+For more recipes using Chloë see our [Recipes](https://github.com/ian-small/chloe/blob/master/RECIPES.md)
+
+
 ## Output formats
 
-Internally, Chloë numbers each strand independently from its 5' end, and tracks features by (start, length)
-rather then by (start, stop). This avoids most of the issues with features crossing the arbitrary end of a circular genome.
-The default output of Chloë (`.sff` files) uses these conventions. For example, here's the start of a typical `.sff` output file:
-`NC_020431.1	151328	78.914`
-`accD/1/CDS/1	+	56703	1485	0	1.01	0.743	79.7	0.999	0.996`
+Internally, Chloë numbers each strand independently from its 5' end, and tracks features by (start, length) rather then by (start, stop). This avoids most of the issues with features crossing the arbitrary end of a circular genome. The default output of Chloë (`.sff` files) uses these conventions. For example, here's the start of a typical `.sff` output file:
 
-![Screenshot](assets/sff.png)
+
+<img src="assets/sff.png" width="600">
+
 
 The header line gives the sequence name, the length in nucleotides, and the mean alignment coverage with the reference genomes.
 Subsequent lines give information on a single feature or sub-feature.
@@ -120,8 +119,11 @@ gene name/gene copy (so if 2 or higher is a duplicate of another gene)/feature t
 Subsequent columns are: strand, start, length, phase;
 Then 5 columns of interest if you want to understand why Chloë has predicted this particular feature: length relative to feature template, proportion of references that match, mean coverage of aligned genomes (out of 100), feature probability (from XGBoost model), coding probability (from XGBoost model)
 
-Most users will probably want to use `chloe.jl annotate -g` to obtain the output in standard `.gff` format. 
-![Screenshot](assets/gff.png)
+Most users will probably want to use `chloe.jl annotate -g` to obtain the output in standard `.gff` format: 
+
+
+<img src="assets/gff.png" width="700">
+
 
 By default, Chloë filters out features which are detected to have one of a set of problematic issues, or which have a feature probability of < 0.5.
 You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate -s 0 --nofilter` will retain all the features that Chloë was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
