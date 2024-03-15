@@ -1,6 +1,5 @@
 <img align="right" alt="Chloe" src="assets/logo-chloe-black.png">
 
-<<<<<<< HEAD
 # Chloë: Organelle Annotator
 
 Chloë is optimised for annotating flowering plant (angiosperm) chloroplast genomes. If you would like to use Chloë to annotate chloroplast genomes from other plants (e.g. gymnosperms, ferns, lycophytes or bryophytes), please contact Ian Small (ian.small@uwa.edu.au) for access to future versions of Chloë.
@@ -101,7 +100,7 @@ outfile, uid = Chloe.annotate(references,  "NC_011032.1.fa")
 println(outfile)
 ```
 
-For more recipes using Chloë see our [Recipes](https://github.com/ian-small/chloe/blob/master/RECIPES.md)
+For more recipes using Chloë see our [Recipes](https://github.com/ian-small/chloe/blob/master/RECIPES.md) or keep scolling.
 
 
 ## Output formats
@@ -133,79 +132,6 @@ You can retain these putative features by lowering the sensitivity threshold and
 ```
 and in the `.sff` output. Currently `--nofilter` has no effect if the `-g` flag is also set.
 
-
-## Developer Recipes
-### Multithreading
-
-Chloë will take advantage of multiple threads if possible. To benefit from this substantial speedup, specify the number of threads to use when starting Julia.
-Using multiple threads is generally much faster than using multiple distributed processes (see the 'Distributed' section below).
-
-For example:
-
-```bash
-julia --threads 4 --project=. chloe.jl annotate -g testfa/*.fa
-```
-or
-
-```bash
-julia --threads auto --project=. chloe.jl annotate -g testfa/*.fa
-```
-
-### Distributed
-
-Chloë has *[Distributed](https://docs.julialang.org/en/v1/stdlib/Distributed/index.html) capabilities meaning it can launch worker processes via the specified cluster manager. To use use julia's Distributed package, start julia (1.6) with 3 workers and load code:
-
-```bash
-julia --project=. -t 8  -p 3 -L src/dist/remote.jl
-```
-Now you can type:
-
-```julia
-using Distributed
-# just read reference Data on remote workers
-
-# note that REFS is not defined locally in the REPL!
-reference_directory = "/some/directory"
-r = @spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa")
-io, uid = fetch(r)
-sff = String(take!(io))
-# this works too.., just tell Chloe the filename
-r = @spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa", "write_to_this_file.sff")
-```
-
-This also works:
-
-```julia
-using Distrbuted
-addprocs(3)
-
-fasta = IOBuffer(read("testfa/NC_020019.1.fa", String))
-io, uid = fetch(@spawnat :any annotate_one(reference_directory, fasta))
-# get chloe sff as a string
-sff = String(take!(io))
-# *OR*
-sff_filename, uid = fetch(@spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa", nothing))
-# sff_filename is where chloe wrote the data:
-# in this case NC_020019.1.sff in the local directory
-# instead of `nothing` specify an actual filename.
-```
-
-If you have installed Chloë as a (local) package the you can use:
-
-```julia
-using Distributed
-addprocs(4)
-@everywhere workers() begin
-    using Chloe
-end
-# Note that neither REFS nor annotate_one is defined in the REPL
-# ...but all is still good.
-r = @spawnat :any annotate_one(reference_directory, "testfa/NC_020019.1.fa")
-# etc...
-```
-
-This takes advantage of the precompilation of julia packages.
-Also you don't need to be in the repo directory!
 
 ### Chloë Server
 
@@ -304,11 +230,9 @@ apicall(i, "exit")
 
 ---
 
+
 ### Authors
 
 * Ian Small: ian.small@uwa.edu.au
 * Ian Castleden: ian.castleden@uwa.edu.au
 * Conny Hooper: cornelia.hooper@uwa.edu.au
-=======
-# Chloë
->>>>>>> 929103a8149e5af8805f26803b0de787e711b003
