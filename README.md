@@ -151,7 +151,7 @@ You can retain these putative features by lowering the sensitivity threshold and
 [ Warning: rps16/1 CDS is not divisible by 3
 ```
 and in the `.sff` output. Currently `--nofilter` has no effect if the `-g` flag is also set.
-
+<!-- Additional text to prevent interpretation as a header -->
 ---
 
 ### Authors
