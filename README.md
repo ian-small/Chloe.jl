@@ -11,6 +11,7 @@ This annotator is available online at: [https://chloe.plastid.org](https://chloe
 ## Table of Contents
 - [Installation](#installation)
 - [Usage](#usage)
+- [Julia Projects](#julia-projects) 
 - [Output Formats](#output-formats)
 - [Developer recipes](#developer-recipes)
     - [Multithreading](#multithreading)
@@ -19,14 +20,13 @@ This annotator is available online at: [https://chloe.plastid.org](https://chloe
     - [Running Remotely](#running-remotely)
 - [Authors](#authors)
 
-
 ## Installation
 
 For installing Julia please follow link to [`juliaup`](https://julialang.org/downloads/).
 
 To install the Chloë code as a local folder on your computer: 
 ```bash
-git clone https://github.com/ian-small/chloe_references
+git clone https://github.com/ian-small/chloe
 ```
 
 #### Chloë References
@@ -46,7 +46,7 @@ packages.
 
 ## Usage
 
-To access the annotator help manual use:
+You can run Chloë from the terminal. To access the annotator help manual use:
 
 ```bash
 julia --project=. chloe.jl annotate --help
@@ -85,22 +85,47 @@ You can install Chloë as a Julia package and environment from within the Julia 
 julia -e 'using Pkg; Pkg.generate("myproject")'
 cd myproject
 # add Chloe to the project
-julia --project=. -e 'using Pkg; Pkg.add("https://github.com/ian-small/chloe.git")'
+julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/ian-small/chloe.git")'
 ```
 To install the [`Chloe References`](https://github.com/ian-small/chloe_references) database in the Julia REPL use:
 ```bash
 julia -e 'import Pkg; Pkg.GitTools.clone(stdout, "https://github.com/ian-small/chloe_references", "chloe_references")'
 ```
 ### Using the Julia REPL
-As an example of how to annotate a single FASTA file:
+Now you can start the Julia REPL and import the Chloë package. Chloë needs to know where the `chloe_references` are. If you have the references in your project directory use `"./chloe_references" ` is you decided to download them somewhere else you need to pass the path to the `reference` variable. Then run the `annotate` function to annotate your file. (If you have your files elsewhere please define the path to your file).  
+
+As an example of how to annotate a single FASTA file that is in your project directory:
+```julia
+#start the julia REPL from the terminal in your projects folder then import Chloe
+import Chloe
+references = Chloe.ReferenceDbFromDir("./chloe_references") #set path to the chloe_reference
+outfile, uid = Chloe.annotate(references,  "NC_011032.1.fa") #run annotation on a file called NC_011032.1.fa located in your project folder
+println(outfile) #print output in REPL
+```
+
+Write to buffer instead of to a file.
+
 ```julia
 import Chloe
 references = Chloe.ReferenceDbFromDir("/path/to/chloe_references")
-outfile, uid = Chloe.annotate(references,  "NC_011032.1.fa")
-println(outfile)
+io, uid = Chloe.annotate(references, "NC_011032.1.fa", nothing, IOBuffer())
+# show .sff content
+println(String(take!(io)))
 ```
 
-For more recipes using Chloë see our [Recipes](https://github.com/ian-small/chloe/blob/master/RECIPES.md) or keep scolling.
+Read from an already open fasta file.
+
+
+```julia
+import Chloe
+references = Chloe.ReferenceDbFromDir("/path/to/chloe_references")
+outfile, uid = open("NC_011032.1.fa", "r") do io
+    Chloe.annotate(references, io)
+end
+```
+
+--- 
+For more recipes using Chloë see our [Recipes](https://github.com/ian-small/chloe/blob/master/RECIPES.md).
 
 
 ## Output formats
@@ -133,6 +158,7 @@ You can retain these putative features by lowering the sensitivity threshold and
 and in the `.sff` output. Currently `--nofilter` has no effect if the `-g` flag is also set.
 
 
+## Developer Recipes
 ### Chloë Server
 
 Running the chloe server. In a terminal type:
