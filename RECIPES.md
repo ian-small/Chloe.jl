@@ -114,3 +114,9 @@ sff = data["sff"] # sff file as a string
 # terminate the server
 apicall(i, "exit")
 ```
+--- 
+### Authors
+
+* Ian Small: ian.small@uwa.edu.au
+* Ian Castleden: ian.castleden@uwa.edu.au
+* Conny Hooper: cornelia.hooper@uwa.edu.au
