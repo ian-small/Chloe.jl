@@ -173,7 +173,7 @@ function chloe_listen(address::String, broker::MayBeString, arm_procs::Function)
         else
             ChloeConfig(config)
         end
-        n = fetch(@spawnat :any annotate_batch_task(directory, task_id, cfg))
+        n = fetch(@spawnat :any Main.Chloe.annotate_batch_task(directory, task_id, cfg))
         elapsed = now() - start
         @info success("finished $directory after $elapsed")
         nannotations += n
