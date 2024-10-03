@@ -1,15 +1,14 @@
 include("globals.jl")
 
-const KWARGS = ["numgsrefs", "sensitivity", "to_gff3", "nofilter"]
+const KWARGS = ["sensitivity", "to_gff3", "nofilter"]
 
 struct ChloeConfig
-    numgsrefs::Int
     sensitivity::Real
     to_gff3::Bool
     nofilter::Bool
-    function ChloeConfig(; numgsrefs=DEFAULT_NUMGSREFS, sensitivity=DEFAULT_SENSITIVITY,
+    function ChloeConfig(; sensitivity=DEFAULT_SENSITIVITY,
         to_gff3::Bool=false, nofilter::Bool=false)
-        return new(numgsrefs, sensitivity, to_gff3, nofilter)
+        return new(sensitivity, to_gff3, nofilter)
     end
 
     # needs to be V <: Any since this is coming from a JSON blob
@@ -19,11 +18,7 @@ struct ChloeConfig
 end
 
 function Base.show(io::IO, c::ChloeConfig)
-    print(io, "ChloeConfig[numgsrefs=$(c.numgsrefs), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), gff=$(c.to_gff3)]")
-end
-
-function default_gsrefsdir()::String
-    normpath(joinpath(pwd(), "..", DEFAULT_GSREFS))
+    print(io, "ChloeConfig[sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), gff=$(c.to_gff3)]")
 end
 
 abstract type AbstractReferenceDb end
@@ -36,27 +31,27 @@ mutable struct ReferenceDb <: AbstractReferenceDb
     gsrefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
 end
 
-function ReferenceDb(; gsrefsdir="default", template="default")::ReferenceDb
-    if gsrefsdir == "default"
-        gsrefsdir = default_gsrefsdir()
+function ReferenceDb(; reference_dir="")::ReferenceDb
+    gsrefsdir = reference_dir
+    if reference_dir == "cp"
+        gsrefsdir = normpath(joinpath(CHLOE_REFS_DIR, "cprefs"))
+    elseif reference_dir == "nr"
+        gsrefsdir = normpath(joinpath(CHLOE_REFS_DIR, "nrefs"))
     end
-    if template == "default"
-        template = normpath(joinpath(dirname(gsrefsdir), DEFAULT_TEMPLATE))
-    end
+    template = normpath(joinpath(gsrefsdir, DEFAULT_TEMPLATE))
     verify_refs(gsrefsdir, template)
     return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
 end
 
-function ReferenceDbFromDir(directory::AbstractString)::ReferenceDb
+#= function ReferenceDbFromDir(directory::AbstractString)::ReferenceDb
     directory = expanduser(directory)
-    gsrefsdir = joinpath(directory, "gsrefs")
-    template = joinpath(directory, DEFAULT_TEMPLATE)
-    return ReferenceDb(; gsrefsdir=gsrefsdir, template=template)
+    gsrefsdir = joinpath(directory, "refs")
+    return ReferenceDb(; reference_dir=gsrefsdir)
 end
 
 function ReferenceDbFromDir()::ReferenceDb
     ReferenceDb()
-end
+end =#
 
 function get_templates(db::ReferenceDb)
     lock(db.lock) do
@@ -66,17 +61,6 @@ function get_templates(db::ReferenceDb)
         return db.templates
     end
 end
-
-function get_gsminhashes(db::ReferenceDb, config::ChloeConfig)
-    config.numgsrefs < 1 && return nothing
-    lock(db.lock) do
-        if isnothing(db.gsrefhashes)
-            db.gsrefhashes = readminhashes(normpath(joinpath(db.gsrefsdir, "reference_minhashes.hash")))
-        end
-        return db.gsrefhashes
-    end
-end
-
 
 function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
     path = findfastafile(db.gsrefsdir, refID)
@@ -100,8 +84,6 @@ function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference
 
     end
 end
-
-
 
 function verify_refs(gsrefsdir, template)
     # used by master process to check reference directory
