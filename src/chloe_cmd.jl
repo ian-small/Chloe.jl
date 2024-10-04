@@ -7,8 +7,11 @@ import Logging
 
 import ..Annotator
 
-include("../globals.jl")
-include("dist_globals.jl")
+include("globals.jl")
+
+
+const LOGLEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => Logging.Warn,
+    "error" => Logging.Error)
 
 function quiet_metafmt(level, _module, group, id, file, line)
     color = Logging.default_logcolor(level)
@@ -16,7 +19,7 @@ function quiet_metafmt(level, _module, group, id, file, line)
     return color, prefix, ""
 end
 
-function chloe(; reference_dir="default", fasta_files=String[],
+function chloe(; reference_dir="cp", fasta_files=String[],
     sensitivity=DEFAULT_SENSITIVITY,
     output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
     db = Annotator.ReferenceDb(reference_dir=reference_dir)
@@ -69,8 +72,7 @@ function getargs(args::Vector{String}=ARGS)
         help = "target sequence(s): fasta file(s) to process (or directory of files)"
         "--output", "-o"
         arg_type = String
-        default = "default"
-        help = "output file"
+        help = "output file (default: write to stdout)"
     end
 
     @add_arg_table! cmd_args["annotate"] begin
@@ -87,12 +89,12 @@ function getargs(args::Vector{String}=ARGS)
         arg_type = String
         default = "cp"
         dest_name = "reference_dir"
-        metavar = "DIRECTORY"
-        help = "references and templates to use for annotations: cp for chloroplast, nr for nuclear rDNA [default: cp]"
+        metavar = "cp|nr"
+        help = "references and templates to use for annotations: cp for chloroplast, nr for nuclear rDNA"
         "--sensitivity", "-s"
-        arg_type = Float64
+        arg_type = Real
         default = DEFAULT_SENSITIVITY
-        help = "probability threshold for reporting features [default: $(DEFAULT_SENSITIVITY)]"
+        help = "probability threshold for reporting features"
         "--nofilter"
         action = :store_true
         help = "don't filter output"
@@ -130,7 +132,7 @@ function getargs(args::Vector{String}=ARGS)
     parse_args(args, cmd_args; as_symbols=true)
 end
 
-function chloe_main(args::Vector{String} = ARGS)
+function chloe_main(args::Vector{String}=ARGS)
     parsed_args = getargs(args)
     level = lowercase(parsed_args[:level])
     Logging.with_logger(Logging.ConsoleLogger(stderr,
