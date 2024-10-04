@@ -1,9 +1,5 @@
 # Developer Recipies
 - [Distributed](#distributed)
-- [Server](#server)
-- [Running Remotely](#running-remotely)
-
-
 
 
 ## [Distributed](https://docs.julialang.org/en/v1/stdlib/Distributed/index.html)
@@ -13,7 +9,7 @@ Chloë can use the Julia [Distributed](https://docs.julialang.org/en/v1/stdlib/D
 ```julia
 using Distributed
 # add workers
-addprocs(2)
+addprocs(4)
 
 @everywhere begin
     using Chloe

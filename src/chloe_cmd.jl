@@ -32,26 +32,18 @@ end
 
 function getargs(args::Vector{String}=ARGS)
     cmd_args = ArgParseSettings(; prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
-
+    #! format: off
     @add_arg_table! cmd_args begin
-        """
-        minhash
-        """
+        "minhash"
         help = "minhash fasta files of reference genomes"
         action = :command
-        """
-        align
-        """
+        "align"
         help = "align 2 chloroplast genomes"
         action = :command
-        """
-        annotate
-        """
+        "annotate"
         help = "annotate fasta files"
         action = :command
-        """
-        rotate
-        """
+        "rotate"
         help = "rotate circular genomes to standard position"
         action = :command
         "--level", "-l"
@@ -61,9 +53,7 @@ function getargs(args::Vector{String}=ARGS)
     end
 
     @add_arg_table! cmd_args["minhash"] begin
-        """
-        fasta-files
-        """
+        "fasta-files"
         arg_type = String
         nargs = '+'
         required = true
@@ -72,16 +62,12 @@ function getargs(args::Vector{String}=ARGS)
     end
 
     @add_arg_table! cmd_args["align"] begin
-        """
-        query
-        """
+        "query"
         arg_type = String
         required = true
         action = :store_arg
         help = "query sequence (fasta format)"
-        """
-        target
-        """
+        "target"
         arg_type = String
         nargs = '+'
         required = true
@@ -93,9 +79,7 @@ function getargs(args::Vector{String}=ARGS)
     end
 
     @add_arg_table! cmd_args["annotate"] begin
-        """
-        fasta-files
-        """
+        "fasta-files"
         arg_type = String
         nargs = '+'
         required = true
@@ -114,22 +98,16 @@ function getargs(args::Vector{String}=ARGS)
         arg_type = Real
         default = DEFAULT_SENSITIVITY
         help = "probability threshold for reporting features"
-        """
-        --nofilter
-        """
+        "--nofilter"
         action = :store_true
         help = "don't filter output"
-        """
-        --gff
-        """
+        "--gff"
         action = :store_true
         help = "save output in gff3 format instead of sff"
     end
 
     @add_arg_table! cmd_args["rotate"] begin
-        """
-        fasta-files
-        """
+        "fasta-files"
         arg_type = String
         nargs = '+'
         required = true
@@ -150,10 +128,6 @@ function getargs(args::Vector{String}=ARGS)
         help = "output file or directory"
     end
 
-    # args.epilog = """
-    #     examples:\n
-    #     \ua0\ua0 # chloe.jl -t template.tsv -r reference_dir fasta1 fasta2 ...\n
-    #     """
     parse_args(args, cmd_args; as_symbols=true)
 end
 
