@@ -16,15 +16,11 @@ function quiet_metafmt(level, _module, group, id, file, line)
     return color, prefix, ""
 end
 
-function chloe(; gsrefsdir="default", numgsrefs=DEFAULT_NUMGSREFS, fasta_files=String[],
-    template="default", sensitivity=DEFAULT_SENSITIVITY,
-    output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false, reference_dir::Union{Nothing,String}=nothing)
-    db = if isnothing(reference_dir)
-            Annotator.ReferenceDb(; gsrefsdir=gsrefsdir, template=template)
-    else
-        Annotator.ReferenceDbFromDir(reference_dir)
-    end
-    config = Annotator.ChloeConfig(; numgsrefs=numgsrefs, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
+function chloe(; reference_dir="default", fasta_files=String[],
+    sensitivity=DEFAULT_SENSITIVITY,
+    output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
+    db = Annotator.ReferenceDb(reference_dir=reference_dir)
+    config = Annotator.ChloeConfig(; sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
     Annotator.annotate_batch(db, fasta_files, config, output)
 end
 
@@ -89,26 +85,10 @@ function getargs(args::Vector{String}=ARGS)
         help = "output filename (or directory if multiple fasta files)"
         "--reference", "-r"
         arg_type = String
+        default = "cp"
         dest_name = "reference_dir"
         metavar = "DIRECTORY"
-        help = "reference directory (takes precedence over --gsrefs and --template options)"
-        "--gsrefs", "-g"
-        arg_type = String
-        default = "default"
-        dest_name = "gsrefsdir"
-        metavar = "DIRECTORY"
-        help = "reference directory [default: $(DEFAULT_GSREFS)]"
-        "--template", "-t"
-        arg_type = String
-        default = "default"
-        metavar = "TSV"
-        dest_name = "template"
-        help = "template tsv [default: $(DEFAULT_TEMPLATE)]"
-        "--numgsrefs"
-        arg_type = Int
-        default = DEFAULT_NUMGSREFS
-        dest_name = "numgsrefs"
-        help = "number of references to compare to [default: $(DEFAULT_NUMGSREFS)]"
+        help = "references and templates to use for annotations: cp for chloroplast, nr for nuclear rDNA [default: cp]"
         "--sensitivity", "-s"
         arg_type = Float64
         default = DEFAULT_SENSITIVITY

@@ -14,7 +14,7 @@ import StringEncodings: encode
 import ZMQ
 
 import ..WebAPI: TerminatingJSONMsgFormat
-import ..Annotator: MayBeString, verify_refs, ChloeConfig, default_gsrefsdir
+import ..Annotator: MayBeString, verify_refs, ChloeConfig
 import ..ZMQLogging: set_global_logger
 import ..Broker: check_endpoints, remove_endpoints
 

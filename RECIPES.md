@@ -1,77 +1,14 @@
-# Recipies
-
-## Installing Julia
-
-Follow the directions at the link to install [`juliaup`](https://julialang.org/downloads/).
-
-## Creating a Julia Project
-
-```sh
-# create a Julia project in directory myproject
-julia -e 'using Pkg; Pkg.generate("myproject")'
-cd myproject
-# add Chloe to the project
-julia --project=. -e 'using Pkg; Pkg.add("https://github.com/ian-small/chloe.git")'
-```
-Get the Chloe database (This can be placed anywhere you want really)
-
-```sh
-git clone https://github.com/ian-small/chloe_references
-# *OR* use julia
-julia -e 'import Pkg; Pkg.GitTools.clone(stdout, "https://github.com/ian-small/chloe_references", "chloe_references")'
-```
-
-## CommandLine
-
-Annotate fasta files from the command line.
-
-```sh
-# note the '--'
-julia --project=. -e 'using Chloe; chloe_main()' -- \
-    annotate --reference=/path/to/chloe_references *.fa
-```
-This will annotate files one-by-one.
-
-## Using the Julia REPL
-
-Annotate a single FASTA file.
-
-```julia
-import Chloe
-# to quieten Chloe set the logging level:
-# import Logging
-# Logging.disable_logging(Logging.Info) # Disable debug and info
-
-references = Chloe.ReferenceDbFromDir("/path/to/chloe_references")
-
-outfile, uid = Chloe.annotate(references,  "NC_011032.1.fa")
-
-println(outfile)
-```
-
-Write to buffer instead of to a file.
-
-```julia
-import Chloe
-references = Chloe.ReferenceDbFromDir("/path/to/chloe_references")
-io, uid = Chloe.annotate(references, "NC_011032.1.fa", nothing, IOBuffer())
-# show .sff content
-println(String(take!(io)))
-```
-
-Read from an already open fasta file.
+# Developer Recipies
+- [Distributed](#distributed)
+- [Server](#server)
+- [Running Remotely](#running-remotely)
 
 
-```julia
-import Chloe
-references = Chloe.ReferenceDbFromDir("/path/to/chloe_references")
-outfile, uid = open("NC_011032.1.fa", "r") do io
-    Chloe.annotate(references, io)
-end
-```
+
+
 ## [Distributed](https://docs.julialang.org/en/v1/stdlib/Distributed/index.html)
 
-It's easy to annotate multiple fasta files in parallel
+Chloë can use the Julia [Distributed](https://docs.julialang.org/en/v1/stdlib/Distributed/index.html) computing to annotate fasta files by distributing thw work to parallel processes. Steps are, you add worker processes, import Chloë with necessary references, then distribute the annotation process across workers, generating output files in parallel.
 
 ```julia
 using Distributed
@@ -111,16 +48,16 @@ r = fetch(@spawnat :any annotate(references, "NC_011032.1.fa"))
 println(r)
 ```
 
-## Server
 
-Run
+## Server
+To set up Chloë as a server that you can interact with, initiate the Chloë server: 
 
 ```sh
 julia -t8 --project=. -e 'using Chloe; distributed_main()' -- \
     --level=info --workers=4 --broker=default --reference=/path/to/chloe_references
 ```
 
-You can interact with this server using [JuliaWebAPI](https://github.com/JuliaWeb/JuliaWebAPI.jl)
+Then you can interact with this server using [JuliaWebAPI](https://github.com/JuliaWeb/JuliaWebAPI.jl). This utilises the JuliaWebAPI package to interact with a server running the Chloe package. It sends a request to annotate a fasta file, receives the annotation result along with the elapsed time, and then stops the server.
 
 
 ```julia
@@ -139,3 +76,47 @@ result, elapsed_ms = data["result"], data["elapsed"]
 #stop the server....
 apicall(i, "exit")
 ```
+## Running Remotely
+
+The Chloë server can be run remotely through a ssh tunnel.
+
+On the remote server:
+`git clone ...` the chloe github repo and download the julia runtime (natch!).
+*And* install all chloe package dependencies *globally* (see above).
+
+Then -- on your puny laptop -- you can run something like:
+
+```sh
+ssh  you@bigserver -t -o ExitOnForwardFailure=yes -L 9476:127.0.0.1:9467 \
+    'cd /path/to/chloe;
+    JULIA_NUM_THREADS={BIGNUM} /path/to/bin/julia --project=. --startup-file=no --color=yes
+    distributed.jl --broker=tcp://127.0.0.1:9467 -l info --workers=4'
+```
+
+The port `9467` is an entirely random (but hopefully unused both on
+the remote server and locally) port number. The broker port *must* match
+the ssh port specified by `-L`. `{BIGNUM}` is the enormous number
+of CPUs your server has ;).
+
+Since the remote server has no access to the local filesystem you need
+to use `annotate` instead of `chloe` to annotate your your
+fasta files e.g:
+
+```julia
+using JuliaWebAPI
+i = APIInvoker("tcp://127.0.0.1:9467")
+# read in the entire fasta file
+fasta = read("testfa/NC_020019.1.fa", String)
+ret = apicall(i, "annotate", fasta)
+code, data = ret["code"], ret["data"]
+@assert code === 200
+sff = data["sff"] # sff file as a string
+# terminate the server
+apicall(i, "exit")
+```
+--- 
+### Authors
+
+* Ian Small: ian.small@uwa.edu.au
+* Ian Castleden: ian.castleden@uwa.edu.au
+* Conny Hooper: cornelia.hooper@uwa.edu.au

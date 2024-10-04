@@ -325,7 +325,8 @@ struct ChloeAnnotation
     coverages::Dict{String,Float32}
     annotation::FwdRev{Vector{SFF_Model}}
 end
-function annotate_one_worker(db::AbstractReferenceDb,
+
+function annotate_one_worker(db::ReferenceDb,
     target_id::String,
     target::FwdRev{CircularSequence},
     config::ChloeConfig,
@@ -336,37 +337,25 @@ function annotate_one_worker(db::AbstractReferenceDb,
 
     target_length = length(target.forward)
     @info "[$target_id] seq length: $(target_length)bp"
-
-    refpicks = Vector{Tuple{String,Int}}(undef, 0)
-
-    # find closest gs references
-    refhashes = get_gsminhashes(db, config)
-    if !isnothing(refhashes)
-        hash = minhash(target.forward)
-        numrefs = min(config.numgsrefs, length(refhashes))
-        append!(refpicks, searchhashes(hash, refhashes)[1:numrefs])
-    end
-
-
-    numrefs = length(refpicks)
-    t2 = time_ns()
-
-    @info "[$target_id] picked $numrefs reference(s): $(ns(t2 - t1))"
+    ref_ids = first.(split.(filter(x -> endswith(x, ".sff"), readdir(db.gsrefsdir)), "."))
+    numrefs = length(ref_ids)
 
     blocks_aligned_to_targetf = Vector{FwdRev{BlockTree}}(undef, numrefs)
     blocks_aligned_to_targetr = Vector{FwdRev{BlockTree}}(undef, numrefs)
     coverages = Dict{String,Float32}()
-    # refs = Vector{SingleReference}(undef, 0)
     reference_feature_counts = Dict{String,Int}()
     # get_single_reference! throws if bad refpick
-    refs = [get_single_reference!(db, r[1], reference_feature_counts) for r in refpicks]
+    refs = [get_single_reference!(db, r, reference_feature_counts) for r in ref_ids]
+
+    t2 = time_ns()
+    @info "[$target_id] using $numrefs reference(s): $(ns(t2 - t1))"
 
     Threads.@threads for i in eachindex(refs)
         a = align_to_reference(refs[i], target_id, target)
         blocks_aligned_to_targetf[i] = a[1].forward
         blocks_aligned_to_targetr[i] = a[1].reverse
         lock(REENTRANT_LOCK) do
-            coverages[refpicks[i][1]] = a[2]
+            coverages[ref_ids[i]] = a[2]
         end
     end
 
@@ -503,8 +492,6 @@ function annotate(db::AbstractReferenceDb,
     write_result(result, config.to_gff3, output)
 
 end
-
-
 
 function annotate(db::AbstractReferenceDb, infile::String, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
     maybe_gzread(infile) do io
