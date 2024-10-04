@@ -31,7 +31,7 @@ mutable struct ReferenceDb <: AbstractReferenceDb
     gsrefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
 end
 
-function ReferenceDb(; reference_dir="")::ReferenceDb
+function ReferenceDb(; reference_dir="cp")::ReferenceDb
     gsrefsdir = reference_dir
     if reference_dir == "cp"
         gsrefsdir = normpath(joinpath(CHLOE_REFS_DIR, "cprefs"))

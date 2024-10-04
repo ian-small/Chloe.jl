@@ -1,7 +1,7 @@
 using BioSequences
 using FASTX
 
-function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0)
+function rotategenome(infile::String, outio::IO, flip_LSC::Bool, flip_SSC::Bool, extend::Int=0;)
     records = open(infile) do io
         [record for record in FASTA.Reader(io)]
     end
@@ -46,7 +46,7 @@ function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, ex
         append!(out, fseq[ir2])
     else
         @warn "[$(infile)] no inverted repeat found: $(ir.blocklength) < 1000"
-        append!(out, fseq)
+        append!(out, fseq.sequence)
     end
 
     if extend != 0
@@ -55,18 +55,22 @@ function rotategenome(infile::String, io::IO, flip_LSC::Bool, flip_SSC::Bool, ex
         # extend transformed seq
         append!(out, out[1:e])
     end
-
-    writer = FASTA.Writer(io)
+    # @info "writing $(infile) to $(outio)"
+    iobuff = IOBuffer()
+    writer = FASTA.Writer(iobuff)
     id = FASTA.identifier(records[1]) * " rotated"
     rec = FASTA.Record(id, out)
     write(writer, rec)
+    flush(writer)
+    write(outio, String(take!(iobuff)))
     close(writer)
 end
 
 function rotategenomes(; fasta_files::Vector{String}, output::Union{String,Nothing}=nothing,
     flip_LSC::Bool=false, flip_SSC::Bool=false, extend::Int=0)
+    closeit = ~isnothing(output)
 
-    for fasta in fasta_files
+    for (idx, fasta) in enumerate(fasta_files)
         d = splitpath(fasta)
         outfile = nothing
         if isnothing(output)
@@ -75,6 +79,9 @@ function rotategenomes(; fasta_files::Vector{String}, output::Union{String,Nothi
             f, ext = splitext(d[end])
             outfile = joinpath(output, f * "-rotated" * ext)
         else
+            if idx >= 2
+                @warn "overwriting $(output) with $(d[end])!"
+            end
             outfile = output
         end
         if !isnothing(outfile)
@@ -84,7 +91,7 @@ function rotategenomes(; fasta_files::Vector{String}, output::Union{String,Nothi
         try
             rotategenome(fasta, io, flip_LSC, flip_SSC, extend)
         finally
-            if io != stdout
+            if closeit
                 close(io)
             end
         end

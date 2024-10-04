@@ -20,7 +20,7 @@ include("reference.jl")
 include("chloeboost.jl")
 
 import Printf: @sprintf
-import JSON
+# import JSON
 import Crayons: @crayon_str
 using StatsBase
 
