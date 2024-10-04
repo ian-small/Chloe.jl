@@ -80,7 +80,7 @@ You can install Chloë as a Julia package and environment from within the Julia 
 julia -e 'using Pkg; Pkg.generate("myproject")'
 cd myproject
 # add Chloe to the project
-julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/ian-small/chloe.git")'
+julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/ian-small/Chloe.jl.git")'
 ```
 To install the [`Chloe References`](https://github.com/ian-small/chloe_references) database in the Julia REPL use:
 ```bash
@@ -102,7 +102,7 @@ Write to buffer instead of to a file.
 
 ```julia
 import Chloe
-references = Chloe.ReferenceDbFromDir("/path/to/chloe_references")
+references = Chloe.ReferenceDb("cp")
 io, uid = Chloe.annotate(references, "NC_011032.1.fa", nothing, IOBuffer())
 # show .sff content
 println(String(take!(io)))
@@ -113,7 +113,7 @@ Read from an already open fasta file.
 
 ```julia
 import Chloe
-references = Chloe.ReferenceDbFromDir("/path/to/chloe_references")
+references = Chloe.ReferenceDb("cp")
 outfile, uid = open("NC_011032.1.fa", "r") do io
     Chloe.annotate(references, io)
 end

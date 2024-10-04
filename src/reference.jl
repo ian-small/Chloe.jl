@@ -1,14 +1,14 @@
 include("globals.jl")
 
-const KWARGS = ["sensitivity", "to_gff3", "nofilter"]
+const KWARGS = ["sensitivity", "to_gff3", "nofilter", "reference"]
 
 struct ChloeConfig
     sensitivity::Real
     to_gff3::Bool
     nofilter::Bool
-    function ChloeConfig(; sensitivity=DEFAULT_SENSITIVITY,
-        to_gff3::Bool=false, nofilter::Bool=false)
-        return new(sensitivity, to_gff3, nofilter)
+    reference::String # cp|nr
+    function ChloeConfig(; sensitivity=DEFAULT_SENSITIVITY, to_gff3::Bool=false, nofilter::Bool=false, reference::String="cp")
+        return new(sensitivity, to_gff3, nofilter, reference)
     end
 
     # needs to be V <: Any since this is coming from a JSON blob
@@ -31,7 +31,7 @@ mutable struct ReferenceDb <: AbstractReferenceDb
     gsrefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
 end
 
-function ReferenceDb(; reference_dir="cp")::ReferenceDb
+function ReferenceDb(reference_dir="cp")::ReferenceDb
     gsrefsdir = reference_dir
     if reference_dir == "cp"
         gsrefsdir = normpath(joinpath(CHLOE_REFS_DIR, "cprefs"))
@@ -42,16 +42,6 @@ function ReferenceDb(; reference_dir="cp")::ReferenceDb
     verify_refs(gsrefsdir, template)
     return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
 end
-
-#= function ReferenceDbFromDir(directory::AbstractString)::ReferenceDb
-    directory = expanduser(directory)
-    gsrefsdir = joinpath(directory, "refs")
-    return ReferenceDb(; reference_dir=gsrefsdir)
-end
-
-function ReferenceDbFromDir()::ReferenceDb
-    ReferenceDb()
-end =#
 
 function get_templates(db::ReferenceDb)
     lock(db.lock) do
@@ -81,7 +71,6 @@ function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference
         end
         ref_features = read_sff_features!(sffpath, reference_feature_counts)
         SingleReference(refID, CircularSequence(FASTA.sequence(LongDNA{4}, ref)), ref_features)
-
     end
 end
 

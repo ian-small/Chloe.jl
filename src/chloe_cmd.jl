@@ -9,9 +9,7 @@ import ..Annotator
 
 include("globals.jl")
 
-
-const LOGLEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => Logging.Warn,
-    "error" => Logging.Error)
+const LOGLEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => Logging.Warn, "error" => Logging.Error)
 
 function quiet_metafmt(level, _module, group, id, file, line)
     color = Logging.default_logcolor(level)
@@ -19,28 +17,41 @@ function quiet_metafmt(level, _module, group, id, file, line)
     return color, prefix, ""
 end
 
-function chloe(; reference_dir="cp", fasta_files=String[],
+function chloe(;
+    reference_dir="cp",
+    fasta_files=String[],
     sensitivity=DEFAULT_SENSITIVITY,
-    output::Union{Nothing,String}=nothing, gff::Bool=false, nofilter::Bool=false)
-    db = Annotator.ReferenceDb(reference_dir=reference_dir)
-    config = Annotator.ChloeConfig(; sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter)
+    output::Union{Nothing,String}=nothing,
+    gff::Bool=false,
+    nofilter::Bool=false
+)
+    db = Annotator.ReferenceDb(reference_dir)
+    config = Annotator.ChloeConfig(; sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter, reference=reference_dir)
     Annotator.annotate_batch(db, fasta_files, config, output)
 end
 
 function getargs(args::Vector{String}=ARGS)
-    cmd_args = ArgParseSettings(prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
+    cmd_args = ArgParseSettings(; prog="Chloë", autofix_names=true)  # turn "-" into "_" for arg names.
 
     @add_arg_table! cmd_args begin
-        "minhash"
+        """
+        minhash
+        """
         help = "minhash fasta files of reference genomes"
         action = :command
-        "align"
+        """
+        align
+        """
         help = "align 2 chloroplast genomes"
         action = :command
-        "annotate"
+        """
+        annotate
+        """
         help = "annotate fasta files"
         action = :command
-        "rotate"
+        """
+        rotate
+        """
         help = "rotate circular genomes to standard position"
         action = :command
         "--level", "-l"
@@ -50,7 +61,9 @@ function getargs(args::Vector{String}=ARGS)
     end
 
     @add_arg_table! cmd_args["minhash"] begin
-        "fasta-files"
+        """
+        fasta-files
+        """
         arg_type = String
         nargs = '+'
         required = true
@@ -59,12 +72,16 @@ function getargs(args::Vector{String}=ARGS)
     end
 
     @add_arg_table! cmd_args["align"] begin
-        "query"
+        """
+        query
+        """
         arg_type = String
         required = true
         action = :store_arg
         help = "query sequence (fasta format)"
-        "target"
+        """
+        target
+        """
         arg_type = String
         nargs = '+'
         required = true
@@ -76,7 +93,9 @@ function getargs(args::Vector{String}=ARGS)
     end
 
     @add_arg_table! cmd_args["annotate"] begin
-        "fasta-files"
+        """
+        fasta-files
+        """
         arg_type = String
         nargs = '+'
         required = true
@@ -95,16 +114,22 @@ function getargs(args::Vector{String}=ARGS)
         arg_type = Real
         default = DEFAULT_SENSITIVITY
         help = "probability threshold for reporting features"
-        "--nofilter"
+        """
+        --nofilter
+        """
         action = :store_true
         help = "don't filter output"
-        "--gff"
+        """
+        --gff
+        """
         action = :store_true
         help = "save output in gff3 format instead of sff"
     end
 
     @add_arg_table! cmd_args["rotate"] begin
-        "fasta-files"
+        """
+        fasta-files
+        """
         arg_type = String
         nargs = '+'
         required = true
@@ -135,8 +160,7 @@ end
 function chloe_main(args::Vector{String}=ARGS)
     parsed_args = getargs(args)
     level = lowercase(parsed_args[:level])
-    Logging.with_logger(Logging.ConsoleLogger(stderr,
-        get(LOGLEVELS, level, Logging.Warn), meta_formatter=quiet_metafmt)) do
+    Logging.with_logger(Logging.ConsoleLogger(stderr, get(LOGLEVELS, level, Logging.Warn); meta_formatter=quiet_metafmt)) do
         cmd = parsed_args[:_COMMAND_]
         a = parsed_args[cmd]
         if cmd == :minhash
@@ -149,8 +173,6 @@ function chloe_main(args::Vector{String}=ARGS)
             Annotator.rotategenomes(; a...)
         end
     end
-
 end
 
 end # module
-
