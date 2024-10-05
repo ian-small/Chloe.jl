@@ -193,6 +193,5 @@ function reverse_complement(r::UnitRange, glength::Int32)::UnitRange
     return range(mod1(glength - r.stop + 1, glength), length=length(r))
 end
 
-MaybeIR = Union{AlignedBlock,Nothing}
 
 

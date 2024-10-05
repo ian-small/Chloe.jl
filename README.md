@@ -68,8 +68,7 @@ julia --project=. chloe.jl --help
 
 Annotate fasta files from command line specifying the location of your Chloë references
 ```bash
-julia --project=. -e 'using Chloe; chloe_main()' -- \
-    annotate --reference=/path/to/chloe_references *.fa
+julia --project=. -e 'using Chloe; chloe_main()' -- annotate -r cp *.fa
 ```
 
 ## Julia Projects
@@ -82,18 +81,15 @@ cd myproject
 # add Chloe to the project
 julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/ian-small/Chloe.jl.git")'
 ```
-To install the [`Chloe References`](https://github.com/ian-small/chloe_references) database in the Julia REPL use:
-```bash
-julia -e 'import Pkg; Pkg.GitTools.clone(stdout, "https://github.com/ian-small/chloe_references", "chloe_references")'
-```
-### Using the Julia REPL
-Now you can start the Julia REPL and import the Chloë package. Chloë needs to know where the `chloe_references` are. If you have the references in your project directory use `"./chloe_references" ` is you decided to download them somewhere else you need to pass the path to the `reference` variable. Then run the `annotate` function to annotate your file. (If you have your files elsewhere please define the path to your file).  
 
+### Using the Julia REPL
+
+Now you can start the Julia REPL and import the Chloë package.
 As an example of how to annotate a single FASTA file that is in your project directory:
 ```julia
 #start the julia REPL from the terminal in your projects folder then import Chloe
 import Chloe
-references = Chloe.ReferenceDbFromDir("./chloe_references") #set path to the chloe_reference
+references = Chloe.ReferenceDb("cp")
 outfile, uid = Chloe.annotate(references,  "NC_011032.1.fa") #run annotation on a file called NC_011032.1.fa located in your project folder
 println(outfile) #print output in REPL
 ```
@@ -117,6 +113,13 @@ references = Chloe.ReferenceDb("cp")
 outfile, uid = open("NC_011032.1.fa", "r") do io
     Chloe.annotate(references, io)
 end
+```
+
+Or if you prefer you can use the commandline interface from the REPL to invoke Chloe:
+
+```julia
+import Chloe: chloe_main
+chloe_main(["annotate", "-r", "nr", "nrdna.fa"])
 ```
 
 --- 
