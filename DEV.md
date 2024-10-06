@@ -74,11 +74,13 @@ julia --threads auto --project=. chloe.jl annotate --gff testfa/*.fa
 ## Chloe as a Julia package
 
 You can install Chloe as a Julia package.
-Start Julia and type `]` to get the package manager prompt. Then type:
+Start Julia and type:
 
 ```julia
 using Pkg;
 Pkg.develop("{path/to/chloe/repo/directory}")
+# *OR* directly from github
+Pkg.add(url="https://github.com/ian-small/Chloe.jl.git")
 ```
 
 This will make an entry for Chloë in the Manifest for Julia.

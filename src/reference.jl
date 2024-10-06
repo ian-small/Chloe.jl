@@ -18,7 +18,7 @@ struct ChloeConfig
 end
 
 function Base.show(io::IO, c::ChloeConfig)
-    print(io, "ChloeConfig[sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), gff=$(c.to_gff3)]")
+    print(io, "ChloeConfig[sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), gff=$(c.to_gff3)], ref=$(c.reference)")
 end
 
 abstract type AbstractReferenceDb end
