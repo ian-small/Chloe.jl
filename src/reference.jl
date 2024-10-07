@@ -18,7 +18,7 @@ struct ChloeConfig
 end
 
 function Base.show(io::IO, c::ChloeConfig)
-    print(io, "ChloeConfig[sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), gff=$(c.to_gff3)], ref=$(c.reference)")
+    print(io, "ChloeConfig[sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), gff=$(c.to_gff3)], ref=$(c.reference)]")
 end
 
 abstract type AbstractReferenceDb end
@@ -28,7 +28,7 @@ mutable struct ReferenceDb <: AbstractReferenceDb
     gsrefsdir::String
     template_file::String
     templates::Union{Nothing,Dict{String,FeatureTemplate}}
-    gsrefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
+    # gsrefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
 end
 
 function ReferenceDb(reference_dir="cp")::ReferenceDb
@@ -40,7 +40,7 @@ function ReferenceDb(reference_dir="cp")::ReferenceDb
     end
     template = normpath(joinpath(gsrefsdir, DEFAULT_TEMPLATE))
     verify_refs(gsrefsdir, template)
-    return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
+    return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing)
 end
 
 function get_templates(db::ReferenceDb)

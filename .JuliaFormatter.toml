@@ -1,4 +1,4 @@
-margin = 140
+margin = 180
 align_struct_field = true
 always_for_in = true
 always_use_return = false

@@ -43,10 +43,7 @@ struct SingleReference
 end
 
 datasize(r::SingleReference) = begin
-    (sizeof(SingleReference)
-     + datasize(r.ref_seq)
-     + datasize(r.ref_features)
-    )
+    (sizeof(SingleReference) + datasize(r.ref_seq) + datasize(r.ref_features))
 end
 
 function Base.show(io::IO, r::SingleReference)
@@ -79,13 +76,19 @@ function flatten(vanno::Vector{Vector{Annotation}})::Vector{Annotation}
     ret
 end
 
-function transfer_annotations(ref_features::FeatureArray, aligned_blocks::BlockTree, src_length::Int32, target_length::Int32)::Vector{Annotation}
+function transfer_annotations(
+    ref_features::FeatureArray,
+    aligned_blocks::BlockTree,
+    src_length::Int32,
+    target_length::Int32
+)::Vector{Annotation}
     annotations = Vector{Annotation}()
     feature_blocks = intersect(ref_features.feature_tree, aligned_blocks)
     for fb in feature_blocks
         feature = fb[1]
         block = fb[2]
-        feature_overlaps = overlaps(range(block.src_index, length=block.blocklength), range(feature.start, length=feature.length), src_length)
+        feature_overlaps =
+            overlaps(range(block.src_index; length=block.blocklength), range(feature.start; length=feature.length), src_length)
         for o in feature_overlaps
             offset5 = o.start - feature.start
             offset3 = o.stop - (feature.start + feature.length - 1)
@@ -100,14 +103,30 @@ function transfer_annotations(ref_features::FeatureArray, aligned_blocks::BlockT
             else # alignment starts before feature, so start in target is after start of alignment
                 tgt_start = mod1(block.tgt_index + circulardistance(block.src_index, feature.start, src_length), target_length)
             end
-            push!(annotations, Annotation(ref_features.genome_id, annotation_path(feature), tgt_start, circulardistance(o.start, o.stop, src_length) + 1, offset5, offset3, phase))
+            push!(
+                annotations,
+                Annotation(
+                    ref_features.genome_id,
+                    annotation_path(feature),
+                    tgt_start,
+                    circulardistance(o.start, o.stop, src_length) + 1,
+                    offset5,
+                    offset3,
+                    phase
+                )
+            )
         end
     end
     annotations
 end
 
-function do_annotations(target_id::String, strand::Char, refs::Vector{SingleReference}, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, target_length::Int32)
-
+function do_annotations(
+    target_id::String,
+    strand::Char,
+    refs::Vector{SingleReference},
+    blocks_aligned_to_target::Vector{FwdRev{BlockTree}},
+    target_length::Int32
+)
     function do_one(refsrc, ref_features, blocks)
         st = time_ns()
         annotations = transfer_annotations(ref_features.forward, blocks.forward, length(refsrc), target_length)
@@ -123,13 +142,13 @@ function do_annotations(target_id::String, strand::Char, refs::Vector{SingleRefe
     end
 
     annotations = flatten(tgt)
-    sort!(annotations, by=x -> x.path)
+    sort!(annotations; by=x -> x.path)
     annotations
 end
 
 function score_feature(sff::SFF_Feature, reference_feature_counts::Dict{String,Int}, gmatch::Float32, seq::CircularSequence)
     ref_count = reference_feature_counts[annotation_path(sff.feature)]
-    slice = sff.feature.stack[range(sff.feature.start, length=sff.feature.length)]
+    slice = sff.feature.stack[range(sff.feature.start; length=sff.feature.length)]
     sff.stackdepth = Float32((length(slice) > 0 ? sum(slice) : 0) / (ref_count * sff.feature.length))
     sff.relative_length = sff.feature.length / sff.feature.median_length
     sff.gmatch = gmatch
@@ -140,8 +159,11 @@ function score_feature(sff::SFF_Feature, reference_feature_counts::Dict{String,I
     sff.feature_prob = feature_xgb(sff.feature.type, sff.feature.median_length, sff.feature.length, sff.stackdepth, sff.coding_prob)
 end
 
-function fill_feature_stack(target_length::Int32, annotations::Vector{Annotation},
-    feature_templates::Dict{String,FeatureTemplate})::Dict{String,CircularVector}
+function fill_feature_stack(
+    target_length::Int32,
+    annotations::Vector{Annotation},
+    feature_templates::Dict{String,FeatureTemplate}
+)::Dict{String,CircularVector}
     # assumes annotations are ordered by path
     stacks = Dict{String,CircularVector}()
     for annotation in annotations
@@ -155,7 +177,7 @@ function fill_feature_stack(target_length::Int32, annotations::Vector{Annotation
             stack = stacks[annotation.path] = CircularVector(zeros(Int8, target_length))
         end
 
-        @inbounds for i = annotation.start:annotation.start+annotation.length-one(Int32)
+        @inbounds for i in annotation.start:annotation.start+annotation.length-one(Int32)
             stack[i] += one(Int8)
         end
     end
@@ -169,7 +191,7 @@ function align_template(stack::CircularVector, template::FeatureTemplate)::Tuple
 
     hits = Vector{Tuple{Int32,Int}}()
     score = 0
-    @inbounds for nt::Int32 = one(Int32):median_length
+    @inbounds for nt::Int32 in one(Int32):median_length
         score += stack[nt]
     end
 
@@ -177,7 +199,7 @@ function align_template(stack::CircularVector, template::FeatureTemplate)::Tuple
         push!(hits, (one(Int32), score))
     end
 
-    @inbounds for nt::Int32 = 2:glen
+    @inbounds for nt::Int32 in 2:glen
         mt::Int32 = nt + median_length - one(Int32)
         score -= stack[nt-one(Int32)] # remove tail
         score += stack[mt] # add head
@@ -205,16 +227,23 @@ function align_template(stack::CircularVector, template::FeatureTemplate)::Tuple
     end
     isempty(hits) && return hits, median_length
     # sort by descending score
-    sort!(hits, by=x -> x[2], rev=true)
+    sort!(hits; by=x -> x[2], rev=true)
     maxscore = hits[1][2]
     # retain all hits scoring over 90% of the the top score
     filter!(x -> (x[2] ≥ maxscore * 0.9 || x[2] ≥ median_length), hits)
     return hits, median_length
 end
 
-function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector{SingleReference}, coverages::Dict{String,Float32}, reference_feature_counts::Dict{String,Int},
-    strand::Char, blocks_aligned_to_target::Vector{FwdRev{BlockTree}}, feature_templates::Dict{String,FeatureTemplate})::Vector{Vector{SFF_Feature}}
-
+function do_strand(
+    target_id::String,
+    target_seq::CircularSequence,
+    refs::Vector{SingleReference},
+    coverages::Dict{String,Float32},
+    reference_feature_counts::Dict{String,Int},
+    strand::Char,
+    blocks_aligned_to_target::Vector{FwdRev{BlockTree}},
+    feature_templates::Dict{String,FeatureTemplate}
+)::Vector{Vector{SFF_Feature}}
     t4 = time_ns()
     target_length = Int32(length(target_seq))
     annotations = do_annotations(target_id, strand, refs, blocks_aligned_to_target, target_length)
@@ -245,7 +274,7 @@ function do_strand(target_id::String, target_seq::CircularSequence, refs::Vector
     end
 
     # group by feature name on features ordered by mid-point
-    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features, by=x -> x.feature))
+    target_strand_models::Vector{Vector{SFF_Feature}} = features2models(sort(sff_features; by=x -> x.feature))
 
     orfs = getallorfs(target_seq, strand, Int32(0))
     # this toys with the feature start, phase etc....
@@ -291,7 +320,11 @@ end
 # Union{IO,String}: read fasta from IO buffer or a file (String)
 MayBeIO = Union{String,IO,Nothing}
 
-function align_to_reference(ref::SingleReference, tgt_id::String, tgt_seq::FwdRev{CircularSequence})::Tuple{FwdRev{FwdRev{BlockTree}},Float32}
+function align_to_reference(
+    ref::SingleReference,
+    tgt_id::String,
+    tgt_seq::FwdRev{CircularSequence}
+)::Tuple{FwdRev{FwdRev{BlockTree}},Float32}
     start = time_ns()
     ref_length = length(ref.ref_seq)
     tgt_length = length(tgt_seq.forward)
@@ -314,7 +347,7 @@ end
 function inverted_repeat(target::CircularSequence, revtarget::CircularSequence)::AlignedBlock
     fr::AlignedBlocks = ll2vector(align2seqs(target, revtarget, false))
     # sort blocks by length
-    fr = sort!(fr, by=b -> b.blocklength, rev=true)
+    fr = sort!(fr; by=b -> b.blocklength, rev=true)
     ir = length(fr) > 0 ? fr[1] : AlignedBlock(0, 0, 0)
     return ir
 end
@@ -326,12 +359,7 @@ struct ChloeAnnotation
     annotation::FwdRev{Vector{SFF_Model}}
 end
 
-function annotate_one_worker(db::ReferenceDb,
-    target_id::String,
-    target::FwdRev{CircularSequence},
-    config::ChloeConfig,
-)::ChloeAnnotation
-
+function annotate_one_worker(db::ReferenceDb, target_id::String, target::FwdRev{CircularSequence}, config::ChloeConfig)::ChloeAnnotation
     t1 = time_ns()
     target_length = Int32(length(target.forward))
 
@@ -365,8 +393,16 @@ function annotate_one_worker(db::ReferenceDb,
     @info "[$target_id] aligned: ($(numrefs)) $(human(datasize(blocks_aligned_to_targetf) + datasize(blocks_aligned_to_targetr))) mean coverage: $(geomean(values(coverages))) $(ns(t3 - t2))"
 
     function watson()
-        models = do_strand(target_id, target.forward, refs, coverages, reference_feature_counts,
-            '+', blocks_aligned_to_targetf, feature_templates)
+        models = do_strand(
+            target_id,
+            target.forward,
+            refs,
+            coverages,
+            reference_feature_counts,
+            '+',
+            blocks_aligned_to_targetf,
+            feature_templates
+        )
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
             sff = toSFFModel(feature_templates, model, '+', target.forward, config.sensitivity)
@@ -376,8 +412,16 @@ function annotate_one_worker(db::ReferenceDb,
     end
 
     function crick()
-        models = do_strand(target_id, target.reverse, refs, coverages, reference_feature_counts,
-            '-', blocks_aligned_to_targetr, feature_templates)
+        models = do_strand(
+            target_id,
+            target.reverse,
+            refs,
+            coverages,
+            reference_feature_counts,
+            '-',
+            blocks_aligned_to_targetr,
+            feature_templates
+        )
         final_models = SFF_Model[]
         for model in filter(m -> !isempty(m), models)
             sff = toSFFModel(feature_templates, model, '-', target.reverse, config.sensitivity)
@@ -393,8 +437,24 @@ function annotate_one_worker(db::ReferenceDb,
     ir1 = ir2 = nothing
     if ir.blocklength >= 1000
         @info "[$target_id] inverted repeat $(ir.blocklength)"
-        ir1 = SFF_Model("IR-1", 0.0, '+', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, Int8(0)), 0.0, 0.0, 0.0, 0.0, 0.0)], [])
-        ir2 = SFF_Model("IR-2", 0.0, '-', 1, 1, [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, Int8(0)), 0.0, 0.0, 0.0, 0.0, 0.0)], [])
+        ir1 = SFF_Model(
+            "IR-1",
+            0.0,
+            '+',
+            1,
+            1,
+            [SFF_Feature(Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, Int8(0)), 0.0, 0.0, 0.0, 0.0, 0.0)],
+            []
+        )
+        ir2 = SFF_Model(
+            "IR-2",
+            0.0,
+            '-',
+            1,
+            1,
+            [SFF_Feature(Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, Int8(0)), 0.0, 0.0, 0.0, 0.0, 0.0)],
+            []
+        )
     end
 
     filter_gene_models!(sffs_fwd, sffs_rev, target_length, ir1, ir2)
@@ -409,12 +469,12 @@ function annotate_one_worker(db::ReferenceDb,
         push!(sffs_rev, ir2)
     end
     @info success("[$target_id] Overall: $(elapsed(t1))")
-    return ChloeAnnotation(target_id, target_length, coverages, FwdRev(sffs_fwd, sffs_rev))
-
+    fwdr = FwdRev(sffs_fwd, sffs_rev)
+    fwdr = update_genecount!(fwdr)
+    return ChloeAnnotation(target_id, target_length, coverages, fwdr)
 end
 
 function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO=nothing)::Tuple{Union{String,IO},String}
-    models = update_genecount!(result.annotation)
     ext = asgff3 ? "gff3" : "sff"
     fname = if output !== nothing
         if output isa String
@@ -430,14 +490,13 @@ function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO=not
         "$(result.target_id).$(ext)"
     end
     if !asgff3
-        writeSFF(fname, result.target_id, result.target_length, geomean(values(result.coverages)), models)
+        writeSFF(fname, result.target_id, result.target_length, geomean(values(result.coverages)), result.annotation)
     else
-        writeGFF3(fname, result.target_id, result.target_length, models)
+        writeGFF3(fname, result.target_id, result.target_length, result.annotation)
     end
 
     return fname, result.target_id
 end
-
 
 function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     reader = FASTA.Reader(infile)
@@ -463,24 +522,8 @@ function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     return target_id, FwdRev(fseq, rseq)
 end
 
-"""
-    annotate(refsdir::String, target_id::String, seq::String, [,output_sff_file])
-
-Annotate a single sequence containting a *single* circular
-DNA entry
-
-writes an .sff file to `output_sff_file` or uses the sequence id in the
-fasta file to write `{seq_id}.sff` in the current directory.
-
-If `output_sff_file` is a *directory* write `{seq_id}.sff` into that
-directory.
-
-returns a 2-tuple: (ultimate sff output filename, sequence id)
-
-If `output_sff_file` is an IOBuffer then that buffer will be returned
-with the annotation within it.
-"""
-function annotate(db::AbstractReferenceDb,
+function annotate(
+    db::AbstractReferenceDb,
     target_id::String,
     target::FwdRev{CircularSequence},
     config::Union{ChloeConfig,Nothing}=nothing,
@@ -490,7 +533,6 @@ function annotate(db::AbstractReferenceDb,
 
     result = annotate_one_worker(db, target_id, target, config)
     write_result(result, config.to_gff3, output)
-
 end
 
 function annotate(db::AbstractReferenceDb, infile::String, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
@@ -530,17 +572,20 @@ function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing}=
     joinpath(d, "$(base).$(ext)")
 end
 
-
 function weighted_mode(values::Vector{Int32}, weights::Vector{Float32})::Int32
     w, v = findmax(StatsBase.addcounts!(Dict{Int32,Float32}(), values, weights))
     return v
 end
 
 # uses weighted mode, weighting by alignment length and distance from boundary
-function refine_boundaries_by_offsets!(feat::Feature, annotations::Vector{Annotation},
-    target_length::Integer, coverages::Dict{String,Float32})
+function refine_boundaries_by_offsets!(
+    feat::Feature,
+    annotations::Vector{Annotation},
+    target_length::Integer,
+    coverages::Dict{String,Float32}
+)
     # grab all the matching features and sort by start in genome of origin to ensure that when iterated in order, most 5' match is found first
-    matching_annotations = sort(annotations[findall(x -> x.path == annotation_path(feat), annotations)], by=a -> a.start)
+    matching_annotations = sort(annotations[findall(x -> x.path == annotation_path(feat), annotations)]; by=a -> a.start)
     isempty(matching_annotations) && return #  feat, [], []
     overlapping_annotations = Annotation[]
     minstart = target_length
@@ -549,7 +594,7 @@ function refine_boundaries_by_offsets!(feat::Feature, annotations::Vector{Annota
     ## Fix 5' boundary and feature phase
     for annotation in matching_annotations
         annotation.offset5 >= feat.length && continue
-        if length(overlaps(range(feat.start, length=feat.length), range(annotation.start, length=annotation.length), target_length)) > 0
+        if length(overlaps(range(feat.start; length=feat.length), range(annotation.start; length=annotation.length), target_length)) > 0
             # ignore if we already have an annotation from this genome
             if isnothing(findfirst(a -> a.genome_id == annotation.genome_id, overlapping_annotations))
                 minstart = min(minstart, annotation.start)
@@ -582,7 +627,7 @@ function refine_boundaries_by_offsets!(feat::Feature, annotations::Vector{Annota
     empty!(overlapping_annotations)
     for annotation in Iterators.reverse(matching_annotations) # iterate in reverse to ensure 3' annotations are reached first
         annotation.offset3 >= feat.length && continue
-        if length(overlaps(range(feat.start, length=feat.length), range(annotation.start, length=annotation.length), target_length)) > 0
+        if length(overlaps(range(feat.start; length=feat.length), range(annotation.start; length=annotation.length), target_length)) > 0
             # ignore if we already have an annotation from this genome
             if isnothing(findfirst(a -> a.genome_id == annotation.genome_id, overlapping_annotations))
                 maxend = max(maxend, annotation.start + annotation.length - 1)
@@ -619,12 +664,14 @@ function features2models(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_F
             left_border = sff_feature.feature.start
             right_border = sff_feature.feature.start + sff_feature.feature.length - 1
             # add feature to model if the gene names match and they are less than 3kb apart; 3kb is an arbitrary limit set to include the longest intron (trnK, ~2.5kb) and may need to be reduced
-        elseif current_model[1].feature.gene == sff_feature.feature.gene && max(left_border, sff_feature.feature.start) - min(right_border, sff_feature.feature.start + sff_feature.feature.length - 1) < 3000
+        elseif current_model[1].feature.gene == sff_feature.feature.gene &&
+               max(left_border, sff_feature.feature.start) - min(right_border, sff_feature.feature.start + sff_feature.feature.length - 1) <
+               3000
             push!(current_model, sff_feature)
             left_border = min(left_border, sff_feature.feature.start)
             right_border = max(right_border, sff_feature.feature.start + sff_feature.feature.length - 1)
         else
-            sort!(current_model, by=x -> x.feature.start)
+            sort!(current_model; by=x -> x.feature.start)
             push!(gene_models, current_model)
             current_model = SFF_Feature[]
             push!(current_model, sff_feature)
@@ -633,7 +680,7 @@ function features2models(sff_features::Vector{SFF_Feature})::Vector{Vector{SFF_F
         end
     end
     if length(current_model) > 0
-        sort!(current_model, by=x -> x.feature.start)
+        sort!(current_model; by=x -> x.feature.start)
         push!(gene_models, current_model)
     end
     return gene_models
@@ -746,7 +793,7 @@ function setlongestORF!(sfeat::SFF_Feature, orfs::Vector{Feature}, genome_length
         orf.length < max_inframe_overlap && break
         orf_frame = mod1(orf.start, 3)
         f_frame ≠ orf_frame && orf.length <= max_outframe_overlap && continue
-        overlap_array = overlaps(range(orf.start, length=orf.length), range(f.start, length=f.length), genome_length)
+        overlap_array = overlaps(range(orf.start; length=orf.length), range(f.start; length=f.length), genome_length)
         length(overlap_array) == 0 && continue
         overlap = overlap_array[1].stop - overlap_array[1].start + 1
         if f_frame == orf_frame && overlap > max_inframe_overlap
@@ -895,7 +942,7 @@ function get_model_boundaries(model::SFF_Model, glength::Int32)::UnitRange{Int32
     genestart = first(model.features).feature.start
     geneend = last(model.features).feature.start + last(model.features).feature.length - 1
     length::Int32 = geneend > genestart ? geneend - genestart + 1 : glength + geneend - genestart + 1
-    return range(genestart, length=length)
+    return range(genestart; length=length)
 end
 
 function mean_stackdepth(model::SFF_Model)::Float64
@@ -906,7 +953,13 @@ function mean_stackdepth(model::SFF_Model)::Float64
     return sum / length(model.features)
 end
 
-function toSFFModel(feature_templates::Dict{String,FeatureTemplate}, model::Vector{SFF_Feature}, strand::Char, target_seq::CircularSequence, sensitivity::Real)::Union{Nothing,SFF_Model}
+function toSFFModel(
+    feature_templates::Dict{String,FeatureTemplate},
+    model::Vector{SFF_Feature},
+    strand::Char,
+    target_seq::CircularSequence,
+    sensitivity::Real
+)::Union{Nothing,SFF_Model}
     gene = first(model).feature.gene
     type = featuretype(model)
     type == "" && return nothing
@@ -968,8 +1021,19 @@ function write_model2SFF(outfile::IO, model::SFF_Model)
         write(outfile, "\t")
         write(outfile, join([model.strand, string(f.start), string(f.length), string(f.phase)], "\t"))
         write(outfile, "\t")
-        write(outfile, join([@sprintf("%.3g", sff.relative_length), @sprintf("%.3g", sff.stackdepth), @sprintf("%.3g", sff.gmatch),
-                @sprintf("%.3g", sff.feature_prob), @sprintf("%.3g", sff.coding_prob)], "\t"))
+        write(
+            outfile,
+            join(
+                [
+                    @sprintf("%.3g", sff.relative_length),
+                    @sprintf("%.3g", sff.stackdepth),
+                    @sprintf("%.3g", sff.gmatch),
+                    @sprintf("%.3g", sff.feature_prob),
+                    @sprintf("%.3g", sff.coding_prob)
+                ],
+                "\t"
+            )
+        )
         write(outfile, "\t")
         write(outfile, join(model.warnings, "; "))
         write(outfile, "\n")
@@ -1046,7 +1110,13 @@ function allowed_model_overlap(m1, m2)::Bool
     return false
 end
 
-function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{SFF_Model}, glength::Int32, ir1::Union{Nothing,SFF_Model}, ir2::Union{Nothing,SFF_Model})
+function filter_gene_models!(
+    fwd_models::Vector{SFF_Model},
+    rev_models::Vector{SFF_Model},
+    glength::Int32,
+    ir1::Union{Nothing,SFF_Model},
+    ir2::Union{Nothing,SFF_Model}
+)
 
     # hard floor on stackdepth
     for model in fwd_models
@@ -1100,14 +1170,26 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
                 ir1_boundaries = get_model_boundaries(ir1, glength)
                 ir2_boundaries = get_model_boundaries(ir2, glength)
                 if model1.strand == '+'
-                    model1_maxIRintersect = max(length(circularintersect(model1_boundaries, ir1_boundaries, glength)), length(circularintersect(model1_boundaries, reverse_complement(ir2_boundaries, glength), glength)))
+                    model1_maxIRintersect = max(
+                        length(circularintersect(model1_boundaries, ir1_boundaries, glength)),
+                        length(circularintersect(model1_boundaries, reverse_complement(ir2_boundaries, glength), glength))
+                    )
                 else
-                    model1_maxIRintersect = max(length(circularintersect(model1_boundaries, reverse_complement(ir1_boundaries, glength), glength)), length(circularintersect(model1_boundaries, ir2_boundaries, glength)))
+                    model1_maxIRintersect = max(
+                        length(circularintersect(model1_boundaries, reverse_complement(ir1_boundaries, glength), glength)),
+                        length(circularintersect(model1_boundaries, ir2_boundaries, glength))
+                    )
                 end
                 if model2.strand == '+'
-                    model2_maxIRintersect = max(length(circularintersect(model2_boundaries, ir1_boundaries, glength)), length(circularintersect(model2_boundaries, reverse_complement(ir2_boundaries, glength), glength)))
+                    model2_maxIRintersect = max(
+                        length(circularintersect(model2_boundaries, ir1_boundaries, glength)),
+                        length(circularintersect(model2_boundaries, reverse_complement(ir2_boundaries, glength), glength))
+                    )
                 else
-                    model2_maxIRintersect = max(length(circularintersect(model2_boundaries, reverse_complement(ir1_boundaries, glength), glength)), length(circularintersect(model2_boundaries, ir2_boundaries, glength)))
+                    model2_maxIRintersect = max(
+                        length(circularintersect(model2_boundaries, reverse_complement(ir1_boundaries, glength), glength)),
+                        length(circularintersect(model2_boundaries, ir2_boundaries, glength))
+                    )
                 end
                 if (model1_maxIRintersect == 0 || model2_maxIRintersect == 0) # one or other model outside the IRs, deal with as INFERIOR_COPY
                     if model1.gene_prob > model2.gene_prob ##no tolerance for unequal probs
@@ -1126,7 +1208,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
                     local f::Feature, frange::UnitRange{Int32}, intersect::UnitRange{Int32}
                     for sff in model1.features
                         f = sff.feature
-                        frange = range(f.start, length=f.length)
+                        frange = range(f.start; length=f.length)
                         if model1.strand == '+'
                             intersect = circularintersect(frange, ir1_boundaries, glength)
                             if length(intersect) == 0
@@ -1145,7 +1227,7 @@ function filter_gene_models!(fwd_models::Vector{SFF_Model}, rev_models::Vector{S
                     # find feature in model2 that overlaps end of IR
                     for sff in model2.features
                         f = sff.feature
-                        frange = range(f.start, length=f.length)
+                        frange = range(f.start; length=f.length)
                         if model2.strand == '+'
                             intersect = circularintersect(frange, ir1_boundaries, glength)
                             if length(intersect) == 0
@@ -1193,24 +1275,23 @@ function update_genecount!(models::FwdRev{Vector{SFF_Model}})::FwdRev{Vector{SFF
         isempty(model.features) && continue
         modelID!(model_ids, model) # updates model.gene_count
         push!(fwd, model)
-
     end
     for model in models.reverse
         isnothing(model) && continue
         isempty(model.features) && continue
         modelID!(model_ids, model)# updates model.gene_count
         push!(rev, model)
-
     end
     return FwdRev(fwd, rev)
 end
 
-function writeSFF(outfile::Union{String,IO},
+function writeSFF(
+    outfile::Union{String,IO},
     id::String, # NCBI id
     genome_length::Int32,
     mean_coverage::Float32,
-    models::FwdRev{Vector{SFF_Model}})
-
+    models::FwdRev{Vector{SFF_Model}}
+)
     function out(outfile::IO)
         write(outfile, id, "\t", string(genome_length), "\t", @sprintf("%.3f", mean_coverage), "\n")
         for model in models.forward
@@ -1241,11 +1322,12 @@ function sff2gffcoords(f::Feature, strand::Char, genome_length::Integer)
     return (start, finish, length)
 end
 
-function writeGFF3(outfile::Union{String,IO},
+function writeGFF3(
+    outfile::Union{String,IO},
     genome_id::String, # NCBI id
     genome_length::Int32,
-    models::FwdRev{Vector{SFF_Model}})
-
+    models::FwdRev{Vector{SFF_Model}}
+)
     function header(outfile::IO)
         write(outfile, "##gff-version 3.2.1\n")
         write(outfile, join([genome_id, "Chloe", "region", '1', string(genome_length), ".", "+", "0", "Is_circular=true"], "\t"))
@@ -1257,7 +1339,7 @@ function writeGFF3(outfile::Union{String,IO},
 
     function out(outfile::IO)
         header(outfile)
-        allmodels = sort(vcat(models.forward, models.reverse), by=m -> sff2gffcoords(first(m.features).feature, m.strand, genome_length)[1])
+        allmodels = sort(vcat(models.forward, models.reverse); by=m -> sff2gffcoords(first(m.features).feature, m.strand, genome_length)[1])
         for model in allmodels
             write_model2GFF3(outfile, model, genome_id, genome_length)
         end
@@ -1302,7 +1384,6 @@ function featuretype(model::Vector{SFF_Feature})
 end
 
 function write_model2GFF3(outfile, model::SFF_Model, genome_id::String, genome_length::Int32)
-
     function write_line(type, start, finish, pvalue, id, parent, phase="."; key="Parent")
         l = [genome_id, "Chloe", type, start, finish, @sprintf("%.3e", pvalue), model.strand, phase]
         write(outfile, join(l, "\t"))
