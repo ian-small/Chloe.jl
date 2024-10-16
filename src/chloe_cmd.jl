@@ -21,12 +21,13 @@ function chloe(;
     reference_dir="cp",
     fasta_files=String[],
     sensitivity=DEFAULT_SENSITIVITY,
-    output::Union{Nothing,String}=nothing,
+    output::String=pwd(),
+    stet::Bool=false,
     gff::Bool=false,
     nofilter::Bool=false
 )
     db = Annotator.ReferenceDb(reference_dir)
-    config = Annotator.ChloeConfig(; sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter, reference=reference_dir)
+    config = Annotator.ChloeConfig(; stet=stet, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter, reference=reference_dir)
     Annotator.annotate_batch(db, fasta_files, config, output)
 end
 
@@ -42,9 +43,6 @@ function getargs(args::Vector{String}=ARGS)
         action = :command
         "annotate"
         help = "annotate fasta files"
-        action = :command
-        "rotate"
-        help = "rotate circular genomes to standard position"
         action = :command
         "--level", "-l"
         arg_type = String
@@ -87,7 +85,8 @@ function getargs(args::Vector{String}=ARGS)
         help = "fasta files to process"
         "--output", "-o"
         arg_type = String
-        help = "output filename (or directory if multiple fasta files)"
+        default = pwd()
+        help = "output directory (default: present working directory)"
         "--reference", "-r"
         arg_type = String
         default = "cp"
@@ -101,31 +100,12 @@ function getargs(args::Vector{String}=ARGS)
         "--nofilter"
         action = :store_true
         help = "don't filter output"
+        "--stet"
+        action = :store_true
+        help = "do not flip and orient sequence to standard configuration"
         "--gff"
         action = :store_true
         help = "save output in gff3 format instead of sff"
-    end
-
-    @add_arg_table! cmd_args["rotate"] begin
-        "fasta-files"
-        arg_type = String
-        nargs = '+'
-        required = true
-        action = :store_arg
-        help = "fasta file(s) to process"
-        "--flip-SSC", "-S"
-        action = :store_true
-        help = "flip orientation of small single-copy region"
-        "--flip-LSC", "-L"
-        action = :store_true
-        help = "flip orientation of large single-copy region"
-        "--extend", "-e"
-        default = 0
-        arg_type = Int
-        help = "add n bases from start to the end of sequence to allow mapping to wrap ends [use -1 for maximum extent]"
-        "--output", "-o"
-        arg_type = String
-        help = "output file or directory"
     end
 
     parse_args(args, cmd_args; as_symbols=true)
@@ -143,8 +123,6 @@ function chloe_main(args::Vector{String}=ARGS)
             Annotator.align(; a...)
         elseif cmd == :annotate
             chloe(; a...)
-        elseif cmd == :rotate
-            Annotator.rotategenomes(; a...)
         end
     end
 end

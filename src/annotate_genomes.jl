@@ -10,13 +10,13 @@ import Base
 
 include("utilities.jl")
 include("circularity.jl")
-include("rotate_genome.jl")
 include("hash.jl")
 include("align.jl")
+include("reference.jl")
 include("annotations.jl")
+include("restructure.jl")
 include("orfs.jl")
 include("rnas.jl")
-include("reference.jl")
 include("chloeboost.jl")
 
 import Printf: @sprintf
@@ -321,13 +321,6 @@ function inverted_repeat(target::CircularSequence, revtarget::CircularSequence):
     return ir
 end
 
-struct ChloeAnnotation
-    target_id::String
-    target_length::Int32
-    coverages::Dict{String,Float32}
-    annotation::FwdRev{Vector{SFF_Model}}
-end
-
 function final_annotation_edit!(result::ChloeAnnotation)::ChloeAnnotation
     function edit!(models)
         for sff_model in models
@@ -426,28 +419,13 @@ function annotate_one_worker(db::ReferenceDb, target_id::String, target::FwdRev{
     final_annotation_edit!(ret)
 end
 
-function write_result(result::ChloeAnnotation, asgff3::Bool, output::MayBeIO=nothing)::Tuple{Union{String,IO},String}
-    ext = asgff3 ? "gff3" : "sff"
-    fname = if output !== nothing
-        if output isa String
-            if isdir(output)
-                joinpath(output, "$(result.target_id).$(ext)")
-            else
-                output # filename
-            end
-        else
-            output # IOBuffer
-        end
-    else
-        "$(result.target_id).$(ext)"
-    end
+function write_result(stet::Bool, result::ChloeAnnotation, asgff3::Bool, filestem::String)::Tuple{Union{String,IO},String}
     if !asgff3
-        writeSFF(fname, result.target_id, result.target_length, geomean(values(result.coverages)), result.annotation)
+        writeSFF(filestem * ".sff", result.target_id, result.target_length, geomean(values(result.coverages)), result.annotation)
     else
-        writeGFF3(fname, result.target_id, result.target_length, result.annotation)
+        writeGFF3(filestem * ".gff", result.target_id, result.target_length, result.annotation)
     end
-
-    return fname, result.target_id
+    return filestem, result.target_id
 end
 
 function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
@@ -474,48 +452,36 @@ function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     return target_id, FwdRev(fseq, rseq)
 end
 
-function annotate(db::AbstractReferenceDb, target_id::String, target::FwdRev{CircularSequence}, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)::Tuple{Union{String,IO},String}
+function annotate(db::AbstractReferenceDb, target_id::String, target::FwdRev{CircularSequence}, config::Union{ChloeConfig,Nothing}=nothing, output::String="")::Tuple{Union{String,IO},String}
     config = isnothing(config) ? ChloeConfig() : config
-
     result = annotate_one_worker(db, target_id, target, config)
-    write_result(result, config.to_gff3, output)
+    filestem = joinpath(output, result.target_id * ".chloe")
+    if ~config.stet
+        target, result = restructure!(target, result, db.templates)
+        FASTAWriter(open(filestem * ".fa", "w")) do outfile
+            write(outfile, FASTARecord(result.target_id, target.forward[1:length(target.forward)]))
+        end
+    end
+    write_result(config.stet, result, config.to_gff3, filestem)
 end
 
-function annotate(db::AbstractReferenceDb, infile::String, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
+function annotate(db::AbstractReferenceDb, infile::String, config::Union{ChloeConfig,Nothing}=nothing, output::String="")
     maybe_gzread(infile) do io
         annotate(db, io, config, output)
     end
 end
 
-function annotate(db::AbstractReferenceDb, infile::IO, config::Union{ChloeConfig,Nothing}=nothing, output::MayBeIO=nothing)
+function annotate(db::AbstractReferenceDb, infile::IO, config::Union{ChloeConfig,Nothing}=nothing, output::String="")
     target_id, seqs = fasta_reader(infile)
     annotate(db, target_id, seqs, config, output)
 end
 
-function annotate_batch(db::AbstractReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::Union{Nothing,String}=nothing)
-    n = length(fa_files)
+function annotate_batch(db::AbstractReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::String="")
     for infile in fa_files
         maybe_gzread(infile) do io
-            annotate(db, io, config, if n > 1
-                sffname(infile, config.to_gff3, output)
-            else
-                output
-            end)
+            annotate(db, io, config, output)
         end
     end
-end
-
-function sffname(fafile::String, asgff3::Bool, directory::Union{String,Nothing}=nothing)::String
-    ext = asgff3 ? "gff3" : "sff"
-    d = if isnothing(directory)
-        dirname(fafile)
-    else
-        directory
-    end
-    f = basename(fafile)
-    base = rsplit(f, '.'; limit=2)[1]
-
-    joinpath(d, "$(base).$(ext)")
 end
 
 function weighted_mode(values::Vector{Int32}, weights::Vector{Float32})::Int32

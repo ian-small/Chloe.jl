@@ -3,12 +3,13 @@ include("globals.jl")
 const KWARGS = ["sensitivity", "to_gff3", "nofilter", "reference"]
 
 struct ChloeConfig
+    stet::Bool
     sensitivity::Real
     to_gff3::Bool
     nofilter::Bool
     reference::String # cp|nr
-    function ChloeConfig(; sensitivity=DEFAULT_SENSITIVITY, to_gff3::Bool=false, nofilter::Bool=false, reference::String="cp")
-        return new(sensitivity, to_gff3, nofilter, reference)
+    function ChloeConfig(; stet=false, sensitivity=DEFAULT_SENSITIVITY, to_gff3::Bool=false, nofilter::Bool=false, reference::String="cp")
+        return new(stet, sensitivity, to_gff3, nofilter, reference)
     end
 
     # needs to be V <: Any since this is coming from a JSON blob
@@ -18,7 +19,14 @@ struct ChloeConfig
 end
 
 function Base.show(io::IO, c::ChloeConfig)
-    print(io, "ChloeConfig[sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), gff=$(c.to_gff3)], ref=$(c.reference)]")
+    print(io, "ChloeConfig[stet=$(c.stet), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), gff=$(c.to_gff3)], ref=$(c.reference)]")
+end
+
+struct FeatureTemplate
+    path::String  # similar to .sff path
+    essential::Bool
+    median_length::Float32 # median length of feature
+    reference_strand::Char # strand feature is expected to be on in standard configuration of the genome/contig
 end
 
 abstract type AbstractReferenceDb end
@@ -41,6 +49,25 @@ function ReferenceDb(reference_dir="cp")::ReferenceDb
     template = normpath(joinpath(gsrefsdir, DEFAULT_TEMPLATE))
     verify_refs(gsrefsdir, template)
     return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing)
+end
+
+function read_templates(file::String)::Dict{String,FeatureTemplate}
+    if !isfile(file)
+        error("\"$(file)\" is not a file")
+    end
+    if filesize(file) === 0
+        error("no data in \"$(file)!\"")
+    end
+    templates = Dict{String,FeatureTemplate}()
+    open(file) do f
+        readline(f) # skip header
+        for line in eachline(f)
+            fields = split(line, '\t')
+            template = FeatureTemplate(fields[1], parse(Bool, fields[2]), parse(Float32, fields[3]), first(fields[4]))
+            templates[template.path] = template
+        end
+    end
+    return templates
 end
 
 function get_templates(db::ReferenceDb)

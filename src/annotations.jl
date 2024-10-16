@@ -76,12 +76,6 @@ struct FeatureArray
     feature_tree::FeatureTree
 end
 
-struct FeatureTemplate
-    path::String  # similar to .sff path
-    essential::Bool
-    median_length::Float32 # median length of feature
-end
-
 # extended Feature struct to add prediction info
 mutable struct SFF_Feature
     feature::Feature
@@ -142,25 +136,6 @@ end
 datasize(a::Annotation) = sizeof(Annotation) + sizeof(a.path)# genome_id is shared + sizeof(a.genome_id)
 datasize(v::Vector{Annotation}) = sum(datasize(a) for a in v)
 
-function read_templates(file::String)::Dict{String,FeatureTemplate}
-    if !isfile(file)
-        error("\"$(file)\" is not a file")
-    end
-    if filesize(file) === 0
-        error("no data in \"$(file)!\"")
-    end
-    templates = Dict{String,FeatureTemplate}()
-    open(file) do f
-        readline(f) # skip header
-        for line in eachline(f)
-            fields = split(line, '\t')
-            template = FeatureTemplate(fields[1], parse(Bool, fields[2]), parse(Float32, fields[3]))
-            templates[template.path] = template
-        end
-    end
-    return templates
-end
-
 struct FeatureStack
     path::String # == template.path
     stack::CircularVector
@@ -181,12 +156,27 @@ mutable struct SFF_Model
     warnings::Vector{String}
 end
 
+struct ChloeAnnotation
+    target_id::String
+    target_length::Int32
+    coverages::Dict{String,Float32}
+    annotation::FwdRev{Vector{SFF_Model}}
+end
+
+gene_span(model::Vector{Feature}) = begin
+    minimum([f.start for f in model]):maximum([f.start + f.length for f in model]) - 1
+end
+
 gene_length(model::Vector{Feature}) = begin
-    maximum([f.start + f.length for f in model]) - minimum([f.start for f in model])
+    length(gene_span(model))
+end
+
+gene_span(model::SFF_Model) = begin
+    minimum([f.feature.start for f in model.features]):maximum([f.feature.start + f.feature.length for f in model.features]) - 1
 end
 
 gene_length(model::SFF_Model) = begin
-    maximum([m.feature.start + m.feature.length for m in model]) - minimum([m.feature.start for m in model])
+    length(gene_span(model))
 end
 
 function reverse_complement(r::UnitRange, glength::Int32)::UnitRange
