@@ -11,7 +11,7 @@ struct ChloeConfig
     function ChloeConfig(;
         no_transform=false,
         sensitivity=DEFAULT_SENSITIVITY,
-        asgff3::Bool=false,
+        asgff3::Bool=true,
         no_filter::Bool=false,
         reference::String="cp"
     )
