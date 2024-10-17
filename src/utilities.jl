@@ -144,6 +144,16 @@ end
     position
 end
 
+# reverse complement position x in sequence of length l
+@inline function rc(x::Integer, l::Integer)
+    l - x + 1
+end
+
+# reverse complement UnitRange r in sequence of length l
+@inline function rc(r::UnitRange{<:Integer}, l::Integer)
+    l - r.stop + 1:l - r.start + 1
+end
+
 @inline function circulardistance(start, stop, seqlength)
     return stop ≥ start ? stop - start : stop + seqlength - start
 end

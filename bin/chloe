@@ -1,7 +1,0 @@
-#!/bin/bash
-threads=15
-
-d="$(dirname $0)"
-proj=$(realpath $d/../)
-
-exec julia --project=$proj --color=yes --threads=$threads $proj/chloe.jl "$@"

@@ -1,14 +1,21 @@
 include("globals.jl")
 
-const KWARGS = ["sensitivity", "to_gff3", "nofilter"]
+const KWARGS = ["no_transform", "sensitivity", "asgff3", "no_filter", "reference"]
 
 struct ChloeConfig
+    no_transform::Bool
     sensitivity::Real
-    to_gff3::Bool
-    nofilter::Bool
-    function ChloeConfig(; sensitivity=DEFAULT_SENSITIVITY,
-        to_gff3::Bool=false, nofilter::Bool=false)
-        return new(sensitivity, to_gff3, nofilter)
+    asgff3::Bool
+    no_filter::Bool
+    reference::String # cp|nr
+    function ChloeConfig(;
+        no_transform=false,
+        sensitivity=DEFAULT_SENSITIVITY,
+        asgff3::Bool=true,
+        no_filter::Bool=false,
+        reference::String="cp"
+    )
+        return new(no_transform, sensitivity, asgff3, no_filter, reference)
     end
 
     # needs to be V <: Any since this is coming from a JSON blob
@@ -18,7 +25,17 @@ struct ChloeConfig
 end
 
 function Base.show(io::IO, c::ChloeConfig)
-    print(io, "ChloeConfig[sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), gff=$(c.to_gff3)]")
+    print(
+        io,
+        "ChloeConfig[no_transform=$(c.no_transform), sensitivity=$(c.sensitivity), no_filter=$(c.no_filter), asgff3=$(c.asgff3)], ref=$(c.reference)]"
+    )
+end
+
+struct FeatureTemplate
+    path::String  # similar to .sff path
+    essential::Bool
+    median_length::Float32 # median length of feature
+    reference_strand::Char # strand feature is expected to be on in standard configuration of the genome/contig
 end
 
 abstract type AbstractReferenceDb end
@@ -28,10 +45,10 @@ mutable struct ReferenceDb <: AbstractReferenceDb
     gsrefsdir::String
     template_file::String
     templates::Union{Nothing,Dict{String,FeatureTemplate}}
-    gsrefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
+    # gsrefhashes::Union{Nothing,Dict{String,Vector{Int64}}}
 end
 
-function ReferenceDb(; reference_dir="")::ReferenceDb
+function ReferenceDb(reference_dir="cp")::ReferenceDb
     gsrefsdir = reference_dir
     if reference_dir == "cp"
         gsrefsdir = normpath(joinpath(CHLOE_REFS_DIR, "cprefs"))
@@ -40,18 +57,27 @@ function ReferenceDb(; reference_dir="")::ReferenceDb
     end
     template = normpath(joinpath(gsrefsdir, DEFAULT_TEMPLATE))
     verify_refs(gsrefsdir, template)
-    return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing, nothing)
+    return ReferenceDb(ReentrantLock(), gsrefsdir, template, nothing)
 end
 
-#= function ReferenceDbFromDir(directory::AbstractString)::ReferenceDb
-    directory = expanduser(directory)
-    gsrefsdir = joinpath(directory, "refs")
-    return ReferenceDb(; reference_dir=gsrefsdir)
+function read_templates(file::String)::Dict{String,FeatureTemplate}
+    if !isfile(file)
+        error("\"$(file)\" is not a file")
+    end
+    if filesize(file) === 0
+        error("no data in \"$(file)!\"")
+    end
+    templates = Dict{String,FeatureTemplate}()
+    open(file) do f
+        readline(f) # skip header
+        for line in eachline(f)
+            fields = split(line, '\t')
+            template = FeatureTemplate(fields[1], parse(Bool, fields[2]), parse(Float32, fields[3]), first(fields[4]))
+            templates[template.path] = template
+        end
+    end
+    return templates
 end
-
-function ReferenceDbFromDir()::ReferenceDb
-    ReferenceDb()
-end =#
 
 function get_templates(db::ReferenceDb)
     lock(db.lock) do
@@ -62,7 +88,11 @@ function get_templates(db::ReferenceDb)
     end
 end
 
-function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
+function get_single_reference!(
+    db::ReferenceDb,
+    refID::AbstractString,
+    reference_feature_counts::Dict{String,Int}
+)::SingleReference
     path = findfastafile(db.gsrefsdir, refID)
     if isnothing(path) || !isfile(path)
         msg = "unable to find $(refID) fasta file in $(db.gsrefsdir)!"
@@ -81,7 +111,6 @@ function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference
         end
         ref_features = read_sff_features!(sffpath, reference_feature_counts)
         SingleReference(refID, CircularSequence(FASTA.sequence(LongDNA{4}, ref)), ref_features)
-
     end
 end
 
@@ -101,7 +130,11 @@ function verify_refs(gsrefsdir, template)
 end
 
 # alters reference_feature_count Dictionary
-function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
+function read_single_reference!(
+    refdir::String,
+    refID::AbstractString,
+    reference_feature_counts::Dict{String,Int}
+)::SingleReference
     if !isdir(refdir)
         refdir = dirname(refdir)
     end

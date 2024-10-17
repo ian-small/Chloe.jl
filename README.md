@@ -47,29 +47,30 @@ You can run Chloë from the terminal. To access the annotator help manual use:
 julia --project=. chloe.jl annotate --help
 ```
 
+Equivalently you can invoke Chloe with:
+
+```bash
+julia --project=. -e 'using Chloe; chloe_main()' annotate --help
+```
+
+
 For annotating single sequences (e.g. the test genome `NC_020019.1.fa` available in the folder `testfa` with the default output in `.sff` format:
 ```bash
 julia --project=. chloe.jl annotate testfa/NC_020019.1.fa
 ```
 
-For annotating all fasta file in a directory ending with `.fa` specifying the `.gff` output format: 
+For annotating all fasta file in a directory ending with `.fa` specifying the `.sff` output format: 
 
 ```bash
-julia --project=. chloe.jl annotate -g testfa/*.fa
+julia --project=. chloe.jl annotate --sff testfa/*.fa
 ```
 
-This will create `.gff` files for each fasta file and write them back into the directory where the annotated fasta files are located.
+This will create `.chloe.sff` files for each fasta file and write them back into the directory where the annotated fasta files are located.
 
 To see what other commands are available:
 
 ```bash
 julia --project=. chloe.jl --help
-```
-
-Annotate fasta files from command line specifying the location of your Chloë references
-```bash
-julia --project=. -e 'using Chloe; chloe_main()' -- \
-    annotate --reference=/path/to/chloe_references *.fa
 ```
 
 ## Julia Projects
@@ -80,43 +81,26 @@ You can install Chloë as a Julia package and environment from within the Julia 
 julia -e 'using Pkg; Pkg.generate("myproject")'
 cd myproject
 # add Chloe to the project
-julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/ian-small/chloe.git")'
+julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/ian-small/Chloe.jl.git")'
 ```
-To install the [`Chloe References`](https://github.com/ian-small/chloe_references) database in the Julia REPL use:
-```bash
-julia -e 'import Pkg; Pkg.GitTools.clone(stdout, "https://github.com/ian-small/chloe_references", "chloe_references")'
-```
-### Using the Julia REPL
-Now you can start the Julia REPL and import the Chloë package. Chloë needs to know where the `chloe_references` are. If you have the references in your project directory use `"./chloe_references" ` is you decided to download them somewhere else you need to pass the path to the `reference` variable. Then run the `annotate` function to annotate your file. (If you have your files elsewhere please define the path to your file).  
 
+### Using the Julia REPL
+
+Now you can start the Julia REPL and import the Chloë package.
 As an example of how to annotate a single FASTA file that is in your project directory:
 ```julia
 #start the julia REPL from the terminal in your projects folder then import Chloe
 import Chloe
-references = Chloe.ReferenceDbFromDir("./chloe_references") #set path to the chloe_reference
+references = Chloe.ReferenceDb("cp")
 outfile, uid = Chloe.annotate(references,  "NC_011032.1.fa") #run annotation on a file called NC_011032.1.fa located in your project folder
 println(outfile) #print output in REPL
 ```
 
-Write to buffer instead of to a file.
+Or if you prefer you can use the commandline interface from the REPL to invoke Chloe:
 
 ```julia
-import Chloe
-references = Chloe.ReferenceDbFromDir("/path/to/chloe_references")
-io, uid = Chloe.annotate(references, "NC_011032.1.fa", nothing, IOBuffer())
-# show .sff content
-println(String(take!(io)))
-```
-
-Read from an already open fasta file.
-
-
-```julia
-import Chloe
-references = Chloe.ReferenceDbFromDir("/path/to/chloe_references")
-outfile, uid = open("NC_011032.1.fa", "r") do io
-    Chloe.annotate(references, io)
-end
+import Chloe: chloe_main
+chloe_main(["annotate", "-r", "nr", "nrdna.fa"])
 ```
 
 --- 
@@ -125,7 +109,7 @@ For more recipes using Chloë see our [Recipes](https://github.com/ian-small/chl
 
 ## Output formats
 
-Internally, Chloë numbers each strand independently from its 5' end, and tracks features by (start, length) rather then by (start, stop). This avoids most of the issues with features crossing the arbitrary end of a circular genome. The default output of Chloë (`.sff` files) uses these conventions. For example, here's the start of a typical `.sff` output file:
+Internally, Chloë numbers each strand independently from its 5' end, and tracks features by (start, length) rather then by (start, stop). This avoids most of the issues with features crossing the arbitrary end of a circular genome. The `--sff` output of Chloë (`.sff` files) uses these conventions. For example, here's the start of a typical `.sff` output file:
 
 
 <img src="assets/sff.png" width="600">
@@ -138,19 +122,18 @@ gene name/gene copy (so if 2 or higher is a duplicate of another gene)/feature t
 Subsequent columns are: strand, start, length, phase;
 Then 5 columns of interest if you want to understand why Chloë has predicted this particular feature: length relative to feature template, proportion of references that match, mean coverage of aligned genomes (out of 100), feature probability (from XGBoost model), coding probability (from XGBoost model)
 
-Most users will probably want to use `chloe.jl annotate -g` to obtain the output in standard `.gff` format: 
-
+The default output is GFF:
 
 <img src="assets/gff.png" width="700">
 
 
 By default, Chloë filters out features which are detected to have one of a set of problematic issues, or which have a feature probability of < 0.5.
-You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate -s 0 --nofilter` will retain all the features that Chloë was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
+You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate --sff --sensitivity 0 --no-filter` will retain all the features that Chloë was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
 ```[ Warning: rps16/1 lacks a start codon
 [ Warning: rps16/1 has a premature stop codon
 [ Warning: rps16/1 CDS is not divisible by 3
 ```
-and in the `.sff` output. Currently `--nofilter` has no effect if the `-g` flag is also set.
+and in the `.sff` output. Currently `--no-filter` has no effect if the `--sff` flag is not set.
 <!-- Additional text to prevent interpretation as a header -->
 ---
 

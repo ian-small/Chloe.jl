@@ -1,6 +1,6 @@
 [Chloe_refs]
-git-tree-sha1 = "693845203fca159a05160c5542231d92c61625a2"
+git-tree-sha1 = "9163915d99fdfbc7d8510f0479b3d08905682ca5"
 
     [[Chloe_refs.download]]
-    sha256 = "bc7ec7897e41ccf5d67107fcf48719e12f6c4a44df0c38d5a6780af9e00aaff9"
-    url = "https://github.com/ian-small/chloe_references/archive/refs/tags/v1.0.0.tar.gz"
+    sha256 = "fd2095abda83753b33b65d762627efe99c50908fc20e738c8f74fccc83d36be9"
+    url = "https://github.com/ian-small/chloe_references/archive/refs/tags/v1.0.1.tar.gz"

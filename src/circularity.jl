@@ -164,8 +164,13 @@ function Base.getindex(cs::CircularSequence, r::UnitRange{<:Integer})
 end
 
 function reverse_complement(cs::CircularSequence)
-    rc = BioSequences.reverse_complement(cs.sequence[1:cs.length])
-    return CircularSequence(rc, reverse(cs.mask))
+    return CircularSequence(BioSequences.reverse_complement(cs.sequence[1:cs.length]), reverse(cs.mask))
+end
+
+function rotate(cs::CircularSequence, new_start::Integer)::CircularSequence
+    newseq = LongDNA{2}(cs[new_start:new_start+length(cs)-1])
+    newmask = CircularMask(cs.mask[new_start:new_start+length(cs)-1])
+    CircularSequence(newseq,newmask)
 end
 
 @inline function getcodon(cs::CircularSequence, index::Int32)
