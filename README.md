@@ -47,28 +47,30 @@ You can run Chloë from the terminal. To access the annotator help manual use:
 julia --project=. chloe.jl annotate --help
 ```
 
+Equivalently you can invoke Chloe with:
+
+```bash
+julia --project=. -e 'using Chloe; chloe_main()' annotate --help
+```
+
+
 For annotating single sequences (e.g. the test genome `NC_020019.1.fa` available in the folder `testfa` with the default output in `.sff` format:
 ```bash
 julia --project=. chloe.jl annotate testfa/NC_020019.1.fa
 ```
 
-For annotating all fasta file in a directory ending with `.fa` specifying the `.gff` output format: 
+For annotating all fasta file in a directory ending with `.fa` specifying the `.sff` output format: 
 
 ```bash
-julia --project=. chloe.jl annotate -g testfa/*.fa
+julia --project=. chloe.jl annotate --sff testfa/*.fa
 ```
 
-This will create `.gff` files for each fasta file and write them back into the directory where the annotated fasta files are located.
+This will create `.chloe.sff` files for each fasta file and write them back into the directory where the annotated fasta files are located.
 
 To see what other commands are available:
 
 ```bash
 julia --project=. chloe.jl --help
-```
-
-Annotate fasta files from command line specifying the location of your Chloë references
-```bash
-julia --project=. -e 'using Chloe; chloe_main()' -- annotate -r cp *.fa
 ```
 
 ## Julia Projects
@@ -94,27 +96,6 @@ outfile, uid = Chloe.annotate(references,  "NC_011032.1.fa") #run annotation on 
 println(outfile) #print output in REPL
 ```
 
-Write to buffer instead of to a file.
-
-```julia
-import Chloe
-references = Chloe.ReferenceDb("cp")
-io, uid = Chloe.annotate(references, "NC_011032.1.fa", nothing, IOBuffer())
-# show .sff content
-println(String(take!(io)))
-```
-
-Read from an already open fasta file.
-
-
-```julia
-import Chloe
-references = Chloe.ReferenceDb("cp")
-outfile, uid = open("NC_011032.1.fa", "r") do io
-    Chloe.annotate(references, io)
-end
-```
-
 Or if you prefer you can use the commandline interface from the REPL to invoke Chloe:
 
 ```julia
@@ -128,7 +109,7 @@ For more recipes using Chloë see our [Recipes](https://github.com/ian-small/chl
 
 ## Output formats
 
-Internally, Chloë numbers each strand independently from its 5' end, and tracks features by (start, length) rather then by (start, stop). This avoids most of the issues with features crossing the arbitrary end of a circular genome. The default output of Chloë (`.sff` files) uses these conventions. For example, here's the start of a typical `.sff` output file:
+Internally, Chloë numbers each strand independently from its 5' end, and tracks features by (start, length) rather then by (start, stop). This avoids most of the issues with features crossing the arbitrary end of a circular genome. The `--sff` output of Chloë (`.sff` files) uses these conventions. For example, here's the start of a typical `.sff` output file:
 
 
 <img src="assets/sff.png" width="600">
@@ -141,14 +122,13 @@ gene name/gene copy (so if 2 or higher is a duplicate of another gene)/feature t
 Subsequent columns are: strand, start, length, phase;
 Then 5 columns of interest if you want to understand why Chloë has predicted this particular feature: length relative to feature template, proportion of references that match, mean coverage of aligned genomes (out of 100), feature probability (from XGBoost model), coding probability (from XGBoost model)
 
-Most users will probably want to use `chloe.jl annotate -g` to obtain the output in standard `.gff` format: 
-
+The default output is GFF:
 
 <img src="assets/gff.png" width="700">
 
 
 By default, Chloë filters out features which are detected to have one of a set of problematic issues, or which have a feature probability of < 0.5.
-You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate -s 0 --no-filter` will retain all the features that Chloë was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
+You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate --sff --sensitivity 0 --no-filter` will retain all the features that Chloë was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
 ```[ Warning: rps16/1 lacks a start codon
 [ Warning: rps16/1 has a premature stop codon
 [ Warning: rps16/1 CDS is not divisible by 3

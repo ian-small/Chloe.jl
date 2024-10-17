@@ -28,7 +28,7 @@ fastas = readdir(fasta_directory) |> filter(f -> endswith(f, r"\.fa")) |> pmap(f
 # outputs is the list of output files
 outputs = @distributed (vcat) for fasta = fastas
     # note that `references` in on the worker process
-    output, uid = annotate(references, fasta, nothing, fasta * ".sff")
+    output, uid = annotate(references, fasta, nothing, ".")
     [output]
 end
 ```

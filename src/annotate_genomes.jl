@@ -521,17 +521,13 @@ end
 
 function write_result(result::ChloeAnnotation, asgff3::Bool, filestem::String)::Tuple{Union{String,IO},String}
     if !asgff3
-        writeSFF(
-            filestem * ".sff",
-            result.target_id,
-            result.target_length,
-            geomean(values(result.coverages)),
-            result.annotation
-        )
+        out = filestem * ".chloe.sff"
+        writeSFF(out, result.target_id, result.target_length, geomean(values(result.coverages)), result.annotation)
     else
-        writeGFF3(filestem * ".gff", result.target_id, result.target_length, result.annotation)
+        out = filestem * ".chloe.gff"
+        writeGFF3(out, result.target_id, result.target_length, result.annotation)
     end
-    return filestem, result.target_id
+    return out, result.target_id
 end
 
 function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
@@ -567,27 +563,27 @@ function annotate(
 )::Tuple{Union{String,IO},String}
     config = isnothing(config) ? ChloeConfig() : config
     result = annotate_one_worker(db, target_id, target, config)
-    filestem = joinpath(output, result.target_id * ".chloe")
     if ~config.no_transform
         target, result = transform!(target, result, db.templates)
-        FASTAWriter(open(filestem * ".fa", "w")) do outfile
+        FASTAWriter(open(output * ".chloe.fa", "w")) do outfile
             write(outfile, FASTARecord(result.target_id, target.forward[1:length(target.forward)]))
         end
     end
-    write_result(result, config.asgff3, filestem)
+    write_result(result, config.asgff3, output)
 end
 
 function annotate(
     db::AbstractReferenceDb,
     infile::String,
     config::Union{ChloeConfig,Nothing}=nothing,
-    output::MayBeString="."
+    output::MayBeString=".",
+    stem::MayBeString=nothing
 )
     if isnothing(output)
         output = dirname(infile)
     end
     maybe_gzread(infile) do io
-        annotate(db, io, config, output)
+        annotate(db, io, config, output, stem)
     end
 end
 
@@ -595,17 +591,34 @@ function annotate(
     db::AbstractReferenceDb,
     infile::IO,
     config::Union{ChloeConfig,Nothing}=nothing,
-    output::MayBeString="."
+    output::MayBeString=".",
+    stem::MayBeString=nothing
 )
     target_id, seqs = fasta_reader(infile)
+    output = isnothing(stem) ? joinpath(output, target_id) : joinpath(output, stem)
     annotate(db, target_id, seqs, config, output)
 end
 
-function annotate_batch(db::AbstractReferenceDb, fa_files::Vector{String}, config::ChloeConfig, output::MayBeString=".")
+function filestem(fname)
+    fname = splitdir(fname)[2]
+    if endswith(fname, r"\.gz")
+        fname, _ = splitext(fname)
+    end
+    splitext(fname)[1]
+end
+
+function annotate_batch(
+    db::AbstractReferenceDb,
+    fa_files::Vector{String},
+    config::ChloeConfig,
+    output::MayBeString=".",
+    use_id::Bool=false
+)
     odir = isnothing(output) ? fname -> dirname(fname) : _ -> output
     for infile in fa_files
+        stem = use_id ? nothing : filestem(infile)
         maybe_gzread(infile) do io
-            annotate(db, io, config, odir(infile))
+            annotate(db, io, config, odir(infile), stem)
         end
     end
 end

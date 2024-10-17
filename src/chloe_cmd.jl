@@ -25,7 +25,8 @@ function chloe(;
     output::Union{String,Nothing}=nothing,
     no_transform::Bool=false,
     sff::Bool=false,
-    no_filter::Bool=false
+    no_filter::Bool=false,
+    use_id::Bool=false
 )
     if ~isnothing(output)
         if ~isdir(output)
@@ -41,7 +42,7 @@ function chloe(;
         no_filter=no_filter,
         reference=reference_dir
     )
-    Annotator.annotate_batch(db, fasta_files, config, output)
+    Annotator.annotate_batch(db, fasta_files, config, output, use_id)
 end
 
 function getargs(args::Vector{String}=ARGS)
@@ -118,6 +119,9 @@ function getargs(args::Vector{String}=ARGS)
         "--sff"
         action = :store_true
         help = "save output in sff format instead of gff3"
+        "--use-id"
+        action = :store_true
+        help = "Use the target_id found in the fasta file as the output filename"
     end
 
     parse_args(args, cmd_args; as_symbols=true)
