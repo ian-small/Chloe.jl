@@ -554,12 +554,12 @@ function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
     return target_id, FwdRev(fseq, rseq)
 end
 
-function annotate(
+function annotate_one(
     db::AbstractReferenceDb,
     target_id::String,
     target::FwdRev{CircularSequence},
+    output::String,
     config::Union{ChloeConfig,Nothing}=nothing,
-    output::String="."
 )::Tuple{Union{String,IO},String}
     config = isnothing(config) ? ChloeConfig() : config
     result = annotate_one_worker(db, target_id, target, config)
@@ -591,12 +591,12 @@ function annotate(
     db::AbstractReferenceDb,
     infile::IO,
     config::Union{ChloeConfig,Nothing}=nothing,
-    output::MayBeString=".",
+    output::String=".",
     stem::MayBeString=nothing
 )
     target_id, seqs = fasta_reader(infile)
     output = isnothing(stem) ? joinpath(output, target_id) : joinpath(output, stem)
-    annotate(db, target_id, seqs, config, output)
+    annotate_one(db, target_id, seqs, output, config)
 end
 
 function filestem(fname)
