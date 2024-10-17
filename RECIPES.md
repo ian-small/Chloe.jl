@@ -26,7 +26,7 @@ pmap = f -> l -> map(f, l)
 fastas = readdir(fasta_directory) |> filter(f -> endswith(f, r"\.fa")) |> pmap(f -> joinpath(fasta_directory, f))
 
 # outputs is the list of output files
-outputs = @distributed (vcat) for fasta = fastas
+outputs = @distributed (vcat) for fasta in fastas
     # note that `references` in on the worker process
     output, uid = annotate(references, fasta, nothing, ".")
     [output]
