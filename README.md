@@ -148,12 +148,12 @@ Most users will probably want to use `chloe.jl annotate -g` to obtain the output
 
 
 By default, Chloë filters out features which are detected to have one of a set of problematic issues, or which have a feature probability of < 0.5.
-You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate -s 0 --nofilter` will retain all the features that Chloë was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
+You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate -s 0 --no-filter` will retain all the features that Chloë was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
 ```[ Warning: rps16/1 lacks a start codon
 [ Warning: rps16/1 has a premature stop codon
 [ Warning: rps16/1 CDS is not divisible by 3
 ```
-and in the `.sff` output. Currently `--nofilter` has no effect if the `-g` flag is also set.
+and in the `.sff` output. Currently `--no-filter` has no effect if the `--sff` flag is not set.
 <!-- Additional text to prevent interpretation as a header -->
 ---
 

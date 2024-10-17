@@ -19,7 +19,7 @@ julia --project=. chloe.jl annotate --help
 For example:
 
 ```bash
-julia --project=. chloe.jl annotate --gff testfa/*.fa
+julia --project=. chloe.jl annotate testfa/*.fa
 ```
 
 will create `.gff` files in the *current* directory.
@@ -48,12 +48,12 @@ Then 5 columns of interest if you want to understand why Chloe has predicted thi
 Most users will probably want to use `chloe.jl annotate -gff` to obtain the output in standard `.gff` format. 
 
 By default, Chloe filters out features which are detected to have one of a set of problematic issues, or which have a feature probability of < 0.5.
-You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate -s 0 --nofilter` will retain all the features that Chloe was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
+You can retain these putative features by lowering the sensitivity threshold and asking for no filtering. For example, `chloe.jl annotate -s 0 --no-filter` will retain all the features that Chloe was able to detect, including those that fail the checks. Features with issues will be flagged as warnings during the annotation:
 ```[ Warning: rps16/1 lacks a start codon
 [ Warning: rps16/1 has a premature stop codon
 [ Warning: rps16/1 CDS is not divisible by 3
 ```
-and in the `.sff` output. Currently `--nofilter` has no effect if the `--gff` flag is also set.
+and in the `.sff` output. Currently `--no-filter` has no effect if the `--sff` flag is not set.
 
 ## Multithreading
 
@@ -63,12 +63,12 @@ Using multiple threads is generally much faster than using multiple distributed 
 For example:
 
 ```bash
-julia --threads 4 --project=. chloe.jl annotate --gff testfa/*.fa
+julia --threads 4 --project=. chloe.jl annotate testfa/*.fa
 ```
 or
 
 ```bash
-julia --threads auto --project=. chloe.jl annotate --gff testfa/*.fa
+julia --threads auto --project=. chloe.jl annotate testfa/*.fa
 ```
 
 ## Chloe as a Julia package

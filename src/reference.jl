@@ -1,15 +1,21 @@
 include("globals.jl")
 
-const KWARGS = ["sensitivity", "to_gff3", "nofilter", "reference"]
+const KWARGS = ["no_transform", "sensitivity", "asgff3", "no_filter", "reference"]
 
 struct ChloeConfig
-    stet::Bool
+    no_transform::Bool
     sensitivity::Real
-    to_gff3::Bool
-    nofilter::Bool
+    asgff3::Bool
+    no_filter::Bool
     reference::String # cp|nr
-    function ChloeConfig(; stet=false, sensitivity=DEFAULT_SENSITIVITY, to_gff3::Bool=false, nofilter::Bool=false, reference::String="cp")
-        return new(stet, sensitivity, to_gff3, nofilter, reference)
+    function ChloeConfig(;
+        no_transform=false,
+        sensitivity=DEFAULT_SENSITIVITY,
+        asgff3::Bool=false,
+        no_filter::Bool=false,
+        reference::String="cp"
+    )
+        return new(no_transform, sensitivity, asgff3, no_filter, reference)
     end
 
     # needs to be V <: Any since this is coming from a JSON blob
@@ -19,7 +25,10 @@ struct ChloeConfig
 end
 
 function Base.show(io::IO, c::ChloeConfig)
-    print(io, "ChloeConfig[stet=$(c.stet), sensitivity=$(c.sensitivity), nofilter=$(c.nofilter), gff=$(c.to_gff3)], ref=$(c.reference)]")
+    print(
+        io,
+        "ChloeConfig[no_transform=$(c.no_transform), sensitivity=$(c.sensitivity), no_filter=$(c.no_filter), asgff3=$(c.asgff3)], ref=$(c.reference)]"
+    )
 end
 
 struct FeatureTemplate
@@ -79,7 +88,11 @@ function get_templates(db::ReferenceDb)
     end
 end
 
-function get_single_reference!(db::ReferenceDb, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
+function get_single_reference!(
+    db::ReferenceDb,
+    refID::AbstractString,
+    reference_feature_counts::Dict{String,Int}
+)::SingleReference
     path = findfastafile(db.gsrefsdir, refID)
     if isnothing(path) || !isfile(path)
         msg = "unable to find $(refID) fasta file in $(db.gsrefsdir)!"
@@ -117,7 +130,11 @@ function verify_refs(gsrefsdir, template)
 end
 
 # alters reference_feature_count Dictionary
-function read_single_reference!(refdir::String, refID::AbstractString, reference_feature_counts::Dict{String,Int})::SingleReference
+function read_single_reference!(
+    refdir::String,
+    refID::AbstractString,
+    reference_feature_counts::Dict{String,Int}
+)::SingleReference
     if !isdir(refdir)
         refdir = dirname(refdir)
     end

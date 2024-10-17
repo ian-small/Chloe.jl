@@ -9,7 +9,8 @@ import ..Annotator
 
 include("globals.jl")
 
-const LOGLEVELS = Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => Logging.Warn, "error" => Logging.Error)
+const LOGLEVELS =
+    Dict("info" => Logging.Info, "debug" => Logging.Debug, "warn" => Logging.Warn, "error" => Logging.Error)
 
 function quiet_metafmt(level, _module, group, id, file, line)
     color = Logging.default_logcolor(level)
@@ -21,13 +22,25 @@ function chloe(;
     reference_dir="cp",
     fasta_files=String[],
     sensitivity=DEFAULT_SENSITIVITY,
-    output::String=pwd(),
-    stet::Bool=false,
-    gff::Bool=false,
-    nofilter::Bool=false
+    output::Union{String,Nothing}=nothing,
+    no_transform::Bool=false,
+    sff::Bool=false,
+    no_filter::Bool=false
 )
+    if ~isnothing(output)
+        if ~isdir(output)
+            @info "creating directory \"$(output)\""
+            mkdir(output)
+        end
+    end
     db = Annotator.ReferenceDb(reference_dir)
-    config = Annotator.ChloeConfig(; stet=stet, sensitivity=sensitivity, to_gff3=gff, nofilter=nofilter, reference=reference_dir)
+    config = Annotator.ChloeConfig(;
+        no_transform=no_transform,
+        sensitivity=sensitivity,
+        asgff3=~sff,
+        no_filter=no_filter,
+        reference=reference_dir
+    )
     Annotator.annotate_batch(db, fasta_files, config, output)
 end
 
@@ -85,8 +98,7 @@ function getargs(args::Vector{String}=ARGS)
         help = "fasta files to process"
         "--output", "-o"
         arg_type = String
-        default = pwd()
-        help = "output directory (default: present working directory)"
+        help = "output directory (default: write output into same directory as input fasta file)"
         "--reference", "-r"
         arg_type = String
         default = "cp"
@@ -97,15 +109,15 @@ function getargs(args::Vector{String}=ARGS)
         arg_type = Real
         default = DEFAULT_SENSITIVITY
         help = "probability threshold for reporting features"
-        "--nofilter"
+        "--no-filter"
         action = :store_true
         help = "don't filter output"
-        "--stet"
+        "--no-transform"
         action = :store_true
         help = "do not flip and orient sequence to standard configuration"
-        "--gff"
+        "--sff"
         action = :store_true
-        help = "save output in gff3 format instead of sff"
+        help = "save output in sff format instead of gff3"
     end
 
     parse_args(args, cmd_args; as_symbols=true)
