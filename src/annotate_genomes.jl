@@ -18,6 +18,7 @@ include("restructure.jl")
 include("orfs.jl")
 include("rnas.jl")
 include("chloeboost.jl")
+include("output_formats.jl")
 
 import Printf: @sprintf
 # import JSON
@@ -388,7 +389,6 @@ function annotate_one_worker(
     t1 = time_ns()
     target_length = Int32(length(target.forward))
 
-    target_length = length(target.forward)
     @info "[$target_id] seq length: $(target_length)bp"
     ref_ids = first.(split.(filter(x -> endswith(x, ".sff"), readdir(db.gsrefsdir)), "."))
     numrefs = length(ref_ids)
@@ -461,8 +461,15 @@ function annotate_one_worker(
         fetch.((Threads.@spawn w()) for w in [watson, crick, () -> inverted_repeat(target.forward, target.reverse)])
 
     ir1 = ir2 = nothing
-    if ir.blocklength >= 1000
-        @info "[$target_id] inverted repeat $(ir.blocklength)"
+    ir_length::Int32 = ir.blocklength
+    # ensure that IRs do not overlap
+    ir_intersect = circularintersect(ir.src_index:ir.src_index + ir_length - 1, reverse_complement(ir.tgt_index:ir.tgt_index + ir_length - 1, target_length), target_length) 
+    while length(ir_intersect) > 0
+        ir_length -= ceil(Int, length(ir_intersect) / 2)
+        ir_intersect = circularintersect(ir.src_index:ir.src_index + ir_length - 1, reverse_complement(ir.tgt_index:ir.tgt_index + ir_length - 1, target_length), target_length)
+    end
+    if ir_length >= 1000
+        @info "[$target_id] inverted repeat $(ir_length)"
         ir1 = SFF_Model(
             "IR-1",
             0.0,
@@ -471,7 +478,7 @@ function annotate_one_worker(
             1,
             [
                 SFF_Feature(
-                    Feature("IR/repeat_region/1", ir.src_index, ir.blocklength, Int8(0)),
+                    Feature("IR/repeat_region/1", ir.src_index, ir_length, Int8(0)),
                     0.0,
                     0.0,
                     0.0,
@@ -489,7 +496,7 @@ function annotate_one_worker(
             1,
             [
                 SFF_Feature(
-                    Feature("IR/repeat_region/1", ir.tgt_index, ir.blocklength, Int8(0)),
+                    Feature("IR/repeat_region/1", ir.tgt_index, ir_length, Int8(0)),
                     0.0,
                     0.0,
                     0.0,
@@ -517,17 +524,6 @@ function annotate_one_worker(
     fwdr = update_genecount!(fwdr)
     ret = ChloeAnnotation(target_id, target_length, coverages, fwdr)
     final_annotation_edit!(ret)
-end
-
-function write_result(result::ChloeAnnotation, asgff3::Bool, filestem::String)::Tuple{Union{String,IO},String}
-    if !asgff3
-        out = filestem * ".chloe.sff"
-        writeSFF(out, result.target_id, result.target_length, geomean(values(result.coverages)), result.annotation)
-    else
-        out = filestem * ".chloe.gff"
-        writeGFF3(out, result.target_id, result.target_length, result.annotation)
-    end
-    return out, result.target_id
 end
 
 function fasta_reader(infile::IO)::Tuple{String,FwdRev{CircularSequence}}
@@ -565,11 +561,8 @@ function annotate_one(
     result = annotate_one_worker(db, target_id, target, config)
     if ~config.no_transform
         target, result = transform!(target, result, db.templates)
-        FASTAWriter(open(output * ".chloe.fa", "w")) do outfile
-            write(outfile, FASTARecord(result.target_id, target.forward[1:length(target.forward)]))
-        end
     end
-    write_result(result, config.asgff3, output)
+    write_result(config, target, result, output)
 end
 
 function annotate(
@@ -1079,38 +1072,6 @@ function toSFFModel(
     return exceeds_sensitivity ? SFF_Model(gene, model_prob, strand, 1, exon_count, model, warnings) : nothing
 end
 
-function write_model2SFF(outfile::IO, model::SFF_Model)
-    isnothing(model) && return
-    model_id = model.gene * "/" * string(model.gene_count)
-    for sff in model.features
-        f = sff.feature
-        id = "$(model.gene)/$(model.gene_count)/$(f.type)/$(f.order)"
-        write(outfile, id)
-        write(outfile, "\t")
-        write(outfile, join([model.strand, string(f.start), string(f.length), string(f.phase)], "\t"))
-        write(outfile, "\t")
-        write(
-            outfile,
-            join(
-                [
-                    @sprintf("%.3g", sff.relative_length),
-                    @sprintf("%.3g", sff.stackdepth),
-                    @sprintf("%.3g", sff.gmatch),
-                    @sprintf("%.3g", sff.feature_prob),
-                    @sprintf("%.3g", sff.coding_prob)
-                ],
-                "\t"
-            )
-        )
-        write(outfile, "\t")
-        write(outfile, join(model.warnings, "; "))
-        write(outfile, "\n")
-    end
-    for warning in model.warnings
-        @warn("$(model_id) $(warning)")
-    end
-end
-
 function calc_maxlengths(models::FwdRev{Vector{Vector{SFF_Model}}})::Dict{String,Int32}
     maxlengths = Dict{String,Int32}()
     function add_model(models)
@@ -1370,97 +1331,6 @@ function update_genecount!(models::FwdRev{Vector{SFF_Model}})::FwdRev{Vector{SFF
     return FwdRev(fwd, rev)
 end
 
-function writeSFF(
-    outfile::Union{String,IO},
-    id::String, # NCBI id
-    genome_length::Int32,
-    mean_coverage::Float32,
-    models::FwdRev{Vector{SFF_Model}}
-)
-    function out(outfile::IO)
-        write(outfile, id, "\t", string(genome_length), "\t", @sprintf("%.3f", mean_coverage), "\n")
-        for model in models.forward
-            write_model2SFF(outfile, model)
-        end
-        for model in models.reverse
-            write_model2SFF(outfile, model)
-        end
-    end
-    if outfile isa String
-        maybe_gzwrite(outfile::String) do io
-            out(io)
-        end
-    else
-        out(outfile)
-    end
-end
-
-function sff2gffcoords(f::Feature, strand::Char, genome_length::Integer)
-    start = f.start
-    finish = f.start + f.length - 1
-    length = finish - start + 1
-
-    if strand == '-'
-        start = genome_length - finish + 1
-        finish = start + length - 1
-    end
-    return (start, finish, length)
-end
-
-function writeGFF3(
-    outfile::Union{String,IO},
-    genome_id::String, # NCBI id
-    genome_length::Int32,
-    models::FwdRev{Vector{SFF_Model}}
-)
-    function header(outfile::IO)
-        write(outfile, "##gff-version 3.2.1\n")
-        write(
-            outfile,
-            join([genome_id, "Chloe", "region", '1', string(genome_length), ".", "+", "0", "Is_circular=true"], "\t")
-        )
-        write(outfile, "\n")
-        write(
-            outfile,
-            join(
-                [
-                    genome_id,
-                    "Chloe",
-                    "source",
-                    '1',
-                    string(genome_length),
-                    ".",
-                    "+",
-                    "1",
-                    "ID=source-null;gbkey=source"
-                ],
-                "\t"
-            )
-        )
-        write(outfile, "\n")
-        write(outfile, "###\n")
-    end
-
-    function out(outfile::IO)
-        header(outfile)
-        allmodels = sort(
-            vcat(models.forward, models.reverse);
-            by=m -> sff2gffcoords(first(m.features).feature, m.strand, genome_length)[1]
-        )
-        for model in allmodels
-            write_model2GFF3(outfile, model, genome_id, genome_length)
-        end
-    end
-
-    if outfile isa String
-        maybe_gzwrite(outfile::String) do io
-            out(io)
-        end
-    else
-        out(outfile)
-    end
-end
-
 function merge_adjacent_features!(model::SFF_Model)
     f1_index = 1
     f2_index = 2
@@ -1479,82 +1349,4 @@ function merge_adjacent_features!(model::SFF_Model)
     end
 end
 
-function featuretype(model::Vector{SFF_Feature})
-    type = ""
-    for sff in model
-        if sff.feature.type ≠ "intron"
-            type = sff.feature.type
-            break
-        end
-    end
-    return type
 end
-
-function write_model2GFF3(outfile, model::SFF_Model, genome_id::String, genome_length::Int32)
-    function write_line(type, start, finish, pvalue, id, parent, phase="."; key="Parent")
-        l = [genome_id, "Chloe", type, start, finish, @sprintf("%.3e", pvalue), model.strand, phase]
-        write(outfile, join(l, "\t"))
-        write(outfile, "\t", "ID=", id, ";", key, "=", parent, "\n")
-    end
-
-    # IRC moved to final_annotation_edit!
-    # merge_adjacent_features!(model)
-
-    id = model.gene
-    if model.gene_count > 1
-        id = id * "-" * string(model.gene_count)
-    end
-
-    start = minimum(f.feature.start for f in model.features)
-    # IRC moved to final_annotation_edit!
-    # ft = featuretype(model.features)
-    # if ft == "CDS" && !startswith(id, "rps12A")
-    #     last(model.features).feature.length += 3 # add stop codon
-    # end
-    finish = maximum(f.feature.start + f.feature.length - 1 for f in model.features)
-    length = finish - start + 1
-
-    if model.strand == '-'
-        start = genome_length - finish + 1
-        if start < 1
-            start += genome_length
-        end
-        finish = start + length - 1
-    end
-
-    # gene
-    if startswith(model.gene, "IR")
-        write_line("repeat_region", start, finish, model.gene_prob, id, model.gene; key="Name")
-        write(outfile, "###\n")
-        return
-    else
-        write_line("gene", start, finish, 1.0 - model.gene_prob, id, model.gene; key="Name")
-    end
-    # RNA product
-    parent = id
-    #= if ft == "CDS"
-        parent =  id * ".mRNA"
-        write_line("mRNA", start, finish, 1.0 - model.gene_prob, parent, id)
-    elseif ft == "rRNA"
-        parent = id * ".rRNA"
-        write_line("rRNA", start, finish, 1.0 - model.gene_prob, parent, id)
-    elseif ft == "tRNA"
-        parent =  id * ".tRNA"
-        write_line("tRNA", start, finish, 1.0 - model.gene_prob, parent, id)
-    end =#
-    # exons
-    for sff in model.features
-        f = sff.feature
-        type = f.type
-        #= if type == "tRNA" || type == "rRNA"
-            type = "exon"
-        end =#
-        start, finish, length = sff2gffcoords(f, model.strand, genome_length)
-
-        phase = type == "CDS" ? string(f.phase) : "."
-        write_line(type, start, finish, 1.0 - sff.feature_prob, id * "." * type * "." * string(f.order), parent, phase)
-    end
-    write(outfile, "###\n")
-end
-
-end # module

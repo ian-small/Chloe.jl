@@ -5,17 +5,23 @@ const KWARGS = ["no_transform", "sensitivity", "asgff3", "no_filter", "reference
 struct ChloeConfig
     no_transform::Bool
     sensitivity::Real
-    asgff3::Bool
+    sff::Bool
+    no_gff::Bool
+    gbk::Bool
+    embl::Bool
     no_filter::Bool
     reference::String # cp|nr
     function ChloeConfig(;
         no_transform=false,
         sensitivity=DEFAULT_SENSITIVITY,
-        asgff3::Bool=true,
+        sff::Bool=false,
+        no_gff::Bool=false,
+        gbk::Bool=false,
+        embl::Bool=false,
         no_filter::Bool=false,
         reference::String="cp"
     )
-        return new(no_transform, sensitivity, asgff3, no_filter, reference)
+        return new(no_transform, sensitivity, sff, no_gff, gbk, embl, no_filter, reference)
     end
 
     # needs to be V <: Any since this is coming from a JSON blob
@@ -27,7 +33,8 @@ end
 function Base.show(io::IO, c::ChloeConfig)
     print(
         io,
-        "ChloeConfig[no_transform=$(c.no_transform), sensitivity=$(c.sensitivity), no_filter=$(c.no_filter), asgff3=$(c.asgff3)], ref=$(c.reference)]"
+        "ChloeConfig[no_transform=$(c.no_transform), sensitivity=$(c.sensitivity), no_filter=$(c.no_filter),
+            sff=$(c.sff), no_gff=$(c.no_gff), gbk=$(c.gbk), embl=$(c.embl)], ref=$(c.reference)]"
     )
 end
 

@@ -25,6 +25,9 @@ function chloe(;
     output::Union{String,Nothing}=nothing,
     no_transform::Bool=false,
     sff::Bool=false,
+    no_gff::Bool=false,
+    gbk::Bool=false,
+    embl::Bool=false,
     no_filter::Bool=false,
     use_id::Bool=false
 )
@@ -38,7 +41,10 @@ function chloe(;
     config = Annotator.ChloeConfig(;
         no_transform=no_transform,
         sensitivity=sensitivity,
-        asgff3=~sff,
+        sff=sff,
+        no_gff=no_gff,
+        gbk=gbk,
+        embl=embl,
         no_filter=no_filter,
         reference=reference_dir
     )
@@ -118,7 +124,16 @@ function getargs(args::Vector{String}=ARGS)
         help = "do not flip and orient sequence to standard configuration"
         "--sff"
         action = :store_true
-        help = "save output in sff format instead of gff3"
+        help = "save output in sff format"
+        "--no-gff"
+        action = :store_true
+        help = "don't save output in GFF format"
+        "--gbk"
+        action = :store_true
+        help = "save output in GenBank format"
+        "--embl"
+        action = :store_true
+        help = "save output in EMBL format"
         "--use-id"
         action = :store_true
         help = "Use the target_id found in the fasta file as the output filename"

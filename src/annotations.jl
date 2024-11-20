@@ -179,9 +179,36 @@ gene_length(model::SFF_Model) = begin
     length(gene_span(model))
 end
 
+function reverse_complement(x::Integer, glength::Int32)
+    return mod1(glength - x + 1, glength)
+end
+
 function reverse_complement(r::UnitRange, glength::Int32)::UnitRange
     return range(mod1(glength - r.stop + 1, glength), length=length(r))
 end
 
+#sorts models by leftmost position, irrespective of strand
+function ltSFF_Model(m1::SFF_Model, m2::SFF_Model, glength::Integer)
+    m1span = gene_span(m1)
+    if m1.strand == '-'; m1span = reverse_complement(m1span, glength); end
+    m2span = gene_span(m2)
+    if m2.strand == '-'; m2span = reverse_complement(m2span, glength); end
+    m1span.start < m2span.start
+end
+
+function featuretype(model::Vector{SFF_Feature})
+    type = ""
+    for sff in model
+        if sff.feature.type ≠ "intron"
+            type = sff.feature.type
+            break
+        end
+    end
+    return type
+end
+
+function featuretype(model::SFF_Model)
+    featuretype(model.features)
+end
 
 
