@@ -130,9 +130,16 @@ function chloe2biojulia(chloe::ChloeAnnotation)::GenomicAnnotations.Record
         addgene!(biojulia, :gene, Join([alocus, blocus]); locus_tag = gene_id, ID = gene_id, gene = "rps12", name = "rps12")
         # construct CDS feature
         alocus = construct_locus(a, "CDS", chloe.target_length)
-        blocus = construct_locus(b, "CDS", chloe.target_length)
+        bloci = Vector{AbstractLocus}()
+        for sfeature in filter(x -> x.feature.type == "CDS", b.features)
+            f = sfeature.feature
+            start = b.strand == '+' ? f.start : reverse_complement(f.start + f.length-1, chloe.target_length)
+            span = ClosedSpan(start:start + f.length-1)
+            push!(bloci, b.strand == '+' ? span : Complement(span))
+        end
+        if b.strand == '-'; reverse!(bloci); end
         id = string(uuid4())
-        addgene!(biojulia, :CDS, Join([alocus, blocus]); parent = gene_id, locus_tag = id, ID = id, name = "rps12.CDS")
+        addgene!(biojulia, :CDS, Join([alocus, bloci...]); parent = gene_id, locus_tag = id, ID = id, name = "rps12.CDS")
         # construct rps12A internal intron feature(s) (I don't think there are any, but just in case...)
         aintrons = filter(x -> x.feature.type == "intron", a.features)
         intron_count = 1
