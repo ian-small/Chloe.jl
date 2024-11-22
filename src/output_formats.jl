@@ -102,7 +102,7 @@ function chloe2biojulia(chloe::ChloeAnnotation)::GenomicAnnotations.Record
             locus = construct_locus(sff, feature_type, chloe.target_length)
             if ~isnothing(locus)
                 id = string(uuid4())
-                addgene!(biojulia, Symbol(feature_type), locus; parent = gene_id, locus_tag = id, ID = id, name = "$(sff.gene).$feature_type")
+                addgene!(biojulia, Symbol(feature_type), locus; parent = gene_id, locus_tag = id, ID = id, gene = sff.gene, name = "$(sff.gene).$feature_type")
             end
         end
         # construct intron feature(s)
@@ -113,7 +113,7 @@ function chloe2biojulia(chloe::ChloeAnnotation)::GenomicAnnotations.Record
             locus = ClosedSpan(start:start + f.length-1)
             if sff.strand == '-'; locus = Complement(locus); end
             id = string(uuid4())
-            addgene!(biojulia, :intron, locus; parent = gene_id, locus_tag = id, ID = id, name = "$(sff.gene).intron.$i" )
+            addgene!(biojulia, :intron, locus; parent = gene_id, locus_tag = id, ID = id, gene = sff.gene, name = "$(sff.gene).intron.$i" )
         end
     end
     # join rps12A and rps12B features
@@ -139,7 +139,7 @@ function chloe2biojulia(chloe::ChloeAnnotation)::GenomicAnnotations.Record
             push!(bloci, b.strand == '+' ? span : Complement(span))
         end
         id = string(uuid4())
-        addgene!(biojulia, :CDS, Join([alocus, bloci...]); parent = gene_id, locus_tag = id, ID = id, name = "rps12.CDS")
+        addgene!(biojulia, :CDS, Join([alocus, bloci...]); parent = gene_id, locus_tag = id, ID = id, gene = "rps12", name = "rps12.CDS")
         # construct rps12A internal intron feature(s) (I don't think there are any, but just in case...)
         aintrons = filter(x -> x.feature.type == "intron", a.features)
         intron_count = 1
@@ -149,7 +149,7 @@ function chloe2biojulia(chloe::ChloeAnnotation)::GenomicAnnotations.Record
             locus = ClosedSpan(start:start + f.length-1)
             if a.strand == '-'; locus = Complement(locus); end
             id = string(uuid4())
-            addgene!(biojulia, :intron, locus; parent = gene_id, locus_tag = id, ID = id, name = "rps12.intron.$intron_count" )
+            addgene!(biojulia, :intron, locus; parent = gene_id, locus_tag = id, ID = id, gene = "rps12", name = "rps12.intron.$intron_count" )
             intron_count += 1
         end
         bintrons = filter(x -> x.feature.type == "intron", b.features)
@@ -163,7 +163,7 @@ function chloe2biojulia(chloe::ChloeAnnotation)::GenomicAnnotations.Record
         blocus = ClosedSpan(start:start + f.length-1)
         if b.strand == '-'; blocus = Complement(blocus); end
         id = string(uuid4())
-        addgene!(biojulia, :intron, Join([alocus, blocus]); parent = gene_id, locus_tag = id, ID = id, name = "rps12.intron.$intron_count" )
+        addgene!(biojulia, :intron, Join([alocus, blocus]); parent = gene_id, locus_tag = id, ID = id, gene = "rps12", name = "rps12.intron.$intron_count" )
         intron_count += 1
         # construct rps12B internal intron feature(s)
         for intron in bintrons[2:end]
@@ -172,7 +172,7 @@ function chloe2biojulia(chloe::ChloeAnnotation)::GenomicAnnotations.Record
             locus = ClosedSpan(start:start + f.length-1)
             if b.strand == '-'; locus = Complement(locus); end
             id = string(uuid4())
-            addgene!(biojulia, :intron, locus; parent = gene_id, locus_tag = id, ID = id, name = "rps12.intron.$intron_count" )
+            addgene!(biojulia, :intron, locus; parent = gene_id, locus_tag = id, ID = id, gene = "rps12", name = "rps12.intron.$intron_count" )
             intron_count += 1
         end
     end
