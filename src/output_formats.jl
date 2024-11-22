@@ -2,6 +2,7 @@
 using BioSequences
 using GenomicAnnotations
 using UUIDs
+using Dates
 
 function write_model2SFF(outfile::IO, model::SFF_Model)
     isnothing(model) && return
@@ -78,7 +79,7 @@ end
 function chloe2biojulia(chloe::ChloeAnnotation)::GenomicAnnotations.Record
     biojulia = GenomicAnnotations.Record()
     biojulia.name = chloe.target_id
-    biojulia.header = "##gff-version 3\n##source-version Chloe 1.0\n##sequence-region\tchloe.target_id\t1\t$(chloe.target_length)\n"
+    biojulia.header = "##gff-version 3\n##source-version Chloe 1.0\n##sequence-region\t$(chloe.target_id)\t1\t$(chloe.target_length)\n"
     biojulia.circular = true
     # add
 
@@ -137,7 +138,6 @@ function chloe2biojulia(chloe::ChloeAnnotation)::GenomicAnnotations.Record
             span = ClosedSpan(start:start + f.length-1)
             push!(bloci, b.strand == '+' ? span : Complement(span))
         end
-        if b.strand == '-'; reverse!(bloci); end
         id = string(uuid4())
         addgene!(biojulia, :CDS, Join([alocus, bloci...]); parent = gene_id, locus_tag = id, ID = id, name = "rps12.CDS")
         # construct rps12A internal intron feature(s) (I don't think there are any, but just in case...)
@@ -200,6 +200,7 @@ function write_result(config::ChloeConfig, target::FwdRev{CircularSequence}, res
         end
         if config.gbk
             out = filestem * ".chloe.gbk"
+            biojulia.header = "LOCUS       $(rpad(result.target_id, 10, ' ')) $(lpad(length(biojulia.sequence), 10, ' ')) bp    DNA     circular PLN $(uppercase(Dates.format(now(), "dd-uuu-yyyy")))"
             GenBank.printgbk(out, biojulia)
         end
         if config.embl
