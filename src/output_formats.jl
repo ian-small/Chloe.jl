@@ -68,9 +68,11 @@ function construct_locus(sff::SFF_Model, feature_type::String, target_length::In
         f = sfeature.feature
         start = sff.strand == '+' ? f.start : reverse_complement(f.start + f.length-1, target_length)
         span = ClosedSpan(start:start + f.length-1)
-        push!(loci, sff.strand == '+' ? span : Complement(span))
+        push!(loci, span)
     end
-    locus = length(loci) == 1 ? first(loci) : Join(loci)
+    locus = length(loci) == 1 ? first(loci) : Join(sff.strand == '+' ? loci : reverse(loci))
+    if sff.strand == '-'; locus = Complement(locus); end
+    println(sff.gene, "\t", locus)
     locus
 end
 
