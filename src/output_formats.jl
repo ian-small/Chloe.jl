@@ -70,7 +70,6 @@ function construct_locus(sff::SFF_Model, feature_type::String, target_length::In
         span = ClosedSpan(start:start + f.length-1)
         push!(loci, sff.strand == '+' ? span : Complement(span))
     end
-    if sff.strand == '-'; reverse!(loci); end
     locus = length(loci) == 1 ? first(loci) : Join(loci)
     locus
 end
