@@ -154,17 +154,21 @@ function chloe2biojulia(chloe::ChloeAnnotation)::GenomicAnnotations.Record
         end
         bintrons = filter(x -> x.feature.type == "intron", b.features)
         # construct transpliced intron feature
-        f = last(aintrons).feature
-        start = a.strand == '+' ? f.start : reverse_complement(f.start + f.length-1, chloe.target_length)
-        alocus = ClosedSpan(start:start + f.length-1)
-        if a.strand == '-'; alocus = Complement(alocus); end
-        f = first(bintrons).feature
-        start = b.strand == '+' ? f.start : reverse_complement(f.start + f.length-1, chloe.target_length)
-        blocus = ClosedSpan(start:start + f.length-1)
-        if b.strand == '-'; blocus = Complement(blocus); end
-        id = string(uuid4())
-        addgene!(biojulia, :intron, Join([alocus, blocus]); parent = gene_id, locus_tag = id, ID = id, gene = "rps12", name = "rps12.intron.$intron_count" )
-        intron_count += 1
+        if ~isempty(aintrons)
+            f = last(aintrons).feature
+            start = a.strand == '+' ? f.start : reverse_complement(f.start + f.length-1, chloe.target_length)
+            alocus = ClosedSpan(start:start + f.length-1)
+            if a.strand == '-'; alocus = Complement(alocus); end
+            if ~isempty(bintrons)
+                f = first(bintrons).feature
+                start = b.strand == '+' ? f.start : reverse_complement(f.start + f.length-1, chloe.target_length)
+                blocus = ClosedSpan(start:start + f.length-1)
+                if b.strand == '-'; blocus = Complement(blocus); end
+                id = string(uuid4())
+                addgene!(biojulia, :intron, Join([alocus, blocus]); parent = gene_id, locus_tag = id, ID = id, gene = "rps12", name = "rps12.intron.$intron_count" )
+                intron_count += 1
+            end
+        end
         # construct rps12B internal intron feature(s)
         for intron in bintrons[2:end]
             f = intron.feature
