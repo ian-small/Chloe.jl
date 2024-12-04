@@ -1,7 +1,7 @@
 name = "Chloe"
 uuid = "ca11047d-399f-4cb1-8477-165950ce0018"
 authors = ["Ian Small <ian.small@uwa.edu.au>", "Ian Castleden <ian.castleden@uwa.edu.au>"]
-version = "0.1.16"
+version = "0.1.17"
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
@@ -21,5 +21,3 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 XGBoost = "009559a3-9522-5dbb-924b-0b6ed2b22bb9"
 
-[compat]
-GenomicAnnotations = "0.4.0"

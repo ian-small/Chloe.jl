@@ -196,8 +196,6 @@ function write_result(config::ChloeConfig, target::FwdRev{CircularSequence}, res
     end
     if ~config.no_gff || config.gbk || config.embl
         biojulia = chloe2biojulia(result)
-        #linearise
-        biojulia.sequence = target.forward[1:length(target.forward)]
         if ~config.no_gff
             out = filestem * ".chloe.gff"
             GFF.printgff(out, biojulia)
@@ -205,10 +203,12 @@ function write_result(config::ChloeConfig, target::FwdRev{CircularSequence}, res
         if config.gbk
             out = filestem * ".chloe.gbk"
             biojulia.header = "LOCUS       $(rpad(result.target_id, 10, ' ')) $(lpad(length(biojulia.sequence), 10, ' ')) bp    DNA     circular PLN $(uppercase(Dates.format(now(), "dd-uuu-yyyy")))"
+            biojulia.sequence = target.forward[1:length(target.forward)]
             GenBank.printgbk(out, biojulia)
         end
         if config.embl
             out = filestem * ".chloe.embl"
+            biojulia.sequence = target.forward[1:length(target.forward)]
             EMBL.printembl(out, biojulia)
         end
     end

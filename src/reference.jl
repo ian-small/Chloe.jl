@@ -4,7 +4,7 @@ const KWARGS = ["no_transform", "sensitivity", "asgff3", "no_filter", "reference
 
 struct ChloeConfig
     no_transform::Bool
-    sensitivity::Real
+    sensitivity::Float64
     sff::Bool
     no_gff::Bool
     gbk::Bool
