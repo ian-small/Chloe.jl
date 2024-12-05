@@ -197,6 +197,7 @@ function write_result(config::ChloeConfig, target::FwdRev{CircularSequence}, res
     if ~config.no_gff || config.gbk || config.embl
         biojulia = chloe2biojulia(result)
         if ~config.no_gff
+            biojulia.sequence = dna""
             out = filestem * ".chloe.gff"
             GFF.printgff(out, biojulia)
         end
