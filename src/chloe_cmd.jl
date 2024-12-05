@@ -113,7 +113,7 @@ function getargs(args::Vector{String}=ARGS)
         metavar = "cp|nr"
         help = "references and templates to use for annotations: cp for chloroplast, nr for nuclear rDNA"
         "--sensitivity", "-s"
-        arg_type = Real
+        arg_type = Float64
         default = DEFAULT_SENSITIVITY
         help = "probability threshold for reporting features"
         "--no-filter"

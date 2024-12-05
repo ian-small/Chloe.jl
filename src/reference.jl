@@ -2,7 +2,7 @@ include("globals.jl")
 
 struct ChloeConfig
     no_transform::Bool
-    sensitivity::Real
+    sensitivity::Float64
     sff::Bool
     no_gff::Bool
     gbk::Bool

@@ -669,9 +669,9 @@ function refine_boundaries_by_offsets!(
     end
     left = feat.start
     if !isempty(end5s)
-        left = weighted_mode(end5s, end5ws)
+        left = genome_wrap(target_length, weighted_mode(end5s, end5ws))
     end
-    feat.start = genome_wrap(target_length, left)
+    feat.start = left
     feat.phase = (feat.type ≠ "CDS" || isempty(phases)) ? 0 : weighted_mode(phases, end5ws)
 
     ## Fix 3' boundary
@@ -911,7 +911,6 @@ function refine_gene_models!(
     target_seq::CircularSequence,
     orfs::Vector{Feature}
 )
-
     ## add code to make use of the feature_prob field in the SFF_Features
 
     genome_length = Int32(length(target_seq))
