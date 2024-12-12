@@ -30,6 +30,7 @@ function flip!(
     result::ChloeAnnotation,
     fliprange::UnitRange{<:Integer}
 )::Tuple{FwdRev{CircularSequence},ChloeAnnotation}
+    length(fliprange) < 1 && return target, result
     gl = result.target_length
     if length(fliprange) == gl
         # flip whole sequence and its annotations
