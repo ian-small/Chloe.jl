@@ -1333,7 +1333,6 @@ end
 function merge_adjacent_features!(model::SFF_Model)
     f1_index = 1
     f2_index = 2
-    model.
     while f2_index <= length(model.features)
         f1 = model.features[f1_index].feature
         f2 = model.features[f2_index].feature
