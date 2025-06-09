@@ -1,7 +1,5 @@
 include("globals.jl")
 
-const KWARGS = ["no_transform", "sensitivity", "asgff3", "no_filter", "reference"]
-
 struct ChloeConfig
     no_transform::Bool
     sensitivity::Float64
@@ -23,10 +21,10 @@ struct ChloeConfig
     )
         return new(no_transform, sensitivity, sff, no_gff, gbk, embl, no_filter, reference)
     end
-
     # needs to be V <: Any since this is coming from a JSON blob
     function ChloeConfig(dict::Dict{String,V} where {V<:Any})
-        return ChloeConfig(; Dict(Symbol(k) => v for (k, v) in dict if k in KWARGS)...)
+        fields = fieldnames(ChloeConfig)
+        return ChloeConfig(; Dict(Symbol(k) => v for (k, v) in dict if Symbol(k) in fields)...)
     end
 end
 

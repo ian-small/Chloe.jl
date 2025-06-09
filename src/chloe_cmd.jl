@@ -68,6 +68,9 @@ function getargs(args::Vector{String}=ARGS)
         arg_type = String
         default = "info"
         help = "log level (info,warn,error,debug)"
+        "refdir"
+        action = :command
+        help  = "show reference directory"
     end
 
     @add_arg_table! cmd_args["minhash"] begin
@@ -142,6 +145,11 @@ function getargs(args::Vector{String}=ARGS)
     parse_args(args, cmd_args; as_symbols=true)
 end
 
+function refdir()
+    ref = Annotator.ReferenceDb("cp")
+    println(ref.gsrefsdir)
+end
+
 function chloe_main(args::Vector{String}=ARGS)
     parsed_args = getargs(args)
     level = lowercase(parsed_args[:level])
@@ -154,6 +162,8 @@ function chloe_main(args::Vector{String}=ARGS)
             Annotator.align(; a...)
         elseif cmd == :annotate
             chloe(; a...)
+        elseif cmd == :refdir
+            refdir()
         end
     end
 end

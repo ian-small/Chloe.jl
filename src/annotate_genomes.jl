@@ -1338,7 +1338,7 @@ function merge_adjacent_features!(model::SFF_Model)
         f2 = model.features[f2_index].feature
         # if adjacent features are same type, merge them into a single feature
         if f1.type == f2.type && f2.start - f1.start - f1.length ≤ 100
-            @debug "[$(genome_id)]$(strand) merging adjacent $(f1.path) and $(f2.path)"
+            @debug "[$(model.gene)]$(model.strand) merging adjacent $(f1.type):$(f1.start)-$(f2.start)"
             f1.length = f2.start - f1.start + f2.length
             deleteat!(model.features, f2_index)
         else
